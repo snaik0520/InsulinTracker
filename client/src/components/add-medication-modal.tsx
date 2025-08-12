@@ -55,6 +55,17 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     return Array.from(map.values());
   }, [allMedications]);
 
+  // New: build unique list of storage locations
+  const existingLocations = useMemo(() => {
+    const locationsSet = new Set<string>();
+    for (const med of allMedications) {
+      if (med.location && med.location.trim() !== "") {
+        locationsSet.add(med.location.trim());
+      }
+    }
+    return Array.from(locationsSet);
+  }, [allMedications]);
+
   const form = useForm<InsertMedication>({
     resolver: zodResolver(insertMedicationSchema),
     defaultValues: {
@@ -261,8 +272,35 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             </div>
           </div>
 
+          {/* Storage Location with dropdown + free typing */}
           <div>
-            <Label htmlFor="location">Storage Location</Label>
+            <Label htmlFor="existing-location-select" className="mb-1 font-medium">
+              Select Existing Storage Location (Optional)
+            </Label>
+            {existingLocations.length > 0 ? (
+              <Select
+                id="existing-location-select"
+                onValueChange={(value) => form.setValue("location", value)}
+                defaultValue=""
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a location..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {existingLocations.map((loc) => (
+                    <SelectItem key={loc} value={loc}>
+                      {loc}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="text-sm text-muted-foreground mb-2">No existing locations found.</div>
+            )}
+
+            <Label htmlFor="location" className="mt-4">
+              Or Enter Storage Location
+            </Label>
             <Input
               id="location"
               placeholder="e.g., Fridge A - Shelf 2"
