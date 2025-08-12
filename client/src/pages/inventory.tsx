@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { AddMedicationModal } from "@/components/add-medication-modal";
 import { DispenseModal } from "@/components/dispense-modal";
 import { LowStockAlert } from "@/components/low-stock-alert";
+import { LowStockTicker } from "@/components/low-stock-ticker";
 import { TransactionHistory } from "@/components/transaction-history";
 import { type Medication } from "@shared/schema";
 import { Search, Plus, HandHeart, Heart, Zap, Clock, Scale, HelpCircle, List } from "lucide-react";
@@ -134,7 +135,7 @@ export default function Inventory() {
         {/* Search and Filters */}
         <Card className="mb-8">
           <CardContent className="p-6">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0 lg:space-x-4">
+            <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between space-y-4 lg:space-y-0 lg:space-x-4">
               {/* Search Bar */}
               <div className="flex-1 max-w-lg">
                 <Label htmlFor="medication-search" className="block text-sm font-medium text-gray-700 mb-2">
@@ -154,7 +155,7 @@ export default function Inventory() {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-3">
+              <div className="flex gap-3 flex-shrink-0">
                 <TransactionHistory />
                 <Button
                   onClick={() => setIsAddModalOpen(true)}
@@ -324,6 +325,9 @@ export default function Inventory() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Low Stock Ticker */}
+        <LowStockTicker />
       </main>
 
       {/* Modals */}
