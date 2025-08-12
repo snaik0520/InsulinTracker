@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertMedicationSchema, type InsertMedication, type Medication } from "@shared/schema";
@@ -21,7 +21,6 @@ interface AddMedicationModalProps {
 export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [useExistingMedication, setUseExistingMedication] = useState(false);
 
   // Fetch existing medications for dropdown
   const { data: allMedications = [] } = useQuery<Medication[]>({
@@ -78,7 +77,6 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
         description: "Medication added successfully",
       });
       form.reset();
-      setUseExistingMedication(false);
       onOpenChange(false);
     },
     onError: (error: Error) => {
@@ -122,38 +120,29 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
           {/* Existing medication selector */}
           {existingMedications.length > 0 && (
             <div className="space-y-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="use-existing" className="text-sm font-medium">
-                  Add to existing medication stock
+              <div>
+                <Label htmlFor="existing-medication" className="text-sm font-medium text-blue-800">
+                  Select Existing Medication (Optional)
                 </Label>
-                <Switch
-                  id="use-existing"
-                  checked={useExistingMedication}
-                  onCheckedChange={setUseExistingMedication}
-                  data-testid="switch-use-existing"
-                />
+                <p className="text-xs text-blue-600 mb-2">
+                  Choose from current inventory to automatically fill medication details
+                </p>
+                <Select onValueChange={handleExistingMedicationSelect}>
+                  <SelectTrigger data-testid="select-existing-medication">
+                    <SelectValue placeholder="Choose from current inventory or leave blank for new medication..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {existingMedications.map((medication) => (
+                      <SelectItem key={medication.id} value={medication.id}>
+                        <div className="flex items-center justify-between w-full">
+                          <span>{medication.genericName} ({medication.medicalName})</span>
+                          <span className="text-xs text-gray-500 ml-2">{medication.quantity} vials</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              
-              {useExistingMedication && (
-                <div>
-                  <Label htmlFor="existing-medication">Select Existing Medication</Label>
-                  <Select onValueChange={handleExistingMedicationSelect}>
-                    <SelectTrigger data-testid="select-existing-medication">
-                      <SelectValue placeholder="Choose from current inventory..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {existingMedications.map((medication) => (
-                        <SelectItem key={medication.id} value={medication.id}>
-                          <div className="flex items-center justify-between w-full">
-                            <span>{medication.genericName} ({medication.medicalName})</span>
-                            <span className="text-xs text-gray-500 ml-2">{medication.quantity} vials</span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
             </div>
           )}
 

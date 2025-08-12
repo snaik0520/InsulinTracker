@@ -31,10 +31,27 @@ export class MemStorage implements IStorage {
   }
 
   async createMedication(insertMedication: InsertMedication): Promise<Medication> {
-    const id = randomUUID();
-    const medication: Medication = { ...insertMedication, id };
-    this.medications.set(id, medication);
-    return medication;
+    // Check if medication with same name, dose, and expiration date already exists
+    const existingMedication = Array.from(this.medications.values()).find(med => 
+      med.genericName === insertMedication.genericName &&
+      med.medicalName === insertMedication.medicalName &&
+      med.dose === insertMedication.dose &&
+      med.expirationDate === insertMedication.expirationDate &&
+      med.location === insertMedication.location
+    );
+
+    if (existingMedication) {
+      // Update existing medication quantity instead of creating new one
+      existingMedication.quantity += insertMedication.quantity;
+      this.medications.set(existingMedication.id, existingMedication);
+      return existingMedication;
+    } else {
+      // Create new medication
+      const id = randomUUID();
+      const medication: Medication = { ...insertMedication, id };
+      this.medications.set(id, medication);
+      return medication;
+    }
   }
 
   async updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined> {
@@ -67,7 +84,13 @@ export class MemStorage implements IStorage {
 
   async getLowStockMedications(threshold: number = 5): Promise<Medication[]> {
     return Array.from(this.medications.values()).filter(medication =>
-      medication.quantity <= threshold
+      medication.quantity > 0 && medication.quantity <= threshold
+    );
+  }
+
+  async getOutOfStockMedications(): Promise<Medication[]> {
+    return Array.from(this.medications.values()).filter(medication =>
+      medication.quantity === 0
     );
   }
 

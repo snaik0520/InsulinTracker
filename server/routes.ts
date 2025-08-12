@@ -120,6 +120,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get out of stock medications
+  app.get("/api/medications/out-of-stock", async (req, res) => {
+    try {
+      const outOfStockMedications = await storage.getOutOfStockMedications();
+      res.json(outOfStockMedications);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch out of stock medications" });
+    }
+  });
+
   // Get medication transactions
   app.get("/api/transactions", async (req, res) => {
     try {
