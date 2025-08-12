@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -150,6 +150,30 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     form.setValue("location", capitalized);
   };
 
+  // Watch dose input for special formatting
+  const doseRef = useRef<HTMLInputElement | null>(null);
+  const watchDose = form.watch("dose");
+
+  const handleDoseChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value;
+
+    // If val starts with '.' (like ".5"), add leading 0
+    if (/^\.\d*$/.test(val)) {
+      val = "0" + val;
+    }
+
+    // If val is numeric and less than 1 but does NOT start with 0, add leading zero (e.g., "0.75")
+    // This also ensures user can't enter something like "00.5"
+    if (/^\d*\.?\d*$/.test(val)) {
+      const numericVal = parseFloat(val);
+      if (numericVal < 1 && numericVal > 0 && !val.startsWith("0")) {
+        val = "0" + val;
+      }
+    }
+
+    form.setValue("dose", val);
+  };
+
   // Extra local validation to ensure location (either dropdown or input) is provided
   const validateLocation = () => {
     return watchLocationInput.trim() !== "" || locationDropdownValue !== "";
@@ -295,7 +319,6 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                 onChange={(e) => form.setValue("medicalName", capitalizeWords(e.target.value))}
                 data-testid="input-medical-name"
               />
-              {/* Medical name not required */}
             </div>
           </div>
 
@@ -329,7 +352,8 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               <Input
                 id="dose"
                 placeholder="e.g., 100 units/mL"
-                {...form.register("dose", { required: "Dose is required" })}
+                value={watchDose}
+                onChange={handleDoseChange}
                 data-testid="input-dose"
                 required
               />
