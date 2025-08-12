@@ -80,7 +80,7 @@ export function LowStockAlert() {
                 </div>
                 <div className="text-right">
                   <Badge variant="destructive" className="mb-1">
-                    {medication.quantity} vials left
+                    {medication.quantity} injection left
                   </Badge>
                   <div className="text-xs text-gray-500">
                     {medication.dose}
