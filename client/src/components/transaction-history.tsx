@@ -13,6 +13,7 @@ export function TransactionHistory() {
   const { data: transactions = [], isLoading } = useQuery<MedicationTransaction[]>({
     queryKey: ["/api/transactions"],
     enabled: isOpen, // Only fetch when modal is open
+    refetchOnMount: true,
   });
 
   const formatTimestamp = (timestamp: string | Date) => {

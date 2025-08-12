@@ -27,6 +27,8 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
       toast({
         title: "Success",
         description: `Successfully dispensed ${dispenseQuantity} vial(s)`,

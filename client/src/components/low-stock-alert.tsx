@@ -10,8 +10,9 @@ import { AlertTriangle, ChevronDown, ChevronUp, Package } from "lucide-react";
 export function LowStockAlert() {
   const [isOpen, setIsOpen] = useState(false);
 
-  const { data: lowStockMedications = [], isLoading } = useQuery<Medication[]>({
+  const { data: lowStockMedications = [], isLoading, refetch } = useQuery<Medication[]>({
     queryKey: ["/api/medications/low-stock"],
+    refetchInterval: 5000, // Refetch every 5 seconds to keep data fresh
   });
 
   if (isLoading) {

@@ -4,13 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertMedicationSchema, type InsertMedication } from "@shared/schema";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { insertMedicationSchema, type InsertMedication, type Medication } from "@shared/schema";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Plus } from "lucide-react";
+import { Plus, Package } from "lucide-react";
 
 interface AddMedicationModalProps {
   open: boolean;
@@ -20,6 +21,13 @@ interface AddMedicationModalProps {
 export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [useExistingMedication, setUseExistingMedication] = useState(false);
+
+  // Fetch existing medications for dropdown
+  const { data: existingMedications = [] } = useQuery<Medication[]>({
+    queryKey: ["/api/medications"],
+    enabled: open,
+  });
 
   const form = useForm<InsertMedication>({
     resolver: zodResolver(insertMedicationSchema),
@@ -41,11 +49,14 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
       toast({
         title: "Success",
         description: "Medication added successfully",
       });
       form.reset();
+      setUseExistingMedication(false);
       onOpenChange(false);
     },
     onError: (error: Error) => {
@@ -57,6 +68,20 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     },
   });
 
+  const handleExistingMedicationSelect = (medicationId: string) => {
+    const medication = existingMedications.find(med => med.id === medicationId);
+    if (medication) {
+      form.setValue("genericName", medication.genericName);
+      form.setValue("medicalName", medication.medicalName);
+      form.setValue("type", medication.type);
+      form.setValue("dose", medication.dose);
+      form.setValue("location", medication.location);
+      // Reset quantity and expiration for new stock
+      form.setValue("quantity", 0);
+      form.setValue("expirationDate", "");
+    }
+  };
+
   const onSubmit = (data: InsertMedication) => {
     addMedicationMutation.mutate(data);
   };
@@ -67,11 +92,49 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plus className="h-5 w-5 text-primary" />
-            Add New Insulin Medication
+            Add Insulin Medication
           </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          {/* Existing medication selector */}
+          {existingMedications.length > 0 && (
+            <div className="space-y-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="use-existing" className="text-sm font-medium">
+                  Add to existing medication stock
+                </Label>
+                <Switch
+                  id="use-existing"
+                  checked={useExistingMedication}
+                  onCheckedChange={setUseExistingMedication}
+                  data-testid="switch-use-existing"
+                />
+              </div>
+              
+              {useExistingMedication && (
+                <div>
+                  <Label htmlFor="existing-medication">Select Existing Medication</Label>
+                  <Select onValueChange={handleExistingMedicationSelect}>
+                    <SelectTrigger data-testid="select-existing-medication">
+                      <SelectValue placeholder="Choose from current inventory..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {existingMedications.map((medication) => (
+                        <SelectItem key={medication.id} value={medication.id}>
+                          <div className="flex items-center justify-between w-full">
+                            <span>{medication.genericName} ({medication.medicalName})</span>
+                            <span className="text-xs text-gray-500 ml-2">{medication.quantity} vials</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="genericName">Generic Name</Label>
