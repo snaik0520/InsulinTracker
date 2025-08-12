@@ -162,32 +162,3 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
     </Dialog>
   );
 }
-
-const [selectedMedicationId, setSelectedMedicationId] = useState("");
-
-// inside the Select component:
-<Select
-  value={selectedMedicationId}
-  onValueChange={(id) => {
-    setSelectedMedicationId(id);
-    const med = existingMedications.find((m) => m.id === id);
-    if (med) {
-      form.setValue("genericName", med.genericName);
-      form.setValue("medicalName", med.medicalName);
-      form.setValue("type", med.type);
-      form.setValue("dose", med.dose);
-      form.setValue("location", med.location);
-    }
-  }}
->
-  <SelectTrigger>
-    <SelectValue placeholder="Select Existing Medication (Optional)" />
-  </SelectTrigger>
-  <SelectContent>
-    {existingMedications.map((med) => (
-      <SelectItem key={med.id} value={med.id}>
-        {med.genericName} ({med.medicalName}) — {med.quantity}
-      </SelectItem>
-    ))}
-  </SelectContent>
-</Select>
