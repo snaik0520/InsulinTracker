@@ -24,10 +24,32 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   const [useExistingMedication, setUseExistingMedication] = useState(false);
 
   // Fetch existing medications for dropdown
-  const { data: existingMedications = [] } = useQuery<Medication[]>({
+  const { data: allMedications = [] } = useQuery<Medication[]>({
     queryKey: ["/api/medications"],
     enabled: open,
   });
+
+  // Get unique medications by name (combining generic and medical name)
+  const existingMedications = allMedications.reduce((unique, medication) => {
+    const existingMed = unique.find(m => 
+      m.genericName === medication.genericName && 
+      m.medicalName === medication.medicalName
+    );
+    
+    if (!existingMed) {
+      // Add the first occurrence with combined quantity from all expiration dates
+      const totalQuantity = allMedications
+        .filter(m => m.genericName === medication.genericName && m.medicalName === medication.medicalName)
+        .reduce((sum, m) => sum + m.quantity, 0);
+      
+      unique.push({
+        ...medication,
+        quantity: totalQuantity
+      });
+    }
+    
+    return unique;
+  }, [] as Medication[]);
 
   const form = useForm<InsertMedication>({
     resolver: zodResolver(insertMedicationSchema),
