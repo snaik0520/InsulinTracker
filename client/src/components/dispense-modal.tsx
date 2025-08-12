@@ -32,7 +32,7 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
       toast({
         title: "Success",
         description: `Successfully dispensed ${dispenseQuantity} injection(s)`,
-        duration: 3000, // 3 seconds
+        duration: 3000,
       });
       setDispenseQuantity(1);
       onOpenChange(false);
@@ -42,14 +42,14 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
         title: "Error",
         description: error.message,
         variant: "destructive",
-        duration: 3000, // 3 seconds
+        duration: 3000,
       });
     },
   });
 
   const handleDispense = () => {
     if (!medication) return;
-    
+
     if (dispenseQuantity > medication.quantity) {
       toast({
         title: "Error",
@@ -92,7 +92,8 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
         <div className="space-y-4">
           <div>
             <p className="text-sm text-gray-900" data-testid="text-medication-name">
-              {medication.genericName} ({medication.medicalName})
+              {medication.genericName}
+              {medication.medicalName ? ` (${medication.medicalName})` : ""}
             </p>
             <p className="text-xs text-gray-500 mt-1" data-testid="text-available-stock">
               Available: {medication.quantity} injections
