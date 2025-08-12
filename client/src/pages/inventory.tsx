@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { AddMedicationModal } from "@/components/add-medication-modal";
 import { DispenseModal } from "@/components/dispense-modal";
+import { LowStockAlert } from "@/components/low-stock-alert";
+import { TransactionHistory } from "@/components/transaction-history";
 import { type Medication } from "@shared/schema";
 import { Search, Plus, HandHeart, Heart, Zap, Clock, Scale, HelpCircle, List } from "lucide-react";
 
@@ -151,15 +153,18 @@ export default function Inventory() {
                 </div>
               </div>
 
-              {/* Add New Medication Button */}
-              <Button
-                onClick={() => setIsAddModalOpen(true)}
-                className="bg-primary hover:bg-primary/90"
-                data-testid="button-add-medication"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add New Medication
-              </Button>
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <TransactionHistory />
+                <Button
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="bg-primary hover:bg-primary/90"
+                  data-testid="button-add-medication"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add New Medication
+                </Button>
+              </div>
             </div>
 
             {/* Insulin Type Filter Buttons */}
@@ -194,6 +199,11 @@ export default function Inventory() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Low Stock Alert */}
+        <div className="mb-6">
+          <LowStockAlert />
+        </div>
 
         {/* Inventory Table */}
         <Card>

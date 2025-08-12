@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertMedicationSchema } from "@shared/schema";
+import { insertMedicationSchema, insertTransactionSchema } from "@shared/schema";
 import { z } from "zod";
 
 const dispenseSchema = z.object({
@@ -51,6 +51,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const medicationData = insertMedicationSchema.parse(req.body);
       const medication = await storage.createMedication(medicationData);
+      
+      // Log the addition transaction
+      await storage.createTransaction({
+        medicationId: medication.id,
+        medicationName: `${medication.genericName} (${medication.medicalName})`,
+        type: "addition",
+        quantity: medication.quantity,
+        notes: "New medication added to inventory"
+      });
+      
       res.status(201).json(medication);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -80,6 +90,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         medication.quantity - quantity
       );
 
+      // Log the dispensing transaction
+      await storage.createTransaction({
+        medicationId: medication.id,
+        medicationName: `${medication.genericName} (${medication.medicalName})`,
+        type: "dispensed",
+        quantity: quantity,
+        notes: `Dispensed to patient`
+      });
+
       res.json(updatedMedication);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -87,6 +106,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         res.status(500).json({ error: "Failed to dispense medication" });
       }
+    }
+  });
+
+  // Get low stock medications
+  app.get("/api/medications/low-stock", async (req, res) => {
+    try {
+      const threshold = req.query.threshold ? parseInt(req.query.threshold as string) : 5;
+      const lowStockMedications = await storage.getLowStockMedications(threshold);
+      res.json(lowStockMedications);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch low stock medications" });
+    }
+  });
+
+  // Get medication transactions
+  app.get("/api/transactions", async (req, res) => {
+    try {
+      const transactions = await storage.getTransactions();
+      res.json(transactions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch transactions" });
     }
   });
 

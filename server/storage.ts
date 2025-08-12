@@ -64,6 +64,30 @@ export class MemStorage implements IStorage {
       medication.type === type
     );
   }
+
+  async getLowStockMedications(threshold: number = 5): Promise<Medication[]> {
+    return Array.from(this.medications.values()).filter(medication =>
+      medication.quantity <= threshold
+    );
+  }
+
+  async getTransactions(): Promise<MedicationTransaction[]> {
+    return Array.from(this.transactions.values()).sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+  }
+
+  async createTransaction(insertTransaction: InsertTransaction): Promise<MedicationTransaction> {
+    const id = randomUUID();
+    const transaction: MedicationTransaction = { 
+      ...insertTransaction, 
+      id, 
+      timestamp: new Date() as any,
+      notes: insertTransaction.notes || null
+    };
+    this.transactions.set(id, transaction);
+    return transaction;
+  }
 }
 
 export const storage = new MemStorage();
