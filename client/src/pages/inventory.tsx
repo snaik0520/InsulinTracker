@@ -125,7 +125,7 @@ export default function Inventory() {
               <h1 className="text-xl font-semibold text-gray-900">Insulin Inventory Management</h1>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">Free Clinic System</span>
+              <span className="text-sm text-gray-600">SLO Noor Foundation</span>
               <div className="h-8 w-8 bg-primary rounded-full flex items-center justify-center">
                 <span className="text-white text-sm font-medium">U</span>
               </div>
