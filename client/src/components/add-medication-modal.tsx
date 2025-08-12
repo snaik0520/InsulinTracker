@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,7 @@ import { insertMedicationSchema, type InsertMedication, type Medication } from "
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Package } from "lucide-react";
+import { Plus } from "lucide-react";
 
 interface AddMedicationModalProps {
   open: boolean;
@@ -22,32 +22,35 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Fetch existing medications for dropdown
-  const { data: allMedications = [] } = useQuery<Medication[]>({
+  // Fetch existing medications for dropdown (provide queryFn)
+  const { data: allMedications = [], isLoading: medsLoading, isError: medsError } = useQuery<Medication[]>({
     queryKey: ["/api/medications"],
-    enabled: open,
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/medications");
+      // assume apiRequest returns a Response-like object; adjust if it already returns parsed JSON
+      // if apiRequest already returns parsed JSON, just `return res;`
+      return res.json();
+    },
+    enabled: open, // only fetch when modal is opened
+    staleTime: 1000 * 60 * 2, // 2 minutes
   });
 
-  // Get unique medications by name (combining generic and medical name)
-  const existingMedications = allMedications.reduce((unique, medication) => {
-    const existingMed = unique.find(m => 
-      m.genericName === medication.genericName && 
-      m.medicalName === medication.medicalName
-    );
-    
-    if (!existingMed) {
-      const totalQuantity = allMedications
-        .filter(m => m.genericName === medication.genericName && m.medicalName === medication.medicalName)
-        .reduce((sum, m) => sum + m.quantity, 0);
-      
-      unique.push({
-        ...medication,
-        quantity: totalQuantity
-      });
+  // Build unique medication list (group by generic+medical name) and sum quantity
+  const existingMedications = useMemo(() => {
+    const map = new Map<string, Medication & { quantity: number }>();
+
+    for (const med of allMedications) {
+      const key = `${med.genericName || ""}||${med.medicalName || ""}`;
+      if (!map.has(key)) {
+        map.set(key, { ...med, quantity: med.quantity ?? 0 });
+      } else {
+        const existing = map.get(key)!;
+        existing.quantity = (existing.quantity ?? 0) + (med.quantity ?? 0);
+      }
     }
-    
-    return unique;
-  }, [] as Medication[]);
+
+    return Array.from(map.values());
+  }, [allMedications]);
 
   const form = useForm<InsertMedication>({
     resolver: zodResolver(insertMedicationSchema),
@@ -78,10 +81,10 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       form.reset();
       onOpenChange(false);
     },
-    onError: (error: Error) => {
+    onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.message,
+        description: error?.message ?? "An error occurred",
         variant: "destructive",
       });
     },
@@ -117,7 +120,11 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
 
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
           {/* Existing medication selector at the top */}
-          {existingMedications.length > 0 && (
+          {medsLoading ? (
+            <div className="p-3">Loading medications...</div>
+          ) : medsError ? (
+            <div className="p-3 text-destructive">Failed to load existing medications.</div>
+          ) : existingMedications.length > 0 ? (
             <div className="space-y-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
               <Label htmlFor="existing-medication" className="text-sm font-medium text-blue-800">
                 Select Existing Medication (Optional)
@@ -131,13 +138,15 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                     <SelectItem key={medication.id} value={medication.id}>
                       <div className="flex items-center justify-between w-full">
                         <span>{medication.genericName} ({medication.medicalName})</span>
-                        <span className="text-xs text-gray-500 ml-2">{medication.quantity} vials</span>
+                        <span className="text-xs text-gray-500 ml-2">{medication.quantity ?? 0} vials</span>
                       </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+          ) : (
+            <div className="p-3 text-sm text-muted-foreground">No existing medications in inventory.</div>
           )}
 
           <div className="grid grid-cols-2 gap-4">
@@ -264,10 +273,10 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             <Button
               type="submit"
               className="flex-1"
-              disabled={addMedicationMutation.isPending}
+              disabled={addMedicationMutation.isLoading}
               data-testid="button-add-medication"
             >
-              {addMedicationMutation.isPending ? (
+              {addMedicationMutation.isLoading ? (
                 "Adding..."
               ) : (
                 <>
