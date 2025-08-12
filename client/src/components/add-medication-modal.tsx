@@ -77,6 +77,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       toast({
         title: "Success",
         description: "Medication added successfully",
+        duration: 3000, // 3 seconds
       });
       form.reset();
       onOpenChange(false);
@@ -86,6 +87,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
         title: "Error",
         description: error?.message ?? "An error occurred",
         variant: "destructive",
+        duration: 3000, // 3 seconds
       });
     },
   });
