@@ -22,7 +22,6 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Capitalize first letter of each word helper
   const capitalizeWords = (str: string) => str.replace(/\b\w/g, (c) => c.toUpperCase());
 
   // Fetch medications
@@ -141,22 +140,6 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     }
   }, [watchLocationInput]);
 
-  // Handle location input change with capitalization
-  const handleLocationInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const capitalized = capitalizeWords(e.target.value);
-    form.setValue("location", capitalized);
-  };
-
-  // Similarly capitalize generic and medical names on change
-  const handleGenericNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const capitalized = capitalizeWords(e.target.value);
-    form.setValue("genericName", capitalized);
-  };
-  const handleMedicalNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const capitalized = capitalizeWords(e.target.value);
-    form.setValue("medicalName", capitalized);
-  };
-
   // On submit, determine effective location:
   // If user typed new location (text input) use that, else use selected dropdown location
   const onSubmit = (data: InsertMedication) => {
@@ -213,19 +196,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               <Label htmlFor="existing-medication" className="text-sm font-medium text-blue-800">
                 Select Existing Medication (Optional)
               </Label>
-              <Select
-                onValueChange={handleExistingMedicationSelect}
-                value={
-                  form.watch("genericName")
-                    ? existingMedications.find(
-                        (med) =>
-                          med.genericName === form.watch("genericName") &&
-                          med.medicalName === form.watch("medicalName")
-                      )?.id ?? ""
-                    : ""
-                }
-                defaultValue=""
-              >
+              <Select onValueChange={handleExistingMedicationSelect} value={form.watch("genericName") ? existingMedications.find(med => med.genericName === form.watch("genericName") && med.medicalName === form.watch("medicalName"))?.id ?? "" : ""} defaultValue="">
                 <SelectTrigger id="existing-medication" data-testid="select-existing-medication" className="w-full">
                   <SelectValue placeholder="Select" />
                 </SelectTrigger>
@@ -255,7 +226,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                 id="genericName"
                 placeholder="e.g., Insulin Lispro"
                 value={form.watch("genericName")}
-                onChange={handleGenericNameChange}
+                onChange={(e) => form.setValue("genericName", capitalizeWords(e.target.value))}
                 data-testid="input-generic-name"
               />
               {form.formState.errors.genericName && (
@@ -269,7 +240,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                 id="medicalName"
                 placeholder="e.g., Humalog"
                 value={form.watch("medicalName")}
-                onChange={handleMedicalNameChange}
+                onChange={(e) => form.setValue("medicalName", capitalizeWords(e.target.value))}
                 data-testid="input-medical-name"
               />
               {form.formState.errors.medicalName && (
@@ -367,7 +338,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               id="location"
               placeholder="Or type new location here"
               value={watchLocationInput}
-              onChange={handleLocationInputChange}
+              onChange={(e) => form.setValue("location", e.target.value)}
               className="mt-2"
               data-testid="input-location"
             />
