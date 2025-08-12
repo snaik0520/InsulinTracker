@@ -12,6 +12,7 @@ import { OutOfStockTracker } from "@/components/out-of-stock-tracker";
 import { TransactionHistory } from "@/components/transaction-history";
 import { type Medication } from "@shared/schema";
 import { Search, Plus, HandHeart, Syringe, Zap, Clock, Scale, HelpCircle, List } from "lucide-react";
+import logo from "../assets/noor-logo.png";
 
 const typeIcons = {
   rapid: Zap,
@@ -127,7 +128,7 @@ export default function Inventory() {
             <div className="flex items-center space-x-4">
               <span className="text-sm text-gray-600">SLO Noor Foundation</span>
               <img
-                src="/images/noor-logo.png"
+                src={logo}
                 alt="SLO Noor Foundation logo"
                 data-testid="logo"
               />
