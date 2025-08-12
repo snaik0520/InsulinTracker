@@ -27,15 +27,15 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     return str.replace(/\b\w/g, (c) => c.toUpperCase());
   };
 
-  // Fetch existing medications for dropdown (provide queryFn)
+  // Fetch existing medications for dropdown
   const { data: allMedications = [], isLoading: medsLoading, isError: medsError } = useQuery<Medication[]>({
     queryKey: ["/api/medications"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/medications");
       return res.json();
     },
-    enabled: open, // only fetch when modal is opened
-    staleTime: 1000 * 60 * 2, // 2 minutes
+    enabled: open,
+    staleTime: 1000 * 60 * 2,
   });
 
   // Build unique medication list (group by generic+medical name) and sum quantity
@@ -91,7 +91,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       toast({
         title: "Success",
         description: "Medication added successfully",
-        duration: 3000, // 3 seconds
+        duration: 3000,
       });
       form.reset();
       onOpenChange(false);
@@ -101,7 +101,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
         title: "Error",
         description: error?.message ?? "An error occurred",
         variant: "destructive",
-        duration: 3000, // 3 seconds
+        duration: 3000,
       });
     },
   });
@@ -114,10 +114,14 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       form.setValue("type", medication.type || "");
       form.setValue("dose", medication.dose || "");
       form.setValue("location", medication.location || "");
-      // Reset quantity and expiration for new stock
       form.setValue("quantity", 0);
       form.setValue("expirationDate", "");
     }
+  };
+
+  // Handle location selection from dropdown
+  const handleExistingLocationSelect = (location: string) => {
+    form.setValue("location", location);
   };
 
   const onSubmit = (data: InsertMedication) => {
@@ -135,7 +139,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
         </DialogHeader>
 
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          {/* Existing medication selector at the top */}
+          {/* Existing medication selector */}
           {medsLoading ? (
             <div className="p-3">Loading medications...</div>
           ) : medsError ? (
@@ -165,6 +169,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             <div className="p-3 text-sm text-muted-foreground">No existing medications in inventory.</div>
           )}
 
+          {/* Medication fields */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="genericName">Generic Name</Label>
@@ -277,13 +282,15 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             <Label htmlFor="existing-location" className="text-sm font-medium text-green-800">
               Select Existing Storage Location (Optional)
             </Label>
+
             {existingLocations.length > 0 ? (
               <Select
-                onValueChange={(value) => form.setValue("location", value)}
+                onValueChange={handleExistingLocationSelect}
                 defaultValue=""
+                value={form.watch("location") || ""}
               >
                 <SelectTrigger id="existing-location" data-testid="select-existing-location" className="w-full">
-                  <SelectValue placeholder="Select a location" />
+                  <SelectValue placeholder="Select a location or type new..." />
                 </SelectTrigger>
                 <SelectContent>
                   {existingLocations.map((loc) => (
@@ -295,6 +302,19 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               </Select>
             ) : (
               <div className="p-3 text-sm text-muted-foreground">No existing storage locations found.</div>
+            )}
+
+            {/* Free text input for new location */}
+            <Input
+              id="location"
+              placeholder="Or type new location here"
+              value={form.watch("location")}
+              onChange={(e) => form.setValue("location", e.target.value)}
+              className="mt-2"
+              data-testid="input-location"
+            />
+            {form.formState.errors.location && (
+              <p className="text-sm text-destructive mt-1">{form.formState.errors.location.message}</p>
             )}
           </div>
 
