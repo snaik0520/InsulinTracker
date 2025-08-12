@@ -1,76 +1,53 @@
-/* ────────────────────────────────────────────────
-   AddMedicationModal
-   (fixed equality bug + graceful error handling)
-──────────────────────────────────────────────── */
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import {
-  insertMedicationSchema,
-  type InsertMedication,
-  type Medication,
-} from "@shared/schema";
-import {
-  useMutation,
-  useQueryClient,
-  useQuery,
-} from "@tanstack/react-query";
+import { insertMedicationSchema, type InsertMedication, type Medication } from "@shared/schema";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Plus } from "lucide-react";
+import { Plus, Package } from "lucide-react";
 
-interface Props {
+interface AddMedicationModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-function AddMedicationModal({ open, onOpenChange }: Props) {
+export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalProps) {
   const { toast } = useToast();
-  const qc = useQueryClient();
+  const queryClient = useQueryClient();
 
-  const { data: allMeds = [], isError } = useQuery<Medication[]>({
+  // Fetch existing medications for dropdown
+  const { data: allMedications = [] } = useQuery<Medication[]>({
     queryKey: ["/api/medications"],
     enabled: open,
-    retry: false,
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/medications");
-      if (!res.ok) throw new Error("Could not load medications");
-      return res.json();
-    },
   });
 
-  const uniqueMeds = allMeds.reduce((acc, med) => {
-    const exists = acc.find(
-      (m) =>
-        m.genericName === med.genericName &&
-        m.medicalName === med.medicalName
+  // Get unique medications by name (combining generic and medical name)
+  const existingMedications = allMedications.reduce((unique, medication) => {
+    const existingMed = unique.find(m => 
+      m.genericName === medication.genericName && 
+      m.medicalName === medication.medicalName
     );
-    if (!exists) {
-      const total = allMeds
-        .filter(
-          (m): m is Medication =>
-            m.genericName === med.genericName &&
-            m.medicalName === med.medicalName
-        )
-        .reduce((s, m) => s + m.quantity, 0);
-      acc.push({ ...med, quantity: total });
+    
+    if (!existingMed) {
+      // Add the first occurrence with combined quantity from all expiration dates
+      const totalQuantity = allMedications
+        .filter(m => m.genericName === medication.genericName && m.medicalName === medication.medicalName)
+        .reduce((sum, m) => sum + m.quantity, 0);
+      
+      unique.push({
+        ...medication,
+        quantity: totalQuantity
+      });
     }
-    return acc;
+    
+    return unique;
   }, [] as Medication[]);
 
   const form = useForm<InsertMedication>({
@@ -86,45 +63,52 @@ function AddMedicationModal({ open, onOpenChange }: Props) {
     },
   });
 
-  const addMutation = useMutation({
-    mutationFn: async (d: InsertMedication) => {
-      const res = await apiRequest("POST", "/api/medications", d);
-      if (!res.ok) throw new Error("Server error");
-      return res.json();
+  const addMedicationMutation = useMutation({
+    mutationFn: async (data: InsertMedication) => {
+      const response = await apiRequest("POST", "/api/medications", data);
+      return response.json();
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/medications"] });
-      qc.invalidateQueries({ queryKey: ["/api/transactions"] });
-      toast({ title: "Success", description: "Medication added." });
+      queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
+      toast({
+        title: "Success",
+        description: "Medication added successfully",
+      });
       form.reset();
       onOpenChange(false);
     },
-    onError: (e: Error) =>
+    onError: (error: Error) => {
       toast({
         title: "Error",
-        description: e.message,
+        description: error.message,
         variant: "destructive",
-      }),
+      });
+    },
   });
 
-  const autofill = (id: string) => {
-    const m = uniqueMeds.find((x) => x.id === id);
-    if (!m) return;
-    form.reset({
-      ...form.getValues(),
-      genericName: m.genericName,
-      medicalName: m.medicalName,
-      type: m.type,
-      dose: m.dose,
-      location: m.location,
-      quantity: 0,
-      expirationDate: "",
-    });
+  const handleExistingMedicationSelect = (medicationId: string) => {
+    const medication = existingMedications.find(med => med.id === medicationId);
+    if (medication) {
+      form.setValue("genericName", medication.genericName);
+      form.setValue("medicalName", medication.medicalName);
+      form.setValue("type", medication.type);
+      form.setValue("dose", medication.dose);
+      form.setValue("location", medication.location);
+      // Reset quantity and expiration for new stock
+      form.setValue("quantity", 0);
+      form.setValue("expirationDate", "");
+    }
+  };
+
+  const onSubmit = (data: InsertMedication) => {
+    addMedicationMutation.mutate(data);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg" data-testid="modal-add-medication">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plus className="h-5 w-5 text-primary" />
@@ -132,64 +116,76 @@ function AddMedicationModal({ open, onOpenChange }: Props) {
           </DialogTitle>
         </DialogHeader>
 
-        {!isError && uniqueMeds.length > 0 && (
-          <div className="space-y-3 p-4 bg-blue-50 rounded-lg border border-blue-200 mb-4">
-            <Label className="text-sm font-medium text-blue-800">
-              Select Existing Medication (optional)
-            </Label>
-            <Select onValueChange={autofill}>
-              <SelectTrigger>
-                <SelectValue placeholder="Choose an existing medication..." />
-              </SelectTrigger>
-              <SelectContent>
-                {uniqueMeds.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    <div className="flex justify-between w-full">
-                      <span>
-                        {m.genericName} ({m.medicalName})
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {m.quantity} vials
-                      </span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          {/* Existing medication selector */}
+          {existingMedications.length > 0 && (
+            <div className="space-y-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div>
+                <Label htmlFor="existing-medication" className="text-sm font-medium text-blue-800">
+                  Select Existing Medication (Optional)
+                </Label>
+                <p className="text-xs text-blue-600 mb-2">
+                  Choose from current inventory to automatically fill medication details
+                </p>
+                <Select onValueChange={handleExistingMedicationSelect}>
+                  <SelectTrigger data-testid="select-existing-medication">
+                    <SelectValue placeholder="Choose from current inventory or leave blank for new medication..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {existingMedications.map((medication) => (
+                      <SelectItem key={medication.id} value={medication.id}>
+                        <div className="flex items-center justify-between w-full">
+                          <span>{medication.genericName} ({medication.medicalName})</span>
+                          <span className="text-xs text-gray-500 ml-2">{medication.quantity} vials</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
 
-        <form
-          onSubmit={form.handleSubmit((d) => addMutation.mutate(d))}
-          className="space-y-4"
-        >
-          {/* names */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label>Generic Name</Label>
+              <Label htmlFor="genericName">Generic Name</Label>
               <Input
+                id="genericName"
                 placeholder="e.g., Insulin Lispro"
                 {...form.register("genericName")}
+                data-testid="input-generic-name"
               />
+              {form.formState.errors.genericName && (
+                <p className="text-sm text-destructive mt-1">
+                  {form.formState.errors.genericName.message}
+                </p>
+              )}
             </div>
+
             <div>
-              <Label>Brand / Medical Name</Label>
+              <Label htmlFor="medicalName">Brand/Medical Name</Label>
               <Input
+                id="medicalName"
                 placeholder="e.g., Humalog"
                 {...form.register("medicalName")}
+                data-testid="input-medical-name"
               />
+              {form.formState.errors.medicalName && (
+                <p className="text-sm text-destructive mt-1">
+                  {form.formState.errors.medicalName.message}
+                </p>
+              )}
             </div>
           </div>
 
-          {/* type + dose */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label>Insulin Type</Label>
+              <Label htmlFor="type">Insulin Type</Label>
               <Select
                 value={form.watch("type")}
-                onValueChange={(v) => form.setValue("type", v)}
+                onValueChange={(value) => form.setValue("type", value)}
               >
-                <SelectTrigger>
+                <SelectTrigger data-testid="select-insulin-type">
                   <SelectValue placeholder="Select type..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -199,47 +195,99 @@ function AddMedicationModal({ open, onOpenChange }: Props) {
                   <SelectItem value="other">Other</SelectItem>
                 </SelectContent>
               </Select>
+              {form.formState.errors.type && (
+                <p className="text-sm text-destructive mt-1">
+                  {form.formState.errors.type.message}
+                </p>
+              )}
             </div>
+
             <div>
-              <Label>Dose</Label>
+              <Label htmlFor="dose">Dose</Label>
               <Input
+                id="dose"
                 placeholder="e.g., 100 units/mL"
                 {...form.register("dose")}
+                data-testid="input-dose"
               />
+              {form.formState.errors.dose && (
+                <p className="text-sm text-destructive mt-1">
+                  {form.formState.errors.dose.message}
+                </p>
+              )}
             </div>
           </div>
 
-          {/* quantity + expiration */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label>Quantity</Label>
+              <Label htmlFor="quantity">Quantity</Label>
               <Input
+                id="quantity"
                 type="number"
-                min={0}
+                min="0"
                 {...form.register("quantity", { valueAsNumber: true })}
+                data-testid="input-quantity"
               />
+              {form.formState.errors.quantity && (
+                <p className="text-sm text-destructive mt-1">
+                  {form.formState.errors.quantity.message}
+                </p>
+              )}
             </div>
+
             <div>
-              <Label>Expiration Date</Label>
-              <Input type="date" {...form.register("expirationDate")} />
+              <Label htmlFor="expirationDate">Expiration Date</Label>
+              <Input
+                id="expirationDate"
+                type="date"
+                {...form.register("expirationDate")}
+                data-testid="input-expiration-date"
+              />
+              {form.formState.errors.expirationDate && (
+                <p className="text-sm text-destructive mt-1">
+                  {form.formState.errors.expirationDate.message}
+                </p>
+              )}
             </div>
           </div>
 
-          {/* location */}
           <div>
-            <Label>Storage Location</Label>
+            <Label htmlFor="location">Storage Location</Label>
             <Input
-              placeholder="e.g., Fridge A – Shelf 2"
+              id="location"
+              placeholder="e.g., Fridge A - Shelf 2"
               {...form.register("location")}
+              data-testid="input-location"
             />
+            {form.formState.errors.location && (
+              <p className="text-sm text-destructive mt-1">
+                {form.formState.errors.location.message}
+              </p>
+            )}
           </div>
 
-          {/* actions */}
           <div className="flex gap-3 pt-4">
-            <Button type="submit" className="flex-1" disabled={addMutation.isPending}>
-              {addMutation.isPending ? "Adding…" : "Add Medication"}
+            <Button
+              type="submit"
+              className="flex-1"
+              disabled={addMedicationMutation.isPending}
+              data-testid="button-add-medication"
+            >
+              {addMedicationMutation.isPending ? (
+                "Adding..."
+              ) : (
+                <>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Medication
+                </>
+              )}
             </Button>
-            <Button variant="outline" type="button" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              data-testid="button-cancel"
+            >
               Cancel
             </Button>
           </div>
@@ -248,10 +296,3 @@ function AddMedicationModal({ open, onOpenChange }: Props) {
     </Dialog>
   );
 }
-
-/* ──────────────────────────────────────────
-   Export BOTH default and named so imports
-   using either style work.
-────────────────────────────────────────── */
-export default AddMedicationModal;
-export { AddMedicationModal };
