@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { AddMedicationModal } from "@/components/add-medication-modal";
 import { DispenseModal } from "@/components/dispense-modal";
 import { LowStockTicker } from "@/components/low-stock-ticker";
+import { OutOfStockTracker } from "@/components/out-of-stock-tracker";
 import { TransactionHistory } from "@/components/transaction-history";
 import { type Medication } from "@shared/schema";
 import { Search, Plus, HandHeart, Heart, Zap, Clock, Scale, HelpCircle, List } from "lucide-react";
@@ -75,6 +76,9 @@ export default function Inventory() {
 
   const filteredMedications = useMemo(() => {
     let filtered = medications;
+
+    // Filter out medications with 0 quantity
+    filtered = filtered.filter(medication => medication.quantity > 0);
 
     // Filter by search query
     if (searchQuery) {
@@ -293,9 +297,6 @@ export default function Inventory() {
                             <span className="text-sm text-gray-900" data-testid="text-expiration-date">
                               {new Date(medication.expirationDate).toLocaleDateString()}
                             </span>
-                            <div className={`text-xs ${getExpirationClassName(daysUntilExpiration)}`}>
-                              {daysUntilExpiration} days left
-                            </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" data-testid="text-location">
                             {medication.location}
@@ -324,6 +325,9 @@ export default function Inventory() {
 
         {/* Low Stock Ticker */}
         <LowStockTicker />
+        
+        {/* Out of Stock Tracker */}
+        <OutOfStockTracker />
       </main>
 
       {/* Modals */}
