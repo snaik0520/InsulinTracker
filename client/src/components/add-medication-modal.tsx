@@ -36,7 +36,6 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     );
     
     if (!existingMed) {
-      // Add the first occurrence with combined quantity from all expiration dates
       const totalQuantity = allMedications
         .filter(m => m.genericName === medication.genericName && m.medicalName === medication.medicalName)
         .reduce((sum, m) => sum + m.quantity, 0);
@@ -91,11 +90,11 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   const handleExistingMedicationSelect = (medicationId: string) => {
     const medication = existingMedications.find(med => med.id === medicationId);
     if (medication) {
-      form.setValue("genericName", medication.genericName);
-      form.setValue("medicalName", medication.medicalName);
-      form.setValue("type", medication.type);
-      form.setValue("dose", medication.dose);
-      form.setValue("location", medication.location);
+      form.setValue("genericName", medication.genericName || "");
+      form.setValue("medicalName", medication.medicalName || "");
+      form.setValue("type", medication.type || "");
+      form.setValue("dose", medication.dose || "");
+      form.setValue("location", medication.location || "");
       // Reset quantity and expiration for new stock
       form.setValue("quantity", 0);
       form.setValue("expirationDate", "");
@@ -116,33 +115,28 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
           </DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-          {/* Existing medication selector */}
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          {/* Existing medication selector at the top */}
           {existingMedications.length > 0 && (
-            <div className="space-y-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <div>
-                <Label htmlFor="existing-medication" className="text-sm font-medium text-blue-800">
-                  Select Existing Medication (Optional)
-                </Label>
-                <p className="text-xs text-blue-600 mb-2">
-                  Choose from current inventory to automatically fill medication details
-                </p>
-                <Select onValueChange={handleExistingMedicationSelect}>
-                  <SelectTrigger data-testid="select-existing-medication">
-                    <SelectValue placeholder="Choose from current inventory or leave blank for new medication..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {existingMedications.map((medication) => (
-                      <SelectItem key={medication.id} value={medication.id}>
-                        <div className="flex items-center justify-between w-full">
-                          <span>{medication.genericName} ({medication.medicalName})</span>
-                          <span className="text-xs text-gray-500 ml-2">{medication.quantity} vials</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="space-y-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+              <Label htmlFor="existing-medication" className="text-sm font-medium text-blue-800">
+                Select Existing Medication (Optional)
+              </Label>
+              <Select onValueChange={handleExistingMedicationSelect} defaultValue="">
+                <SelectTrigger id="existing-medication" data-testid="select-existing-medication" className="w-full">
+                  <SelectValue placeholder="Choose from current inventory or leave blank for new medication..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {existingMedications.map((medication) => (
+                    <SelectItem key={medication.id} value={medication.id}>
+                      <div className="flex items-center justify-between w-full">
+                        <span>{medication.genericName} ({medication.medicalName})</span>
+                        <span className="text-xs text-gray-500 ml-2">{medication.quantity} vials</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
 
