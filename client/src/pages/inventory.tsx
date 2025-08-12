@@ -129,7 +129,6 @@ export default function Inventory() {
               <img
                 src="/images/noor-logo.png"
                 alt="SLO Noor Foundation logo"
-                className="h-8 w-8 object-contain rounded-full"
                 data-testid="logo"
               />
             </div>
