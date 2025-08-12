@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react"; 
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { LowStockTicker } from "@/components/low-stock-ticker";
 import { OutOfStockTracker } from "@/components/out-of-stock-tracker";
 import { TransactionHistory } from "@/components/transaction-history";
 import { type Medication } from "@shared/schema";
-import { Search, Plus, HandHeart, Syringe, Zap, Clock, Scale, HelpCircle, List } from "lucide-react";
+import { Search, Plus, HandHeart, Syringe, Zap, Clock, Scale, HelpCircle, List, Move } from "lucide-react";
 import logo from "../assets/noor-logo.png";
 
 const typeIcons = {
@@ -64,16 +64,120 @@ const getExpirationClassName = (days: number) => {
   return "text-green-600";
 };
 
+// New MoveModal component for moving meds
+function MoveModal({
+  open,
+  onOpenChange,
+  medication,
+  onMove,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  medication: Medication | null;
+  onMove: (med: Medication, quantity: number, location: string, comments: string) => void;
+}) {
+  const [quantity, setQuantity] = useState(1);
+  const [location, setLocation] = useState(medication?.location ?? "");
+  const [comments, setComments] = useState("");
+
+  if (!medication) return null;
+
+  const maxQuantity = medication.quantity;
+
+  const handleSubmit = () => {
+    if (quantity <= 0 || quantity > maxQuantity) {
+      alert(`Please enter a quantity between 1 and ${maxQuantity}`);
+      return;
+    }
+    if (!location.trim()) {
+      alert("Please enter a location to move to.");
+      return;
+    }
+    onMove(medication, quantity, location.trim(), comments.trim());
+    setQuantity(1);
+    setLocation("");
+    setComments("");
+    onOpenChange(false);
+  };
+
+  return (
+    <div
+      className={`fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50 ${
+        open ? "block" : "hidden"
+      }`}
+      onClick={() => onOpenChange(false)}
+    >
+      <div
+        className="bg-white rounded-lg p-6 max-w-md w-full"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-xl font-semibold mb-4">Move Medication</h2>
+        <p className="mb-2">
+          Moving <strong>{medication.genericName}</strong> (Available: {medication.quantity})
+        </p>
+
+        <Label htmlFor="move-quantity" className="block mb-1 font-medium">Quantity to move</Label>
+        <Input
+          id="move-quantity"
+          type="number"
+          min={1}
+          max={maxQuantity}
+          value={quantity}
+          onChange={(e) => setQuantity(Number(e.target.value))}
+          className="mb-4"
+        />
+
+        <Label htmlFor="move-location" className="block mb-1 font-medium">Move to Location</Label>
+        <Input
+          id="move-location"
+          placeholder="Enter new location"
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+          className="mb-4"
+        />
+
+        <Label htmlFor="move-comments" className="block mb-1 font-medium">Comments (optional)</Label>
+        <textarea
+          id="move-comments"
+          placeholder="Add any comments"
+          value={comments}
+          onChange={(e) => setComments(e.target.value)}
+          className="w-full p-2 border rounded mb-4 resize-none"
+          rows={3}
+        />
+
+        <div className="flex justify-end space-x-3">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={handleSubmit} className="bg-blue-600 hover:bg-blue-700 text-white">Move</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Extend DispenseModal usage to include comments - create wrapper or modify props
+// Here, assuming you can add props to DispenseModal to handle comments and a callback:
+
 export default function Inventory() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedType, setSelectedType] = useState("all");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isDispenseModalOpen, setIsDispenseModalOpen] = useState(false);
+  const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [selectedMedication, setSelectedMedication] = useState<Medication | null>(null);
+
+  // Ref for stock status section
+  const stockStatusRef = useRef<HTMLDivElement>(null);
 
   const { data: medications = [], isLoading } = useQuery<Medication[]>({
     queryKey: ["/api/medications"],
   });
+
+  // You need to provide addTransaction method (API call or state update) - mock here:
+  const addTransaction = (type: "dispense" | "move", med: Medication, quantity: number, location: string, comments: string) => {
+    console.log("Transaction added:", { type, medId: med.id, quantity, location, comments, date: new Date().toISOString() });
+    // TODO: call your backend or update global state here to track transactions
+  };
 
   const filteredMedications = useMemo(() => {
     let filtered = medications;
@@ -102,6 +206,31 @@ export default function Inventory() {
   const handleDispense = (medication: Medication) => {
     setSelectedMedication(medication);
     setIsDispenseModalOpen(true);
+  };
+
+  const handleConfirmDispense = (medication: Medication, quantity: number, comments: string) => {
+    // Implement dispense logic here, e.g. update backend, inventory, etc.
+    addTransaction("dispense", medication, quantity, medication.location, comments);
+    setIsDispenseModalOpen(false);
+    setSelectedMedication(null);
+  };
+
+  const handleOpenMoveModal = (medication: Medication) => {
+    setSelectedMedication(medication);
+    setIsMoveModalOpen(true);
+  };
+
+  const handleConfirmMove = (medication: Medication, quantity: number, newLocation: string, comments: string) => {
+    // Implement move logic here, e.g. update backend, inventory, etc.
+    addTransaction("move", medication, quantity, newLocation, comments);
+    setIsMoveModalOpen(false);
+    setSelectedMedication(null);
+  };
+
+  const scrollToStockStatus = () => {
+    if (stockStatusRef.current) {
+      stockStatusRef.current.scrollIntoView({ behavior: "smooth" });
+    }
   };
 
   if (isLoading) {
@@ -161,8 +290,17 @@ export default function Inventory() {
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex gap-3 flex-shrink-0">
+              {/* New Button to Scroll to Stock Status */}
+              <div className="flex items-center gap-3">
+                <Button
+                  onClick={scrollToStockStatus}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm"
+                  data-testid="button-scroll-stock-status"
+                >
+                  View Stock Status
+                </Button>
+
+                {/* Action Buttons */}
                 <TransactionHistory />
                 <Button
                   onClick={() => setIsAddModalOpen(true)}
@@ -182,7 +320,7 @@ export default function Inventory() {
                 <Button
                   variant={selectedType === "all" ? "default" : "outline"}
                   onClick={() => setSelectedType("all")}
-                  className="text-sm"
+                  className={`text-sm ${selectedType === "all" ? "bg-gray-200 text-gray-900" : ""}`}
                   data-testid="filter-all"
                 >
                   <List className="h-4 w-4 mr-2" />
@@ -190,12 +328,15 @@ export default function Inventory() {
                 </Button>
                 {Object.entries(typeLabels).map(([type, label]) => {
                   const Icon = typeIcons[type as keyof typeof typeIcons];
+                  // Use the color classes from typeColors for the filter buttons when selected
+                  const isSelected = selectedType === type;
+                  const colorClasses = typeColors[type as keyof typeof typeColors].replace("bg-", "bg-opacity-50 ") + (isSelected ? " font-semibold" : "");
                   return (
                     <Button
                       key={type}
-                      variant={selectedType === type ? "default" : "outline"}
+                      variant={isSelected ? "default" : "outline"}
                       onClick={() => setSelectedType(type)}
-                      className="text-sm"
+                      className={`text-sm ${isSelected ? typeColors[type as keyof typeof typeColors] : ""}`}
                       data-testid={`filter-${type}`}
                     >
                       <Icon className="h-4 w-4 mr-2" />
@@ -207,8 +348,6 @@ export default function Inventory() {
             </div>
           </CardContent>
         </Card>
-
-        
 
         {/* Inventory Table */}
         <Card>
@@ -305,7 +444,7 @@ export default function Inventory() {
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" data-testid="text-location">
                             {medication.location}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-6 py-4 whitespace-nowrap flex gap-2">
                             <Button
                               onClick={() => handleDispense(medication)}
                               size="sm"
@@ -315,6 +454,16 @@ export default function Inventory() {
                             >
                               <HandHeart className="h-4 w-4 mr-1" />
                               Dispense
+                            </Button>
+                            <Button
+                              onClick={() => handleOpenMoveModal(medication)}
+                              size="sm"
+                              className="bg-blue-600 hover:bg-blue-700 text-white"
+                              disabled={medication.quantity === 0}
+                              data-testid={`button-move-${medication.id}`}
+                            >
+                              <Move className="h-4 w-4 mr-1" />
+                              Move
                             </Button>
                           </td>
                         </tr>
@@ -331,7 +480,9 @@ export default function Inventory() {
         <LowStockTicker />
         
         {/* Out of Stock Tracker */}
-        <OutOfStockTracker />
+        <div ref={stockStatusRef} className="mt-8">
+          <OutOfStockTracker />
+        </div>
       </main>
 
       {/* Modals */}
@@ -340,10 +491,31 @@ export default function Inventory() {
         onOpenChange={setIsAddModalOpen}
       />
       
+      {/* DispenseModal extended with comments and callback */}
       <DispenseModal
         open={isDispenseModalOpen}
-        onOpenChange={setIsDispenseModalOpen}
+        onOpenChange={(open) => {
+          if (!open) setSelectedMedication(null);
+          setIsDispenseModalOpen(open);
+        }}
         medication={selectedMedication}
+        // New props to support comments and confirm callback:
+        onConfirm={(quantity, comments) => {
+          if (selectedMedication) {
+            handleConfirmDispense(selectedMedication, quantity, comments);
+          }
+        }}
+      />
+
+      {/* Move Modal */}
+      <MoveModal
+        open={isMoveModalOpen}
+        onOpenChange={(open) => {
+          if (!open) setSelectedMedication(null);
+          setIsMoveModalOpen(open);
+        }}
+        medication={selectedMedication}
+        onMove={handleConfirmMove}
       />
     </div>
   );
