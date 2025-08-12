@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { AddMedicationModal } from "@/components/add-medication-modal";
 import { DispenseModal } from "@/components/dispense-modal";
-import { LowStockAlert } from "@/components/low-stock-alert";
 import { LowStockTicker } from "@/components/low-stock-ticker";
 import { TransactionHistory } from "@/components/transaction-history";
 import { type Medication } from "@shared/schema";
@@ -201,10 +200,7 @@ export default function Inventory() {
           </CardContent>
         </Card>
 
-        {/* Low Stock Alert */}
-        <div className="mb-6">
-          <LowStockAlert />
-        </div>
+        
 
         {/* Inventory Table */}
         <Card>
