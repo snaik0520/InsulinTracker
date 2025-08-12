@@ -32,7 +32,7 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
       toast({
         title: "Success",
         description: `Successfully dispensed ${dispenseQuantity} injection(s)`,
-        duration: 3000,
+        duration: 3000, // 3 seconds
       });
       setDispenseQuantity(1);
       onOpenChange(false);
@@ -42,14 +42,14 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
         title: "Error",
         description: error.message,
         variant: "destructive",
-        duration: 3000,
+        duration: 3000, // 3 seconds
       });
     },
   });
 
   const handleDispense = () => {
     if (!medication) return;
-
+    
     if (dispenseQuantity > medication.quantity) {
       toast({
         title: "Error",
