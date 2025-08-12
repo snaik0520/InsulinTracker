@@ -258,3 +258,4 @@ export default function AddMedicationModal({ open, onOpenChange }: Props) {
     </Dialog>
   );
 }
+ 
