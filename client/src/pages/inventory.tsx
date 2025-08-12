@@ -1,379 +1,350 @@
-import { useMemo, useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AddMedicationModal } from "@/components/add-medication-modal";
+import { DispenseModal } from "@/components/dispense-modal";
+import { LowStockTicker } from "@/components/low-stock-ticker";
+import { OutOfStockTracker } from "@/components/out-of-stock-tracker";
+import { TransactionHistory } from "@/components/transaction-history";
+import { type Medication } from "@shared/schema";
+import { Search, Plus, HandHeart, Syringe, Zap, Clock, Scale, HelpCircle, List } from "lucide-react";
+import logo from "../assets/noor-logo.png";
 
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { insertMedicationSchema, type InsertMedication, type Medication } from "@shared/schema";
-import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
-import { Plus } from "lucide-react";
+const typeIcons = {
+  rapid: Zap,
+  long: Clock,
+  intermediate: Scale,
+  other: HelpCircle,
+};
 
-interface AddMedicationModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}
+const typeColors = {
+  rapid: "bg-blue-100 text-blue-800",
+  long: "bg-purple-100 text-purple-800", 
+  intermediate: "bg-green-100 text-green-800",
+  other: "bg-orange-100 text-orange-800",
+};
 
-export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalProps) {
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
+const typeLabels = {
+  rapid: "Rapid Acting",
+  long: "Long Acting",
+  intermediate: "Intermediate",
+  other: "Other",
+};
 
-  const capitalizeWords = (str: string) => str.replace(/\b\w/g, (c) => c.toUpperCase());
+const getRowClassName = (type: string) => {
+  switch (type) {
+    case "rapid":
+      return "insulin-type-rapid";
+    case "long":
+      return "insulin-type-long";
+    case "intermediate":
+      return "insulin-type-intermediate";
+    case "other":
+      return "insulin-type-other";
+    default:
+      return "";
+  }
+};
 
-  // Fetch medications
-  const { data: allMedications = [], isLoading: medsLoading, isError: medsError } = useQuery<Medication[]>({
+const calculateDaysUntilExpiration = (expirationDate: string) => {
+  const today = new Date();
+  const expiry = new Date(expirationDate);
+  const diffTime = expiry.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays;
+};
+
+const getExpirationClassName = (days: number) => {
+  if (days < 30) return "text-red-600";
+  if (days < 90) return "text-orange-600";
+  return "text-green-600";
+};
+
+export default function Inventory() {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedType, setSelectedType] = useState("all");
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isDispenseModalOpen, setIsDispenseModalOpen] = useState(false);
+  const [selectedMedication, setSelectedMedication] = useState<Medication | null>(null);
+
+  const { data: medications = [], isLoading } = useQuery<Medication[]>({
     queryKey: ["/api/medications"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/medications");
-      return res.json();
-    },
-    enabled: open,
-    staleTime: 1000 * 60 * 2,
   });
 
-  // Group medications by generic + medical name, sum quantities & group locations
-  const existingMedications = useMemo(() => {
-    const map = new Map<
-      string,
-      Medication & {
-        quantity: number;
-        locationCounts: Map<string, number>;
-      }
-    >();
+  const filteredMedications = useMemo(() => {
+    let filtered = medications;
 
-    for (const med of allMedications) {
-      const key = `${med.genericName || ""}||${med.medicalName || ""}`;
-      if (!map.has(key)) {
-        const locationCounts = new Map<string, number>();
-        if (med.location?.trim()) {
-          locationCounts.set(med.location.trim(), med.quantity ?? 0);
-        }
-        map.set(key, { ...med, quantity: med.quantity ?? 0, locationCounts });
-      } else {
-        const existing = map.get(key)!;
-        existing.quantity = (existing.quantity ?? 0) + (med.quantity ?? 0);
-        if (med.location?.trim()) {
-          const loc = med.location.trim();
-          existing.locationCounts.set(loc, (existing.locationCounts.get(loc) ?? 0) + (med.quantity ?? 0));
-        }
-      }
+    // Filter out medications with 0 quantity
+    filtered = filtered.filter(medication => medication.quantity > 0);
+
+    // Filter by search query
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (med) =>
+          med.genericName.toLowerCase().includes(query) ||
+          med.medicalName.toLowerCase().includes(query)
+      );
     }
 
-    return Array.from(map.values());
-  }, [allMedications]);
-
-  // Extract unique locations across all meds for dropdown
-  const existingLocations = useMemo(() => {
-    const set = new Set<string>();
-    for (const med of allMedications) {
-      if (med.location?.trim()) {
-        set.add(med.location.trim());
-      }
+    // Filter by type
+    if (selectedType !== "all") {
+      filtered = filtered.filter((med) => med.type === selectedType);
     }
-    return Array.from(set);
-  }, [allMedications]);
 
-  const form = useForm<InsertMedication>({
-    resolver: zodResolver(insertMedicationSchema),
-    defaultValues: {
-      genericName: "",
-      medicalName: "",
-      type: "",
-      dose: "",
-      quantity: 0,
-      expirationDate: "",
-      location: "",
-    },
-  });
+    return filtered;
+  }, [medications, searchQuery, selectedType]);
 
-  // Separate state for location dropdown value (selected existing location)
-  const [locationDropdownValue, setLocationDropdownValue] = useState<string>("");
-
-  // When selecting existing medication:
-  // 1) Set form fields (genericName, medicalName, type, dose, quantity=0, expirationDate="")
-  // 2) Find the location with highest quantity for that medication and set dropdown to that location
-  // 3) Clear the text input for location (so user can type new location if they want)
-  const handleExistingMedicationSelect = (medicationId: string) => {
-    const medication = existingMedications.find((med) => med.id === medicationId);
-    if (medication) {
-      form.setValue("genericName", medication.genericName || "");
-      form.setValue("medicalName", medication.medicalName || "");
-      form.setValue("type", medication.type || "");
-      form.setValue("dose", medication.dose || "");
-      form.setValue("quantity", 0);
-      form.setValue("expirationDate", "");
-
-      // Find location with max quantity
-      let maxLocation = "";
-      let maxQty = -1;
-      medication.locationCounts.forEach((qty, loc) => {
-        if (qty > maxQty) {
-          maxQty = qty;
-          maxLocation = loc;
-        }
-      });
-
-      // Set dropdown location to maxLocation or empty
-      setLocationDropdownValue(maxLocation);
-
-      // Clear form location input (user can type new location)
-      form.setValue("location", "");
-    }
+  const handleDispense = (medication: Medication) => {
+    setSelectedMedication(medication);
+    setIsDispenseModalOpen(true);
   };
 
-  // When user selects a location from dropdown, update dropdown value state and clear form input (to avoid conflict)
-  const handleExistingLocationSelect = (loc: string) => {
-    setLocationDropdownValue(loc);
-    // Clear text input location since user picked existing location
-    form.setValue("location", "");
-  };
-
-  // Watch text input location value, if user types something, clear dropdown selection (so only one source sets location)
-  const watchLocationInput = form.watch("location");
-  useEffect(() => {
-    if (watchLocationInput && watchLocationInput.trim() !== "") {
-      setLocationDropdownValue("");
-    }
-  }, [watchLocationInput]);
-
-  // On submit, determine effective location:
-  // If user typed new location (text input) use that, else use selected dropdown location
-  const onSubmit = (data: InsertMedication) => {
-    const effectiveLocation = watchLocationInput.trim() !== "" ? watchLocationInput.trim() : locationDropdownValue;
-    addMedicationMutation.mutate({ ...data, location: effectiveLocation });
-  };
-
-  const addMedicationMutation = useMutation({
-    mutationFn: async (data: InsertMedication) => {
-      const response = await apiRequest("POST", "/api/medications", data);
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
-      toast({
-        title: "Success",
-        description: "Medication added successfully",
-        duration: 3000,
-      });
-      form.reset();
-      setLocationDropdownValue("");
-      onOpenChange(false);
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error",
-        description: error?.message ?? "An error occurred",
-        variant: "destructive",
-        duration: 3000,
-      });
-    },
-  });
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p>Loading medications...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg" data-testid="modal-add-medication">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Plus className="h-5 w-5 text-primary" />
-            Add Insulin Medication
-          </DialogTitle>
-        </DialogHeader>
-
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          {/* Existing medication selector */}
-          {medsLoading ? (
-            <div className="p-3">Loading medications...</div>
-          ) : medsError ? (
-            <div className="p-3 text-destructive">Failed to load existing medications.</div>
-          ) : existingMedications.length > 0 ? (
-            <div className="space-y-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
-              <Label htmlFor="existing-medication" className="text-sm font-medium text-blue-800">
-                Select Existing Medication (Optional)
-              </Label>
-              <Select onValueChange={handleExistingMedicationSelect} value={form.watch("genericName") ? existingMedications.find(med => med.genericName === form.watch("genericName") && med.medicalName === form.watch("medicalName"))?.id ?? "" : ""} defaultValue="">
-                <SelectTrigger id="existing-medication" data-testid="select-existing-medication" className="w-full">
-                  <SelectValue placeholder="Select" />
-                </SelectTrigger>
-                <SelectContent>
-                  {existingMedications.map((medication) => (
-                    <SelectItem key={medication.id} value={medication.id}>
-                      <div className="flex items-center justify-between w-full">
-                        <span>
-                          {medication.genericName} ({medication.medicalName})
-                        </span>
-                        <span className="text-xs text-gray-500 ml-2">{medication.quantity ?? 0} injections</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+    <div className="bg-gray-50 min-h-screen">
+      {/* Header */}
+      <header className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center">
+              <Syringe className="h-6 w-6 text-primary mr-3" />
+              <h1 className="text-xl font-semibold text-gray-900">Insulin Inventory Management</h1>
             </div>
-          ) : (
-            <div className="p-3 text-sm text-muted-foreground">No existing medications in inventory.</div>
-          )}
-
-          {/* Medication fields */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="genericName">Generic Name</Label>
-              <Input
-                id="genericName"
-                placeholder="e.g., Insulin Lispro"
-                value={form.watch("genericName")}
-                onChange={(e) => form.setValue("genericName", capitalizeWords(e.target.value))}
-                data-testid="input-generic-name"
+            <div className="flex items-center space-x-4">
+              <span className="text-lg text-gray-600 font-medium">SLO Noor Foundation</span>
+              <img
+                src={logo}
+                alt="SLO Noor Foundation logo"
+                className="h-16 w-auto object-contain"
+                data-testid="logo"
               />
-              {form.formState.errors.genericName && (
-                <p className="text-sm text-destructive mt-1">{form.formState.errors.genericName.message}</p>
-              )}
-            </div>
-
-            <div>
-              <Label htmlFor="medicalName">Brand/Medical Name</Label>
-              <Input
-                id="medicalName"
-                placeholder="e.g., Humalog"
-                value={form.watch("medicalName")}
-                onChange={(e) => form.setValue("medicalName", capitalizeWords(e.target.value))}
-                data-testid="input-medical-name"
-              />
-              {form.formState.errors.medicalName && (
-                <p className="text-sm text-destructive mt-1">{form.formState.errors.medicalName.message}</p>
-              )}
             </div>
           </div>
+        </div>
+      </header>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="type">Insulin Type</Label>
-              <Select value={form.watch("type")} onValueChange={(value) => form.setValue("type", value)}>
-                <SelectTrigger data-testid="select-insulin-type">
-                  <SelectValue placeholder="Select type..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="rapid">Rapid Acting</SelectItem>
-                  <SelectItem value="long">Long Acting</SelectItem>
-                  <SelectItem value="intermediate">Intermediate</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-              {form.formState.errors.type && (
-                <p className="text-sm text-destructive mt-1">{form.formState.errors.type.message}</p>
-              )}
-            </div>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Search and Filters */}
+        <Card className="mb-8">
+          <CardContent className="p-6">
+            <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between space-y-4 lg:space-y-0 lg:space-x-4">
+              {/* Search Bar */}
+              <div className="flex-1 max-w-lg">
+                <Label htmlFor="medication-search" className="block text-sm font-medium text-gray-700 mb-2">
+                  Search Insulin Medication
+                </Label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <Input
+                    id="medication-search"
+                    placeholder="Search by generic name, medical name, or brand..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10"
+                    data-testid="input-search-medication"
+                  />
+                </div>
+              </div>
 
-            <div>
-              <Label htmlFor="dose">Dose</Label>
-              <Input id="dose" placeholder="e.g., 100 units/mL" {...form.register("dose")} data-testid="input-dose" />
-              {form.formState.errors.dose && (
-                <p className="text-sm text-destructive mt-1">{form.formState.errors.dose.message}</p>
-              )}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="quantity">Quantity</Label>
-              <Input
-                id="quantity"
-                type="number"
-                min="0"
-                {...form.register("quantity", { valueAsNumber: true })}
-                data-testid="input-quantity"
-              />
-              {form.formState.errors.quantity && (
-                <p className="text-sm text-destructive mt-1">{form.formState.errors.quantity.message}</p>
-              )}
-            </div>
-
-            <div>
-              <Label htmlFor="expirationDate">Expiration Date</Label>
-              <Input
-                id="expirationDate"
-                type="date"
-                {...form.register("expirationDate")}
-                data-testid="input-expiration-date"
-              />
-              {form.formState.errors.expirationDate && (
-                <p className="text-sm text-destructive mt-1">{form.formState.errors.expirationDate.message}</p>
-              )}
-            </div>
-          </div>
-
-          {/* Storage Location selection + input */}
-          <div className="space-y-2 p-3 bg-green-50 rounded-lg border border-green-200">
-            <Label htmlFor="existing-location" className="text-sm font-medium text-green-800">
-              Select Existing Storage Location (Optional)
-            </Label>
-
-            {existingLocations.length > 0 ? (
-              <Select
-                onValueChange={handleExistingLocationSelect}
-                value={locationDropdownValue}
-                defaultValue=""
-              >
-                <SelectTrigger id="existing-location" data-testid="select-existing-location" className="w-full">
-                  <SelectValue placeholder="Select a location or type new..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {existingLocations.map((loc) => (
-                    <SelectItem key={loc} value={loc}>
-                      {loc}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <div className="p-3 text-sm text-muted-foreground">No existing storage locations found.</div>
-            )}
-
-            {/* Text input for new or custom location - always enabled */}
-            <Input
-              id="location"
-              placeholder="Or type new location here"
-              value={watchLocationInput}
-              onChange={(e) => form.setValue("location", e.target.value)}
-              className="mt-2"
-              data-testid="input-location"
-            />
-            {form.formState.errors.location && (
-              <p className="text-sm text-destructive mt-1">{form.formState.errors.location.message}</p>
-            )}
-          </div>
-
-          <div className="flex gap-3 pt-4">
-            <Button
-              type="submit"
-              className="flex-1"
-              disabled={addMedicationMutation.isLoading}
-              data-testid="button-add-medication"
-            >
-              {addMedicationMutation.isLoading ? (
-                "Adding..."
-              ) : (
-                <>
+              {/* Action Buttons */}
+              <div className="flex gap-3 flex-shrink-0">
+                <TransactionHistory />
+                <Button
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="bg-primary hover:bg-primary/90"
+                  data-testid="button-add-medication"
+                >
                   <Plus className="h-4 w-4 mr-2" />
-                  Add Medication
-                </>
-              )}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              data-testid="button-cancel"
-            >
-              Cancel
-            </Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
+                  Add New Medication
+                </Button>
+              </div>
+            </div>
+
+            {/* Insulin Type Filter Buttons */}
+            <div className="mt-6">
+              <Label className="block text-sm font-medium text-gray-700 mb-3">Filter by Insulin Type</Label>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant={selectedType === "all" ? "default" : "outline"}
+                  onClick={() => setSelectedType("all")}
+                  className="text-sm"
+                  data-testid="filter-all"
+                >
+                  <List className="h-4 w-4 mr-2" />
+                  All Types
+                </Button>
+                {Object.entries(typeLabels).map(([type, label]) => {
+                  const Icon = typeIcons[type as keyof typeof typeIcons];
+                  return (
+                    <Button
+                      key={type}
+                      variant={selectedType === type ? "default" : "outline"}
+                      onClick={() => setSelectedType(type)}
+                      className="text-sm"
+                      data-testid={`filter-${type}`}
+                    >
+                      <Icon className="h-4 w-4 mr-2" />
+                      {label}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        
+
+        {/* Inventory Table */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg font-medium text-gray-900">Current Insulin Inventory</CardTitle>
+            <p className="text-sm text-gray-600">Manage and track all insulin medications in your clinic</p>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Medication
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Type
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Dose
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Quantity
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Expiration
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Location
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredMedications.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                        {searchQuery || selectedType !== "all" 
+                          ? "No medications found matching your criteria." 
+                          : "No medications in inventory. Add your first medication to get started."}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredMedications.map((medication) => {
+                      const daysUntilExpiration = calculateDaysUntilExpiration(medication.expirationDate);
+                      const Icon = typeIcons[medication.type as keyof typeof typeIcons];
+                      
+                      return (
+                        <tr
+                          key={medication.id}
+                          className={`${getRowClassName(medication.type)} hover:bg-gray-50`}
+                          data-testid={`row-medication-${medication.id}`}
+                        >
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div>
+                              <div className="text-sm font-medium text-gray-900" data-testid="text-generic-name">
+                                {medication.genericName}
+                              </div>
+                              <div className="text-sm text-gray-500" data-testid="text-medical-name">
+                                {medication.medicalName}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <Badge className={typeColors[medication.type as keyof typeof typeColors]}>
+                              <Icon className="h-3 w-3 mr-1" />
+                              {typeLabels[medication.type as keyof typeof typeLabels]}
+                            </Badge>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-dose">
+                            {medication.dose}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span 
+                              className={`text-sm font-medium ${
+                                medication.quantity <= 5 ? 'text-red-600' : 'text-gray-900'
+                              }`}
+                              data-testid="text-quantity"
+                            >
+                              {medication.quantity}
+                            </span>
+                            <span className="text-sm text-gray-500"> injections</span>
+                            {medication.quantity <= 5 && (
+                              <div className="text-xs text-red-600">Low Stock!</div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-sm text-gray-900" data-testid="text-expiration-date">
+                              {new Date(medication.expirationDate).toLocaleDateString()}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" data-testid="text-location">
+                            {medication.location}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <Button
+                              onClick={() => handleDispense(medication)}
+                              size="sm"
+                              className="bg-green-600 hover:bg-green-700 text-white"
+                              disabled={medication.quantity === 0}
+                              data-testid={`button-dispense-${medication.id}`}
+                            >
+                              <HandHeart className="h-4 w-4 mr-1" />
+                              Dispense
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Low Stock Ticker */}
+        <LowStockTicker />
+        
+        {/* Out of Stock Tracker */}
+        <OutOfStockTracker />
+      </main>
+
+      {/* Modals */}
+      <AddMedicationModal
+        open={isAddModalOpen}
+        onOpenChange={setIsAddModalOpen}
+      />
+      
+      <DispenseModal
+        open={isDispenseModalOpen}
+        onOpenChange={setIsDispenseModalOpen}
+        medication={selectedMedication}
+      />
+    </div>
   );
 }
