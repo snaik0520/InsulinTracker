@@ -22,6 +22,11 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  // Helper to capitalize first letter of each word
+  const capitalizeWords = (str: string) => {
+    return str.replace(/\b\w/g, (c) => c.toUpperCase());
+  };
+
   // Fetch existing medications for dropdown (provide queryFn)
   const { data: allMedications = [], isLoading: medsLoading, isError: medsError } = useQuery<Medication[]>({
     queryKey: ["/api/medications"],
@@ -138,7 +143,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                     <SelectItem key={medication.id} value={medication.id}>
                       <div className="flex items-center justify-between w-full">
                         <span>{medication.genericName} ({medication.medicalName})</span>
-                        <span className="text-xs text-gray-500 ml-2">{medication.quantity ?? 0} vials</span>
+                        <span className="text-xs text-gray-500 ml-2">{medication.quantity ?? 0} injections</span>
                       </div>
                     </SelectItem>
                   ))}
@@ -149,14 +154,14 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             <div className="p-3 text-sm text-muted-foreground">No existing medications in inventory.</div>
           )}
 
-          {/* Rest of your form inputs below */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="genericName">Generic Name</Label>
               <Input
                 id="genericName"
                 placeholder="e.g., Insulin Lispro"
-                {...form.register("genericName")}
+                value={form.watch("genericName")}
+                onChange={(e) => form.setValue("genericName", capitalizeWords(e.target.value))}
                 data-testid="input-generic-name"
               />
               {form.formState.errors.genericName && (
@@ -171,7 +176,8 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               <Input
                 id="medicalName"
                 placeholder="e.g., Humalog"
-                {...form.register("medicalName")}
+                value={form.watch("medicalName")}
+                onChange={(e) => form.setValue("medicalName", capitalizeWords(e.target.value))}
                 data-testid="input-medical-name"
               />
               {form.formState.errors.medicalName && (
