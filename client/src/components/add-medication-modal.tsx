@@ -18,10 +18,6 @@ interface AddMedicationModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
-function capitalizeWords(str: string) {
-  return str.replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
 export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -31,8 +27,6 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     queryKey: ["/api/medications"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/medications");
-      // assume apiRequest returns a Response-like object; adjust if it already returns parsed JSON
-      // if apiRequest already returns parsed JSON, just `return res;`
       return res.json();
     },
     enabled: open, // only fetch when modal is opened
@@ -144,7 +138,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                     <SelectItem key={medication.id} value={medication.id}>
                       <div className="flex items-center justify-between w-full">
                         <span>{medication.genericName} ({medication.medicalName})</span>
-                        <span className="text-xs text-gray-500 ml-2">{medication.quantity ?? 0} injections</span>
+                        <span className="text-xs text-gray-500 ml-2">{medication.quantity ?? 0} vials</span>
                       </div>
                     </SelectItem>
                   ))}
@@ -155,22 +149,16 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             <div className="p-3 text-sm text-muted-foreground">No existing medications in inventory.</div>
           )}
 
+          {/* Rest of your form inputs below */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="genericName">Generic Name</Label>
-              const { onChange: genericOnChange, ...genericRest } = form.register("genericName");
               <Input
-                  id="genericName"
-                  placeholder="e.g., Insulin Lispro"
-                  {...genericRest}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    const capitalized = capitalizeWords(val);
-                    form.setValue("genericName", capitalized, { shouldValidate: true });
-                    genericOnChange(e);
-                  }}
-                  data-testid="input-generic-name"
-                />
+                id="genericName"
+                placeholder="e.g., Insulin Lispro"
+                {...form.register("genericName")}
+                data-testid="input-generic-name"
+              />
               {form.formState.errors.genericName && (
                 <p className="text-sm text-destructive mt-1">
                   {form.formState.errors.genericName.message}
@@ -180,17 +168,10 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
 
             <div>
               <Label htmlFor="medicalName">Brand/Medical Name</Label>
-              const { onChange: medicalOnChange, ...medicalRest } = form.register("medicalName");
               <Input
                 id="medicalName"
                 placeholder="e.g., Humalog"
-                {...medicalRest}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  const capitalized = capitalizeWords(val);
-                  form.setValue("medicalName", capitalized, { shouldValidate: true });
-                  medicalOnChange(e);
-                }}
+                {...form.register("medicalName")}
                 data-testid="input-medical-name"
               />
               {form.formState.errors.medicalName && (
