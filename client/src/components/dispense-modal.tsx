@@ -31,7 +31,7 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
       toast({
         title: "Success",
-        description: `Successfully dispensed ${dispenseQuantity} injection(s)`,
+        description: `Successfully dispensed ${dispenseQuantity} vial(s)`,
         duration: 3000, // 3 seconds
       });
       setDispenseQuantity(1);
@@ -95,7 +95,7 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
               {medication.genericName} ({medication.medicalName})
             </p>
             <p className="text-xs text-gray-500 mt-1" data-testid="text-available-stock">
-              Available: {medication.quantity} injections
+              Available: {medication.quantity} vials
             </p>
           </div>
 
