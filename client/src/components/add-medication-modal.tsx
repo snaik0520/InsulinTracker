@@ -55,17 +55,6 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     return Array.from(map.values());
   }, [allMedications]);
 
-  // NEW: Extract unique locations for dropdown above location input
-  const existingLocations = useMemo(() => {
-    const locationsSet = new Set<string>();
-    for (const med of allMedications) {
-      if (med.location && med.location.trim() !== "") {
-        locationsSet.add(med.location);
-      }
-    }
-    return Array.from(locationsSet);
-  }, [allMedications]);
-
   const form = useForm<InsertMedication>({
     resolver: zodResolver(insertMedicationSchema),
     defaultValues: {
@@ -118,11 +107,6 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       form.setValue("quantity", 0);
       form.setValue("expirationDate", "");
     }
-  };
-
-  // NEW: Handle location select from dropdown, sets form value
-  const handleLocationSelect = (location: string) => {
-    form.setValue("location", location);
   };
 
   const onSubmit = (data: InsertMedication) => {
@@ -276,30 +260,6 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               )}
             </div>
           </div>
-
-          {/* New: Existing location select above input */}
-          {existingLocations.length > 0 && (
-            <div className="space-y-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
-              <Label htmlFor="existing-location" className="text-sm font-medium text-blue-800">
-                Select Existing Storage Location (Optional)
-              </Label>
-              <Select
-                onValueChange={handleLocationSelect}
-                defaultValue=""
-              >
-                <SelectTrigger id="existing-location" data-testid="select-existing-location" className="w-full">
-                  <SelectValue placeholder="Select location" />
-                </SelectTrigger>
-                <SelectContent>
-                  {existingLocations.map((loc) => (
-                    <SelectItem key={loc} value={loc}>
-                      {loc}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
 
           <div>
             <Label htmlFor="location">Storage Location</Label>
