@@ -127,7 +127,7 @@ export default function Inventory() {
             <div className="flex items-center space-x-4">
               <span className="text-sm text-gray-600">SLO Noor Foundation</span>
               <img
-                src="/public/noor-logo.png"
+                src="/images/noor-logo.png"
                 alt="SLO Noor Foundation logo"
                 className="h-8 w-8 object-contain rounded-full"
                 data-testid="logo"
