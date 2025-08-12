@@ -1,4 +1,4 @@
-import { type Medication, type InsertMedication } from "@shared/schema";
+import { type Medication, type InsertMedication, type MedicationTransaction, type InsertTransaction } from "@shared/schema";
 import { randomUUID } from "crypto";
 
 export interface IStorage {
@@ -8,13 +8,18 @@ export interface IStorage {
   updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined>;
   searchMedications(query: string): Promise<Medication[]>;
   filterMedicationsByType(type: string): Promise<Medication[]>;
+  getLowStockMedications(threshold?: number): Promise<Medication[]>;
+  getTransactions(): Promise<MedicationTransaction[]>;
+  createTransaction(transaction: InsertTransaction): Promise<MedicationTransaction>;
 }
 
 export class MemStorage implements IStorage {
   private medications: Map<string, Medication>;
+  private transactions: Map<string, MedicationTransaction>;
 
   constructor() {
     this.medications = new Map();
+    this.transactions = new Map();
   }
 
   async getMedications(): Promise<Medication[]> {
