@@ -261,20 +261,49 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             </div>
           </div>
 
-          <div>
-            <Label htmlFor="location">Storage Location</Label>
-            <Input
-              id="location"
-              placeholder="e.g., Fridge A - Shelf 2"
-              {...form.register("location")}
-              data-testid="input-location"
-            />
-            {form.formState.errors.location && (
-              <p className="text-sm text-destructive mt-1">
-                {form.formState.errors.location.message}
-              </p>
-            )}
-          </div>
+          <div className="space-y-2">
+  {/* Optional dropdown to select existing location */}
+  {existingLocations.length > 0 && (
+    <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+      <Label htmlFor="existing-location" className="text-sm font-medium text-blue-800">
+        Select Existing Location (Optional)
+      </Label>
+      <Select
+        id="existing-location"
+        onValueChange={(value) => form.setValue("location", value)}
+        defaultValue=""
+      >
+        <SelectTrigger data-testid="select-existing-location" className="w-full">
+          <SelectValue placeholder="Select location" />
+        </SelectTrigger>
+        <SelectContent>
+          {existingLocations.map((loc) => (
+            <SelectItem key={loc} value={loc}>
+              {loc}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  )}
+
+  {/* Free-text input for storage location */}
+  <div>
+    <Label htmlFor="location">Storage Location</Label>
+    <Input
+      id="location"
+      placeholder="e.g., Fridge A - Shelf 2"
+      {...form.register("location")}
+      data-testid="input-location"
+    />
+    {form.formState.errors.location && (
+      <p className="text-sm text-destructive mt-1">
+        {form.formState.errors.location.message}
+      </p>
+    )}
+  </div>
+</div>
+
 
           <div className="flex gap-3 pt-4">
             <Button
