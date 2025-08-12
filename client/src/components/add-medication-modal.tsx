@@ -55,7 +55,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     return Array.from(map.values());
   }, [allMedications]);
 
-  // New: build unique list of storage locations
+  // Build unique list of storage locations
   const existingLocations = useMemo(() => {
     const locationsSet = new Set<string>();
     for (const med of allMedications) {
@@ -272,19 +272,18 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             </div>
           </div>
 
-          {/* Storage Location with dropdown + free typing */}
-          <div>
-            <Label htmlFor="existing-location-select" className="mb-1 font-medium">
+          {/* Storage Location selector like medication selector */}
+          <div className="space-y-2 p-3 bg-green-50 rounded-lg border border-green-200">
+            <Label htmlFor="existing-location" className="text-sm font-medium text-green-800">
               Select Existing Storage Location (Optional)
             </Label>
             {existingLocations.length > 0 ? (
               <Select
-                id="existing-location-select"
                 onValueChange={(value) => form.setValue("location", value)}
                 defaultValue=""
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a location..." />
+                <SelectTrigger id="existing-location" data-testid="select-existing-location" className="w-full">
+                  <SelectValue placeholder="Select a location" />
                 </SelectTrigger>
                 <SelectContent>
                   {existingLocations.map((loc) => (
@@ -295,22 +294,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                 </SelectContent>
               </Select>
             ) : (
-              <div className="text-sm text-muted-foreground mb-2">No existing locations found.</div>
-            )}
-
-            <Label htmlFor="location" className="mt-4">
-              Or Enter Storage Location
-            </Label>
-            <Input
-              id="location"
-              placeholder="e.g., Fridge A - Shelf 2"
-              {...form.register("location")}
-              data-testid="input-location"
-            />
-            {form.formState.errors.location && (
-              <p className="text-sm text-destructive mt-1">
-                {form.formState.errors.location.message}
-              </p>
+              <div className="p-3 text-sm text-muted-foreground">No existing storage locations found.</div>
             )}
           </div>
 
