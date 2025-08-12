@@ -126,11 +126,11 @@ export default function Inventory() {
               <h1 className="text-xl font-semibold text-gray-900">Insulin Inventory Management</h1>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">SLO Noor Foundation</span>
+              <span className="text-lg text-gray-600 font-medium">SLO Noor Foundation</span>
               <img
                 src={logo}
                 alt="SLO Noor Foundation logo"
-                className="h-8 w-auto object-contain"
+                className="h-10 w-auto object-contain"
                 data-testid="logo"
               />
             </div>
