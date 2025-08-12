@@ -23,9 +23,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   const queryClient = useQueryClient();
 
   // Capitalize first letter of each word helper
-  const capitalizeWords = (str: string) => {
-    return str.replace(/\b\w/g, (c) => c.toUpperCase());
-  };
+  const capitalizeWords = (str: string) => str.replace(/\b\w/g, (c) => c.toUpperCase());
 
   // Fetch medications
   const { data: allMedications = [], isLoading: medsLoading, isError: medsError } = useQuery<Medication[]>({
@@ -38,7 +36,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     staleTime: 1000 * 60 * 2,
   });
 
-  // Group meds by generic+medical, sum quantities & location counts
+  // Group medications by generic + medical name, sum quantities & group locations
   const existingMedications = useMemo(() => {
     const map = new Map<
       string,
@@ -69,7 +67,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     return Array.from(map.values());
   }, [allMedications]);
 
-  // Unique existing locations for dropdown
+  // Extract unique locations across all meds for dropdown
   const existingLocations = useMemo(() => {
     const set = new Set<string>();
     for (const med of allMedications) {
@@ -93,18 +91,13 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     },
   });
 
-  // Dropdown state for location
+  // Separate state for location dropdown value (selected existing location)
   const [locationDropdownValue, setLocationDropdownValue] = useState<string>("");
 
-  // Reset form and dropdown state when modal closes
-  useEffect(() => {
-    if (!open) {
-      form.reset();
-      setLocationDropdownValue("");
-    }
-  }, [open, form]);
-
-  // When medication selected, fill form and set dropdown location to most common location
+  // When selecting existing medication:
+  // 1) Set form fields (genericName, medicalName, type, dose, quantity=0, expirationDate="")
+  // 2) Find the location with highest quantity for that medication and set dropdown to that location
+  // 3) Clear the text input for location (so user can type new location if they want)
   const handleExistingMedicationSelect = (medicationId: string) => {
     const medication = existingMedications.find((med) => med.id === medicationId);
     if (medication) {
@@ -115,7 +108,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       form.setValue("quantity", 0);
       form.setValue("expirationDate", "");
 
-      // Find most frequent location
+      // Find location with max quantity
       let maxLocation = "";
       let maxQty = -1;
       medication.locationCounts.forEach((qty, loc) => {
@@ -125,18 +118,22 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
         }
       });
 
+      // Set dropdown location to maxLocation or empty
       setLocationDropdownValue(maxLocation);
+
+      // Clear form location input (user can type new location)
       form.setValue("location", "");
     }
   };
 
-  // When user picks location from dropdown, clear text input location
+  // When user selects a location from dropdown, update dropdown value state and clear form input (to avoid conflict)
   const handleExistingLocationSelect = (loc: string) => {
     setLocationDropdownValue(loc);
+    // Clear text input location since user picked existing location
     form.setValue("location", "");
   };
 
-  // Watch location input, clear dropdown if user types new location
+  // Watch text input location value, if user types something, clear dropdown selection (so only one source sets location)
   const watchLocationInput = form.watch("location");
   useEffect(() => {
     if (watchLocationInput && watchLocationInput.trim() !== "") {
@@ -144,13 +141,24 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     }
   }, [watchLocationInput]);
 
-  // Auto-capitalize words as user types location input
+  // Handle location input change with capitalization
   const handleLocationInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const capitalized = capitalizeWords(e.target.value);
     form.setValue("location", capitalized);
   };
 
-  // On submit use text input location if filled, else dropdown
+  // Similarly capitalize generic and medical names on change
+  const handleGenericNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const capitalized = capitalizeWords(e.target.value);
+    form.setValue("genericName", capitalized);
+  };
+  const handleMedicalNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const capitalized = capitalizeWords(e.target.value);
+    form.setValue("medicalName", capitalized);
+  };
+
+  // On submit, determine effective location:
+  // If user typed new location (text input) use that, else use selected dropdown location
   const onSubmit = (data: InsertMedication) => {
     const effectiveLocation = watchLocationInput.trim() !== "" ? watchLocationInput.trim() : locationDropdownValue;
     addMedicationMutation.mutate({ ...data, location: effectiveLocation });
@@ -247,7 +255,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                 id="genericName"
                 placeholder="e.g., Insulin Lispro"
                 value={form.watch("genericName")}
-                onChange={(e) => form.setValue("genericName", capitalizeWords(e.target.value))}
+                onChange={handleGenericNameChange}
                 data-testid="input-generic-name"
               />
               {form.formState.errors.genericName && (
@@ -261,7 +269,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                 id="medicalName"
                 placeholder="e.g., Humalog"
                 value={form.watch("medicalName")}
-                onChange={(e) => form.setValue("medicalName", capitalizeWords(e.target.value))}
+                onChange={handleMedicalNameChange}
                 data-testid="input-medical-name"
               />
               {form.formState.errors.medicalName && (
@@ -327,7 +335,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             </div>
           </div>
 
-          {/* Storage Location dropdown + input */}
+          {/* Storage Location selection + input */}
           <div className="space-y-2 p-3 bg-green-50 rounded-lg border border-green-200">
             <Label htmlFor="existing-location" className="text-sm font-medium text-green-800">
               Select Existing Storage Location (Optional)
@@ -354,6 +362,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               <div className="p-3 text-sm text-muted-foreground">No existing storage locations found.</div>
             )}
 
+            {/* Text input for new or custom location - always enabled */}
             <Input
               id="location"
               placeholder="Or type new location here"
