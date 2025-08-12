@@ -1,3 +1,7 @@
+/* ────────────────────────────────────────────────
+   AddMedicationModal
+   (fixed equality bug + graceful error handling)
+──────────────────────────────────────────────── */
 import {
   Dialog,
   DialogContent,
@@ -35,20 +39,14 @@ interface Props {
   onOpenChange: (open: boolean) => void;
 }
 
-export default function AddMedicationModal({ open, onOpenChange }: Props) {
+function AddMedicationModal({ open, onOpenChange }: Props) {
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  /* ──────────────────────────────────────────
-     Fetch existing meds ONLY when modal visible
-     • retry disabled so a 404/network error
-       resolves immediately → no infinite spinner
-  ────────────────────────────────────────── */
   const { data: allMeds = [], isError } = useQuery<Medication[]>({
     queryKey: ["/api/medications"],
     enabled: open,
     retry: false,
-    staleTime: 60_000,
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/medications");
       if (!res.ok) throw new Error("Could not load medications");
@@ -56,10 +54,6 @@ export default function AddMedicationModal({ open, onOpenChange }: Props) {
     },
   });
 
-  /* ──────────────────────────────────────────
-     Build unique-by-name list for dropdown
-     (fixed === vs = bug)
-  ────────────────────────────────────────── */
   const uniqueMeds = allMeds.reduce((acc, med) => {
     const exists = acc.find(
       (m) =>
@@ -73,15 +67,12 @@ export default function AddMedicationModal({ open, onOpenChange }: Props) {
             m.genericName === med.genericName &&
             m.medicalName === med.medicalName
         )
-        .reduce((sum, m) => sum + m.quantity, 0);
+        .reduce((s, m) => s + m.quantity, 0);
       acc.push({ ...med, quantity: total });
     }
     return acc;
   }, [] as Medication[]);
 
-  /* ──────────────────────────────────────────
-     React-Hook-Form
-  ────────────────────────────────────────── */
   const form = useForm<InsertMedication>({
     resolver: zodResolver(insertMedicationSchema),
     defaultValues: {
@@ -96,8 +87,8 @@ export default function AddMedicationModal({ open, onOpenChange }: Props) {
   });
 
   const addMutation = useMutation({
-    mutationFn: async (data: InsertMedication) => {
-      const res = await apiRequest("POST", "/api/medications", data);
+    mutationFn: async (d: InsertMedication) => {
+      const res = await apiRequest("POST", "/api/medications", d);
       if (!res.ok) throw new Error("Server error");
       return res.json();
     },
@@ -116,7 +107,6 @@ export default function AddMedicationModal({ open, onOpenChange }: Props) {
       }),
   });
 
-  /* Fill form from dropdown */
   const autofill = (id: string) => {
     const m = uniqueMeds.find((x) => x.id === id);
     if (!m) return;
@@ -134,7 +124,7 @@ export default function AddMedicationModal({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg" data-testid="add-modal">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plus className="h-5 w-5 text-primary" />
@@ -142,14 +132,13 @@ export default function AddMedicationModal({ open, onOpenChange }: Props) {
           </DialogTitle>
         </DialogHeader>
 
-        {/* Existing-med dropdown (only if fetch succeeded) */}
         {!isError && uniqueMeds.length > 0 && (
           <div className="space-y-3 p-4 bg-blue-50 rounded-lg border border-blue-200 mb-4">
             <Label className="text-sm font-medium text-blue-800">
               Select Existing Medication (optional)
             </Label>
             <Select onValueChange={autofill}>
-              <SelectTrigger data-testid="existing-select">
+              <SelectTrigger>
                 <SelectValue placeholder="Choose an existing medication..." />
               </SelectTrigger>
               <SelectContent>
@@ -170,7 +159,6 @@ export default function AddMedicationModal({ open, onOpenChange }: Props) {
           </div>
         )}
 
-        {/* FORM */}
         <form
           onSubmit={form.handleSubmit((d) => addMutation.mutate(d))}
           className="space-y-4"
@@ -186,7 +174,10 @@ export default function AddMedicationModal({ open, onOpenChange }: Props) {
             </div>
             <div>
               <Label>Brand / Medical Name</Label>
-              <Input placeholder="e.g., Humalog" {...form.register("medicalName")} />
+              <Input
+                placeholder="e.g., Humalog"
+                {...form.register("medicalName")}
+              />
             </div>
           </div>
 
@@ -211,7 +202,10 @@ export default function AddMedicationModal({ open, onOpenChange }: Props) {
             </div>
             <div>
               <Label>Dose</Label>
-              <Input placeholder="e.g., 100 units/mL" {...form.register("dose")} />
+              <Input
+                placeholder="e.g., 100 units/mL"
+                {...form.register("dose")}
+              />
             </div>
           </div>
 
@@ -242,11 +236,7 @@ export default function AddMedicationModal({ open, onOpenChange }: Props) {
 
           {/* actions */}
           <div className="flex gap-3 pt-4">
-            <Button
-              type="submit"
-              className="flex-1"
-              disabled={addMutation.isPending}
-            >
+            <Button type="submit" className="flex-1" disabled={addMutation.isPending}>
               {addMutation.isPending ? "Adding…" : "Add Medication"}
             </Button>
             <Button variant="outline" type="button" onClick={() => onOpenChange(false)}>
@@ -258,4 +248,10 @@ export default function AddMedicationModal({ open, onOpenChange }: Props) {
     </Dialog>
   );
 }
- 
+
+/* ──────────────────────────────────────────
+   Export BOTH default and named so imports
+   using either style work.
+────────────────────────────────────────── */
+export default AddMedicationModal;
+export { AddMedicationModal };
