@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,12 +22,9 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Helper to capitalize first letter of each word
-  const capitalizeWords = (str: string) => {
-    return str.replace(/\b\w/g, (c) => c.toUpperCase());
-  };
+  const capitalizeWords = (str: string) => str.replace(/\b\w/g, (c) => c.toUpperCase());
 
-  // Fetch existing medications for dropdown
+  // Fetch medications
   const { data: allMedications = [], isLoading: medsLoading, isError: medsError } = useQuery<Medication[]>({
     queryKey: ["/api/medications"],
     queryFn: async () => {
@@ -38,32 +35,46 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     staleTime: 1000 * 60 * 2,
   });
 
-  // Build unique medication list (group by generic+medical name) and sum quantity
+  // Group medications by generic + medical name, sum quantities & group locations
   const existingMedications = useMemo(() => {
-    const map = new Map<string, Medication & { quantity: number }>();
+    const map = new Map<
+      string,
+      Medication & {
+        quantity: number;
+        locationCounts: Map<string, number>;
+      }
+    >();
 
     for (const med of allMedications) {
       const key = `${med.genericName || ""}||${med.medicalName || ""}`;
       if (!map.has(key)) {
-        map.set(key, { ...med, quantity: med.quantity ?? 0 });
+        const locationCounts = new Map<string, number>();
+        if (med.location?.trim()) {
+          locationCounts.set(med.location.trim(), med.quantity ?? 0);
+        }
+        map.set(key, { ...med, quantity: med.quantity ?? 0, locationCounts });
       } else {
         const existing = map.get(key)!;
         existing.quantity = (existing.quantity ?? 0) + (med.quantity ?? 0);
+        if (med.location?.trim()) {
+          const loc = med.location.trim();
+          existing.locationCounts.set(loc, (existing.locationCounts.get(loc) ?? 0) + (med.quantity ?? 0));
+        }
       }
     }
 
     return Array.from(map.values());
   }, [allMedications]);
 
-  // Build unique list of storage locations
+  // Extract unique locations across all meds for dropdown
   const existingLocations = useMemo(() => {
-    const locationsSet = new Set<string>();
+    const set = new Set<string>();
     for (const med of allMedications) {
-      if (med.location && med.location.trim() !== "") {
-        locationsSet.add(med.location.trim());
+      if (med.location?.trim()) {
+        set.add(med.location.trim());
       }
     }
-    return Array.from(locationsSet);
+    return Array.from(set);
   }, [allMedications]);
 
   const form = useForm<InsertMedication>({
@@ -78,6 +89,63 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       location: "",
     },
   });
+
+  // Separate state for location dropdown value (selected existing location)
+  const [locationDropdownValue, setLocationDropdownValue] = useState<string>("");
+
+  // When selecting existing medication:
+  // 1) Set form fields (genericName, medicalName, type, dose, quantity=0, expirationDate="")
+  // 2) Find the location with highest quantity for that medication and set dropdown to that location
+  // 3) Clear the text input for location (so user can type new location if they want)
+  const handleExistingMedicationSelect = (medicationId: string) => {
+    const medication = existingMedications.find((med) => med.id === medicationId);
+    if (medication) {
+      form.setValue("genericName", medication.genericName || "");
+      form.setValue("medicalName", medication.medicalName || "");
+      form.setValue("type", medication.type || "");
+      form.setValue("dose", medication.dose || "");
+      form.setValue("quantity", 0);
+      form.setValue("expirationDate", "");
+
+      // Find location with max quantity
+      let maxLocation = "";
+      let maxQty = -1;
+      medication.locationCounts.forEach((qty, loc) => {
+        if (qty > maxQty) {
+          maxQty = qty;
+          maxLocation = loc;
+        }
+      });
+
+      // Set dropdown location to maxLocation or empty
+      setLocationDropdownValue(maxLocation);
+
+      // Clear form location input (user can type new location)
+      form.setValue("location", "");
+    }
+  };
+
+  // When user selects a location from dropdown, update dropdown value state and clear form input (to avoid conflict)
+  const handleExistingLocationSelect = (loc: string) => {
+    setLocationDropdownValue(loc);
+    // Clear text input location since user picked existing location
+    form.setValue("location", "");
+  };
+
+  // Watch text input location value, if user types something, clear dropdown selection (so only one source sets location)
+  const watchLocationInput = form.watch("location");
+  useEffect(() => {
+    if (watchLocationInput && watchLocationInput.trim() !== "") {
+      setLocationDropdownValue("");
+    }
+  }, [watchLocationInput]);
+
+  // On submit, determine effective location:
+  // If user typed new location (text input) use that, else use selected dropdown location
+  const onSubmit = (data: InsertMedication) => {
+    const effectiveLocation = watchLocationInput.trim() !== "" ? watchLocationInput.trim() : locationDropdownValue;
+    addMedicationMutation.mutate({ ...data, location: effectiveLocation });
+  };
 
   const addMedicationMutation = useMutation({
     mutationFn: async (data: InsertMedication) => {
@@ -94,6 +162,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
         duration: 3000,
       });
       form.reset();
+      setLocationDropdownValue("");
       onOpenChange(false);
     },
     onError: (error: any) => {
@@ -105,28 +174,6 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       });
     },
   });
-
-  const handleExistingMedicationSelect = (medicationId: string) => {
-    const medication = existingMedications.find(med => med.id === medicationId);
-    if (medication) {
-      form.setValue("genericName", medication.genericName || "");
-      form.setValue("medicalName", medication.medicalName || "");
-      form.setValue("type", medication.type || "");
-      form.setValue("dose", medication.dose || "");
-      form.setValue("location", medication.location || "");
-      form.setValue("quantity", 0);
-      form.setValue("expirationDate", "");
-    }
-  };
-
-  // Handle location selection from dropdown
-  const handleExistingLocationSelect = (location: string) => {
-    form.setValue("location", location);
-  };
-
-  const onSubmit = (data: InsertMedication) => {
-    addMedicationMutation.mutate(data);
-  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -149,7 +196,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               <Label htmlFor="existing-medication" className="text-sm font-medium text-blue-800">
                 Select Existing Medication (Optional)
               </Label>
-              <Select onValueChange={handleExistingMedicationSelect} defaultValue="">
+              <Select onValueChange={handleExistingMedicationSelect} value={form.watch("genericName") ? existingMedications.find(med => med.genericName === form.watch("genericName") && med.medicalName === form.watch("medicalName"))?.id ?? "" : ""} defaultValue="">
                 <SelectTrigger id="existing-medication" data-testid="select-existing-medication" className="w-full">
                   <SelectValue placeholder="Select" />
                 </SelectTrigger>
@@ -157,7 +204,9 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                   {existingMedications.map((medication) => (
                     <SelectItem key={medication.id} value={medication.id}>
                       <div className="flex items-center justify-between w-full">
-                        <span>{medication.genericName} ({medication.medicalName})</span>
+                        <span>
+                          {medication.genericName} ({medication.medicalName})
+                        </span>
                         <span className="text-xs text-gray-500 ml-2">{medication.quantity ?? 0} injections</span>
                       </div>
                     </SelectItem>
@@ -181,9 +230,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                 data-testid="input-generic-name"
               />
               {form.formState.errors.genericName && (
-                <p className="text-sm text-destructive mt-1">
-                  {form.formState.errors.genericName.message}
-                </p>
+                <p className="text-sm text-destructive mt-1">{form.formState.errors.genericName.message}</p>
               )}
             </div>
 
@@ -197,9 +244,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                 data-testid="input-medical-name"
               />
               {form.formState.errors.medicalName && (
-                <p className="text-sm text-destructive mt-1">
-                  {form.formState.errors.medicalName.message}
-                </p>
+                <p className="text-sm text-destructive mt-1">{form.formState.errors.medicalName.message}</p>
               )}
             </div>
           </div>
@@ -207,10 +252,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="type">Insulin Type</Label>
-              <Select
-                value={form.watch("type")}
-                onValueChange={(value) => form.setValue("type", value)}
-              >
+              <Select value={form.watch("type")} onValueChange={(value) => form.setValue("type", value)}>
                 <SelectTrigger data-testid="select-insulin-type">
                   <SelectValue placeholder="Select type..." />
                 </SelectTrigger>
@@ -222,24 +264,15 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                 </SelectContent>
               </Select>
               {form.formState.errors.type && (
-                <p className="text-sm text-destructive mt-1">
-                  {form.formState.errors.type.message}
-                </p>
+                <p className="text-sm text-destructive mt-1">{form.formState.errors.type.message}</p>
               )}
             </div>
 
             <div>
               <Label htmlFor="dose">Dose</Label>
-              <Input
-                id="dose"
-                placeholder="e.g., 100 units/mL"
-                {...form.register("dose")}
-                data-testid="input-dose"
-              />
+              <Input id="dose" placeholder="e.g., 100 units/mL" {...form.register("dose")} data-testid="input-dose" />
               {form.formState.errors.dose && (
-                <p className="text-sm text-destructive mt-1">
-                  {form.formState.errors.dose.message}
-                </p>
+                <p className="text-sm text-destructive mt-1">{form.formState.errors.dose.message}</p>
               )}
             </div>
           </div>
@@ -255,9 +288,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                 data-testid="input-quantity"
               />
               {form.formState.errors.quantity && (
-                <p className="text-sm text-destructive mt-1">
-                  {form.formState.errors.quantity.message}
-                </p>
+                <p className="text-sm text-destructive mt-1">{form.formState.errors.quantity.message}</p>
               )}
             </div>
 
@@ -270,14 +301,12 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                 data-testid="input-expiration-date"
               />
               {form.formState.errors.expirationDate && (
-                <p className="text-sm text-destructive mt-1">
-                  {form.formState.errors.expirationDate.message}
-                </p>
+                <p className="text-sm text-destructive mt-1">{form.formState.errors.expirationDate.message}</p>
               )}
             </div>
           </div>
 
-          {/* Storage Location selector like medication selector */}
+          {/* Storage Location selection + input */}
           <div className="space-y-2 p-3 bg-green-50 rounded-lg border border-green-200">
             <Label htmlFor="existing-location" className="text-sm font-medium text-green-800">
               Select Existing Storage Location (Optional)
@@ -286,8 +315,8 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             {existingLocations.length > 0 ? (
               <Select
                 onValueChange={handleExistingLocationSelect}
+                value={locationDropdownValue}
                 defaultValue=""
-                value={form.watch("location") || ""}
               >
                 <SelectTrigger id="existing-location" data-testid="select-existing-location" className="w-full">
                   <SelectValue placeholder="Select a location or type new..." />
@@ -304,11 +333,11 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               <div className="p-3 text-sm text-muted-foreground">No existing storage locations found.</div>
             )}
 
-            {/* Free text input for new location */}
+            {/* Text input for new or custom location - always enabled */}
             <Input
               id="location"
               placeholder="Or type new location here"
-              value={form.watch("location")}
+              value={watchLocationInput}
               onChange={(e) => form.setValue("location", e.target.value)}
               className="mt-2"
               data-testid="input-location"
