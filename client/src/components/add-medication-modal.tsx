@@ -150,8 +150,21 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     form.setValue("location", capitalized);
   };
 
+  // Extra local validation to ensure location (either dropdown or input) is provided
+  const validateLocation = () => {
+    return watchLocationInput.trim() !== "" || locationDropdownValue !== "";
+  };
+
   // On submit use text input location if filled, else dropdown
   const onSubmit = (data: InsertMedication) => {
+    if (!validateLocation()) {
+      form.setError("location", {
+        type: "manual",
+        message: "Please select or enter a storage location",
+      });
+      return;
+    }
+
     const effectiveLocation = watchLocationInput.trim() !== "" ? watchLocationInput.trim() : locationDropdownValue;
     addMedicationMutation.mutate({ ...data, location: effectiveLocation });
   };
@@ -183,6 +196,14 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       });
     },
   });
+
+  // Helper: mark required fields with error if empty after touched
+  const genericNameError = form.formState.errors.genericName;
+  const typeError = form.formState.errors.type;
+  const doseError = form.formState.errors.dose;
+  const quantityError = form.formState.errors.quantity;
+  const expirationDateError = form.formState.errors.expirationDate;
+  const locationError = form.formState.errors.location;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -243,17 +264,18 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
           {/* Medication fields */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="genericName">Generic Name</Label>
+              <Label htmlFor="genericName">
+                Generic Name <span className="text-destructive">*</span>
+              </Label>
               <Input
                 id="genericName"
                 placeholder="e.g., Insulin Lispro"
                 value={form.watch("genericName")}
                 onChange={(e) => form.setValue("genericName", capitalizeWords(e.target.value))}
                 data-testid="input-generic-name"
+                required
               />
-              {form.formState.errors.genericName && (
-                <p className="text-sm text-destructive mt-1">{form.formState.errors.genericName.message}</p>
-              )}
+              {genericNameError && <p className="text-sm text-destructive mt-1">{genericNameError.message}</p>}
             </div>
 
             <div>
@@ -265,16 +287,20 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                 onChange={(e) => form.setValue("medicalName", capitalizeWords(e.target.value))}
                 data-testid="input-medical-name"
               />
-              {form.formState.errors.medicalName && (
-                <p className="text-sm text-destructive mt-1">{form.formState.errors.medicalName.message}</p>
-              )}
+              {/* Medical name not required */}
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="type">Insulin Type</Label>
-              <Select value={form.watch("type")} onValueChange={(value) => form.setValue("type", value)}>
+              <Label htmlFor="type">
+                Insulin Type <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={form.watch("type")}
+                onValueChange={(value) => form.setValue("type", value)}
+                required
+              >
                 <SelectTrigger data-testid="select-insulin-type">
                   <SelectValue placeholder="Select type..." />
                 </SelectTrigger>
@@ -285,52 +311,58 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                   <SelectItem value="other">Other</SelectItem>
                 </SelectContent>
               </Select>
-              {form.formState.errors.type && (
-                <p className="text-sm text-destructive mt-1">{form.formState.errors.type.message}</p>
-              )}
+              {typeError && <p className="text-sm text-destructive mt-1">{typeError.message}</p>}
             </div>
 
             <div>
-              <Label htmlFor="dose">Dose</Label>
-              <Input id="dose" placeholder="e.g., 100 units/mL" {...form.register("dose")} data-testid="input-dose" />
-              {form.formState.errors.dose && (
-                <p className="text-sm text-destructive mt-1">{form.formState.errors.dose.message}</p>
-              )}
+              <Label htmlFor="dose">
+                Dose <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="dose"
+                placeholder="e.g., 100 units/mL"
+                {...form.register("dose", { required: "Dose is required" })}
+                data-testid="input-dose"
+                required
+              />
+              {doseError && <p className="text-sm text-destructive mt-1">{doseError.message}</p>}
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="quantity">Quantity</Label>
+              <Label htmlFor="quantity">
+                Quantity <span className="text-destructive">*</span>
+              </Label>
               <Input
                 id="quantity"
                 type="number"
                 min="0"
-                {...form.register("quantity", { valueAsNumber: true })}
+                {...form.register("quantity", { required: "Quantity is required", valueAsNumber: true })}
                 data-testid="input-quantity"
+                required
               />
-              {form.formState.errors.quantity && (
-                <p className="text-sm text-destructive mt-1">{form.formState.errors.quantity.message}</p>
-              )}
+              {quantityError && <p className="text-sm text-destructive mt-1">{quantityError.message}</p>}
             </div>
 
             <div>
-              <Label htmlFor="expirationDate">Expiration Date</Label>
+              <Label htmlFor="expirationDate">
+                Expiration Date <span className="text-destructive">*</span>
+              </Label>
               <Input
                 id="expirationDate"
                 type="date"
-                {...form.register("expirationDate")}
+                {...form.register("expirationDate", { required: "Expiration date is required" })}
                 data-testid="input-expiration-date"
+                required
               />
-              {form.formState.errors.expirationDate && (
-                <p className="text-sm text-destructive mt-1">{form.formState.errors.expirationDate.message}</p>
-              )}
+              {expirationDateError && <p className="text-sm text-destructive mt-1">{expirationDateError.message}</p>}
             </div>
           </div>
 
-          {/* Storage Location dropdown inside green box */}
-          <div className="space-y-2 p-3 bg-green-50 rounded-lg border border-green-200">
-            <Label htmlFor="existing-location" className="text-sm font-medium text-green-800">
+          {/* Storage Location dropdown inside blue box */}
+          <div className="space-y-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <Label htmlFor="existing-location" className="text-sm font-medium text-blue-800">
               Select Existing Storage Location (Optional)
             </Label>
 
@@ -356,19 +388,20 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             )}
           </div>
 
-          {/* Storage Location text input below green box, styled like other inputs */}
+          {/* Storage Location text input below blue box */}
           <div>
-            <Label htmlFor="location">Or Type New Storage Location</Label>
+            <Label htmlFor="location">
+              Or Type New Storage Location <span className="text-destructive">*</span>
+            </Label>
             <Input
               id="location"
               placeholder="e.g., Fridge A - Shelf 2"
               value={watchLocationInput}
               onChange={handleLocationInputChange}
               data-testid="input-location"
+              required={false} // handled by manual validation
             />
-            {form.formState.errors.location && (
-              <p className="text-sm text-destructive mt-1">{form.formState.errors.location.message}</p>
-            )}
+            {locationError && <p className="text-sm text-destructive mt-1">{locationError.message}</p>}
           </div>
 
           <div className="flex gap-3 pt-4">
