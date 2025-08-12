@@ -165,6 +165,14 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       return;
     }
 
+    if (data.quantity <= 0) {
+      form.setError("quantity", {
+        type: "manual",
+        message: "Quantity must be greater than 0",
+      });
+      return;
+    }
+
     const effectiveLocation = watchLocationInput.trim() !== "" ? watchLocationInput.trim() : locationDropdownValue;
     addMedicationMutation.mutate({ ...data, location: effectiveLocation });
   };
@@ -337,8 +345,12 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               <Input
                 id="quantity"
                 type="number"
-                min="0"
-                {...form.register("quantity", { required: "Quantity is required", valueAsNumber: true })}
+                min="1"
+                {...form.register("quantity", {
+                  required: "Quantity is required",
+                  valueAsNumber: true,
+                  validate: (value) => value > 0 || "Quantity must be greater than 0",
+                })}
                 data-testid="input-quantity"
                 required
               />
