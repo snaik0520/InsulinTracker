@@ -288,7 +288,7 @@ export default function Inventory() {
                             >
                               {medication.quantity}
                             </span>
-                            <span className="text-sm text-gray-500"> vials</span>
+                            <span className="text-sm text-gray-500"> injections</span>
                             {medication.quantity <= 5 && (
                               <div className="text-xs text-red-600">Low Stock!</div>
                             )}
