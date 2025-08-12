@@ -226,7 +226,8 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                     <SelectItem key={medication.id} value={medication.id}>
                       <div className="flex items-center justify-between w-full">
                         <span>
-                          {medication.genericName} ({medication.medicalName})
+                          {medication.genericName}{" "}
+                          {medication.medicalName && medication.medicalName.trim() !== "" ? `(${medication.medicalName})` : ""}
                         </span>
                         <span className="text-xs text-gray-500 ml-2">{medication.quantity ?? 0} injections</span>
                       </div>
@@ -327,7 +328,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             </div>
           </div>
 
-          {/* Storage Location dropdown + input */}
+          {/* Storage Location dropdown inside green box */}
           <div className="space-y-2 p-3 bg-green-50 rounded-lg border border-green-200">
             <Label htmlFor="existing-location" className="text-sm font-medium text-green-800">
               Select Existing Storage Location (Optional)
@@ -340,7 +341,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                 defaultValue=""
               >
                 <SelectTrigger id="existing-location" data-testid="select-existing-location" className="w-full">
-                  <SelectValue placeholder="Select a location or type new..." />
+                  <SelectValue placeholder="Select a location..." />
                 </SelectTrigger>
                 <SelectContent>
                   {existingLocations.map((loc) => (
@@ -353,13 +354,16 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             ) : (
               <div className="p-3 text-sm text-muted-foreground">No existing storage locations found.</div>
             )}
+          </div>
 
+          {/* Storage Location text input below green box, styled like other inputs */}
+          <div>
+            <Label htmlFor="location">Or Type New Storage Location</Label>
             <Input
               id="location"
-              placeholder="Or type new location here"
+              placeholder="e.g., Fridge A - Shelf 2"
               value={watchLocationInput}
               onChange={handleLocationInputChange}
-              className="mt-2"
               data-testid="input-location"
             />
             {form.formState.errors.location && (
