@@ -1,4 +1,3 @@
-
 import { useMemo, useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -35,15 +34,13 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     staleTime: 1000 * 60 * 2,
   });
 
-  // NOTE: include formType in the key so different administration forms (pen vs injection)
-  // are kept as separate entries in the existingMedications list.
   const existingMedications = useMemo(() => {
     const map = new Map<
       string,
       Medication & { quantity: number; locationCounts: Map<string, number> }
     >();
     for (const med of allMedications) {
-      const key = `${med.genericName || ""}||${med.medicalName || ""}||${med.formType || ""}`;
+      const key = `${med.genericName || ""}||${med.medicalName || ""}`;
       if (!map.has(key)) {
         const locationCounts = new Map<string, number>();
         if (med.location?.trim()) locationCounts.set(med.location.trim(), med.quantity ?? 0);
@@ -81,28 +78,24 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   });
 
   const [locationDropdownValue, setLocationDropdownValue] = useState("");
-  const [selectedExistingMedicationId, setSelectedExistingMedicationId] = useState("");
 
   useEffect(() => {
     if (!open) {
       form.reset();
       setLocationDropdownValue("");
-      setSelectedExistingMedicationId("");
     }
   }, [open, form]);
 
   const handleExistingMedicationSelect = (medicationId: string) => {
-    setSelectedExistingMedicationId(medicationId);
     const medication = existingMedications.find((med) => med.id === medicationId);
     if (medication) {
       form.setValue("medicalName", medication.medicalName || "");
       form.setValue("genericName", medication.genericName || "");
       form.setValue("type", medication.type || "");
-      form.setValue("formType", medication.formType || ""); // Auto-populate Form dropdown (injection/pen)
+      form.setValue("formType", medication.formType || "");
       form.setValue("dose", medication.dose || "");
       form.setValue("quantity", 0);
       form.setValue("expirationDate", "");
-      // choose location with highest count for this grouped med (if any)
       let maxLocation = "";
       let maxQty = -1;
       medication.locationCounts.forEach((qty, loc) => {
@@ -168,7 +161,6 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       toast({ title: "Success", description: "Medication added successfully", duration: 3000 });
       form.reset();
       setLocationDropdownValue("");
-      setSelectedExistingMedicationId("");
       onOpenChange(false);
     },
     onError: (error: any) => {
@@ -209,15 +201,21 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               <Label className="text-sm font-medium text-blue-800">Select Existing Medication (Optional)</Label>
               <Select
                 onValueChange={handleExistingMedicationSelect}
-                value={selectedExistingMedicationId}
+                value={
+                  form.watch("medicalName")
+                    ? existingMedications.find(
+                        (med) =>
+                          med.medicalName === form.watch("medicalName") &&
+                          med.genericName === form.watch("genericName")
+                      )?.id ?? ""
+                    : ""
+                }
               >
                 <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                 <SelectContent>
                   {existingMedications.map((medication) => (
                     <SelectItem key={medication.id} value={medication.id}>
-                      {medication.medicalName}
-                      {medication.genericName && ` (${medication.genericName})`}
-                      {medication.formType && ` — ${capitalizeWords(medication.formType)}`}
+                      {medication.medicalName} {medication.genericName && `(${medication.genericName})`}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -236,11 +234,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               <Input
                 placeholder="e.g., Humalog"
                 value={form.watch("medicalName")}
-                onChange={(e) => {
-                  form.setValue("medicalName", capitalizeWords(e.target.value));
-                  // If they edit manual fields, clear the selected existing med id to avoid mismatch
-                  setSelectedExistingMedicationId("");
-                }}
+                onChange={(e) => form.setValue("medicalName", capitalizeWords(e.target.value))}
                 required
               />
               {medicalNameError && <p className="text-sm text-destructive">{medicalNameError.message}</p>}
@@ -252,10 +246,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               <Input
                 placeholder="e.g., Insulin Lispro"
                 value={form.watch("genericName")}
-                onChange={(e) => {
-                  form.setValue("genericName", capitalizeWords(e.target.value));
-                  setSelectedExistingMedicationId("");
-                }}
+                onChange={(e) => form.setValue("genericName", capitalizeWords(e.target.value))}
                 required
               />
               {genericNameError && <p className="text-sm text-destructive">{genericNameError.message}</p>}
@@ -267,14 +258,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             <Label>
               Form <span className="text-destructive">*</span>
             </Label>
-            <Select
-              value={form.watch("formType")}
-              onValueChange={(value) => {
-                form.setValue("formType", value);
-                setSelectedExistingMedicationId("");
-              }}
-              required
-            >
+            <Select value={form.watch("formType")} onValueChange={(value) => form.setValue("formType", value)} required>
               <SelectTrigger><SelectValue placeholder="Select form..." /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="injection">Injection</SelectItem>
@@ -288,14 +272,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               <Label>
                 Insulin Type <span className="text-destructive">*</span>
               </Label>
-              <Select
-                value={form.watch("type")}
-                onValueChange={(value) => {
-                  form.setValue("type", value);
-                  setSelectedExistingMedicationId("");
-                }}
-                required
-              >
+              <Select value={form.watch("type")} onValueChange={(value) => form.setValue("type", value)} required>
                 <SelectTrigger><SelectValue placeholder="Select type..." /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="rapid">Rapid Acting</SelectItem>
