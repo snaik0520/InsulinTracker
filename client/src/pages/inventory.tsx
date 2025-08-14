@@ -104,6 +104,39 @@ export default function Inventory() {
     setIsDispenseModalOpen(true);
   };
 
+  // Robust resolver for stored form type (handles older/newer schema variants)
+  const resolveFormType = (med: Medication): "pen" | "injection" | undefined => {
+    const anyMed = med as any;
+
+    // Common string fields
+    const strCandidates = [anyMed.formType, anyMed.form, anyMed.form_type, anyMed.formTypeName];
+    for (const c of strCandidates) {
+      if (!c) continue;
+      const v = String(c).toLowerCase();
+      if (v.includes("pen")) return "pen";
+      if (v.includes("injection")) return "injection";
+      if (v === "pen") return "pen";
+      if (v === "injection") return "injection";
+    }
+
+    // Boolean-ish fields
+    const boolCandidates = [anyMed.isPen, anyMed.is_pen, anyMed.pen, anyMed.isPenDevice];
+    for (const b of boolCandidates) {
+      if (typeof b === "boolean") return b ? "pen" : "injection";
+      // also accept "true"/"false" strings
+      if (typeof b === "string") {
+        const v = b.toLowerCase();
+        if (v === "true") return "pen";
+        if (v === "false") return "injection";
+      }
+    }
+
+    // Fallback: check medicalName for "pen"
+    if ((med.medicalName ?? "").toLowerCase().includes("pen")) return "pen";
+
+    return undefined;
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -222,11 +255,11 @@ export default function Inventory() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Medication
                     </th>
-                    {/* NEW: Form type column (injection / pen) */}
+                    {/* Form type column (injection / pen) */}
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Type
                     </th>
-                    {/* Renamed old 'Type' header to 'Insulin Type' */}
+                    {/* Insulin type */}
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Insulin Type
                     </th>
@@ -260,6 +293,7 @@ export default function Inventory() {
                     filteredMedications.map((medication) => {
                       const daysUntilExpiration = calculateDaysUntilExpiration(medication.expirationDate);
                       const Icon = typeIcons[medication.type as keyof typeof typeIcons];
+                      const formTypeResolved = resolveFormType(medication);
 
                       return (
                         <tr
@@ -278,12 +312,12 @@ export default function Inventory() {
                             </div>
                           </td>
 
-                          {/* NEW column: shows injection / pen */}
+                          {/* Form type: shows "Pen" or "Injection" based on stored data (robust resolver) */}
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-form-type">
-                            {medication.formType ? (medication.formType === "pen" ? "Pen" : "Injection") : "—"}
+                            {formTypeResolved ? (formTypeResolved === "pen" ? "Pen" : "Injection") : "—"}
                           </td>
 
-                          {/* Insulin type badge (renamed column) */}
+                          {/* Insulin type badge */}
                           <td className="px-6 py-4 whitespace-nowrap">
                             <Badge className={typeColors[medication.type as keyof typeof typeColors]}>
                               <Icon className="h-3 w-3 mr-1" />
@@ -304,9 +338,7 @@ export default function Inventory() {
                             >
                               {medication.quantity ?? 0}
                             </span>
-                            { (medication.quantity ?? 0) <= 5 && (
-                              <div className="text-xs text-red-600">Low Stock!</div>
-                            )}
+                            {(medication.quantity ?? 0) <= 5 && <div className="text-xs text-red-600">Low Stock!</div>}
                           </td>
 
                           <td className="px-6 py-4 whitespace-nowrap">
