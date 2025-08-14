@@ -190,7 +190,6 @@ export default function Inventory() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Medication</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Insulin Type</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dose</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
@@ -202,7 +201,7 @@ export default function Inventory() {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredMedications.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
+                      <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
                         {searchQuery || selectedType !== "all"
                           ? "No medications found matching your criteria."
                           : "No medications in inventory. Add your first medication to get started."}
@@ -221,7 +220,6 @@ export default function Inventory() {
                               <div className="text-sm text-gray-500" data-testid="text-generic-name">{medication.genericName ? `(${medication.genericName})` : ""}</div>
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-form-type">{medication.formType ? (medication.formType === "pen" ? "Pen" : "Injection") : "—"}</td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <Badge className={typeColors[medication.type as keyof typeof typeColors]}>
                               <Icon className="h-3 w-3 mr-1" />
@@ -264,7 +262,6 @@ export default function Inventory() {
         open={isAddModalOpen}
         onOpenChange={setIsAddModalOpen}
         onSave={(newMed) => {
-          // Update inventory list; replace this with your mutation if using backend
           medications.push(newMed);
           setIsAddModalOpen(false);
         }}
