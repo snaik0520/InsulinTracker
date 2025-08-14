@@ -66,7 +66,6 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       medicalName: "",
       genericName: "",
       type: "",
-      formType: "",
       dose: "",
       quantity: 0,
       expirationDate: "",
@@ -83,14 +82,12 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     }
   }, [open, form]);
 
-  // Populate form fields when selecting an existing medication
   const handleExistingMedicationSelect = (medicationId: string) => {
     const medication = existingMedications.find((med) => med.id === medicationId);
     if (medication) {
       form.setValue("medicalName", medication.medicalName || "");
       form.setValue("genericName", medication.genericName || "");
       form.setValue("type", medication.type || "");
-      form.setValue("formType", medication.formType || ""); // Administration Type
       form.setValue("dose", medication.dose || "");
       form.setValue("quantity", 0);
       form.setValue("expirationDate", "");
@@ -173,180 +170,4 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   });
 
   const medicalNameError = form.formState.errors.medicalName;
-  const genericNameError = form.formState.errors.genericName;
-  const typeError = form.formState.errors.type;
-  const formTypeError = form.formState.errors.formType;
-  const doseError = form.formState.errors.dose;
-  const quantityError = form.formState.errors.quantity;
-  const expirationDateError = form.formState.errors.expirationDate;
-  const locationError = form.formState.errors.location;
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Plus className="h-5 w-5 text-primary" />
-            Add Insulin Medication
-          </DialogTitle>
-        </DialogHeader>
-
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          {medsLoading ? (
-            <div className="p-3">Loading medications...</div>
-          ) : medsError ? (
-            <div className="p-3 text-destructive">Failed to load existing medications.</div>
-          ) : existingMedications.length > 0 ? (
-            <div className="space-y-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
-              <Label className="text-sm font-medium text-blue-800">Select Existing Medication (Optional)</Label>
-              <Select
-                onValueChange={handleExistingMedicationSelect}
-                value={
-                  form.watch("medicalName")
-                    ? existingMedications.find(
-                        (med) =>
-                          med.medicalName === form.watch("medicalName") &&
-                          med.genericName === form.watch("genericName")
-                      )?.id ?? ""
-                    : ""
-                }
-              >
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                <SelectContent>
-                  {existingMedications.map((medication) => (
-                    <SelectItem key={medication.id} value={medication.id}>
-                      {medication.medicalName} {medication.genericName && `(${medication.genericName})`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          ) : (
-            <div className="p-3 text-sm text-muted-foreground">No existing medications in inventory.</div>
-          )}
-
-          {/* Medical Name / Generic Name */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>
-                Medical Name <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                placeholder="e.g., Humalog"
-                value={form.watch("medicalName")}
-                onChange={(e) => form.setValue("medicalName", capitalizeWords(e.target.value))}
-                required
-              />
-              {medicalNameError && <p className="text-sm text-destructive">{medicalNameError.message}</p>}
-            </div>
-            <div>
-              <Label>
-                Generic Name <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                placeholder="e.g., Insulin Lispro"
-                value={form.watch("genericName")}
-                onChange={(e) => form.setValue("genericName", capitalizeWords(e.target.value))}
-                required
-              />
-              {genericNameError && <p className="text-sm text-destructive">{genericNameError.message}</p>}
-            </div>
-          </div>
-
-          {/* Insulin Type, Administration Type, Dose in one row */}
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <Label>
-                Insulin Type <span className="text-destructive">*</span>
-              </Label>
-              <Select
-                value={form.watch("type")}
-                onValueChange={(value) => form.setValue("type", value)}
-                required
-              >
-                <SelectTrigger><SelectValue placeholder="Select type..." /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="rapid">Rapid Acting</SelectItem>
-                  <SelectItem value="long">Long Acting</SelectItem>
-                  <SelectItem value="intermediate">Intermediate</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-              {typeError && <p className="text-sm text-destructive">{typeError.message}</p>}
-            </div>
-
-            <div>
-              <Label>
-                Administration Type <span className="text-destructive">*</span>
-              </Label>
-              <Select
-                value={form.watch("formType")}
-                onValueChange={(value) => form.setValue("formType", value)}
-                required
-              >
-                <SelectTrigger><SelectValue placeholder="Select administration type..." /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="injection">Injection</SelectItem>
-                  <SelectItem value="pen">Pen</SelectItem>
-                </SelectContent>
-              </Select>
-              {formTypeError && <p className="text-sm text-destructive">{formTypeError.message}</p>}
-            </div>
-
-            <div>
-              <Label>
-                Dose <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                placeholder="e.g., 100 units/mL"
-                value={watchDose}
-                onChange={handleDoseChange}
-                required
-              />
-              {doseError && <p className="text-sm text-destructive">{doseError.message}</p>}
-            </div>
-          </div>
-
-          {/* Quantity / Expiration Date */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>
-                Quantity <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                type="number"
-                min="1"
-                {...form.register("quantity", {
-                  required: "Quantity is required",
-                  valueAsNumber: true,
-                  validate: (value) => value > 0 || "Quantity must be greater than 0",
-                })}
-                required
-              />
-              {quantityError && <p className="text-sm text-destructive">{quantityError.message}</p>}
-            </div>
-            <div>
-              <Label>
-                Expiration Date <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                type="date"
-                {...form.register("expirationDate", { required: "Expiration date is required" })}
-                required
-              />
-              {expirationDateError && <p className="text-sm text-destructive">{expirationDateError.message}</p>}
-            </div>
-          </div>
-
-          {/* Location selector */}
-          <div className="space-y-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
-            <Label className="text-sm font-medium text-blue-800">Select Existing Storage Location (Optional)</Label>
-            {existingLocations.length > 0 ? (
-              <Select onValueChange={handleExistingLocationSelect} value={locationDropdownValue}>
-                <SelectTrigger><SelectValue placeholder="Select a location..." /></SelectTrigger>
-                <SelectContent>
-                  {existingLocations.map((loc) => (
-                    <SelectItem key={loc} value={loc}>{loc}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Se
+  const genericNameError = form.formState.
