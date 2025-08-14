@@ -190,6 +190,12 @@ export default function Inventory() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Medication</th>
+
+                    {/* Administrative Form column */}
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Administrative Form
+                    </th>
+
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Insulin Type</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dose</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
@@ -201,7 +207,7 @@ export default function Inventory() {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredMedications.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                      <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
                         {searchQuery || selectedType !== "all"
                           ? "No medications found matching your criteria."
                           : "No medications in inventory. Add your first medication to get started."}
@@ -212,36 +218,75 @@ export default function Inventory() {
                       const daysUntilExpiration = calculateDaysUntilExpiration(medication.expirationDate);
                       const Icon = typeIcons[medication.type as keyof typeof typeIcons];
 
+                      // administrative form display logic:
+                      const adminFormValue =
+                        (medication.administrativeForm as string | undefined) ||
+                        (medication.formType as string | undefined) ||
+                        "";
+                      const adminFormDisplay =
+                        adminFormValue.toLowerCase() === "pen" ? "Pen" : adminFormValue.toLowerCase() === "injection" ? "Injection" : "—";
+
                       return (
                         <tr key={medication.id} className={`${getRowClassName(medication.type)} hover:bg-gray-50`} data-testid={`row-medication-${medication.id}`}>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div>
-                              <div className="text-sm font-medium text-gray-900" data-testid="text-medical-name">{medication.medicalName ?? medication.genericName ?? "—"}</div>
-                              <div className="text-sm text-gray-500" data-testid="text-generic-name">{medication.genericName ? `(${medication.genericName})` : ""}</div>
+                              <div className="text-sm font-medium text-gray-900" data-testid="text-medical-name">
+                                {medication.medicalName ?? medication.genericName ?? "—"}
+                              </div>
+                              <div className="text-sm text-gray-500" data-testid="text-generic-name">
+                                {medication.genericName ? `(${medication.genericName})` : ""}
+                              </div>
                             </div>
                           </td>
+
+                          {/* Administrative Form */}
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-administrative-form">
+                            {adminFormDisplay}
+                          </td>
+
                           <td className="px-6 py-4 whitespace-nowrap">
                             <Badge className={typeColors[medication.type as keyof typeof typeColors]}>
                               <Icon className="h-3 w-3 mr-1" />
                               {typeLabels[medication.type as keyof typeof typeLabels]}
                             </Badge>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-dose">{medication.dose}</td>
+
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-dose">
+                            {medication.dose}
+                          </td>
+
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`text-sm font-medium ${(medication.quantity ?? 0) <= 5 ? "text-red-600" : "text-gray-900"}`} data-testid="text-quantity">
+                            <span
+                              className={`text-sm font-medium ${
+                                (medication.quantity ?? 0) <= 5 ? "text-red-600" : "text-gray-900"
+                              }`}
+                              data-testid="text-quantity"
+                            >
                               {medication.quantity ?? 0}
                             </span>
                             {(medication.quantity ?? 0) <= 5 && <div className="text-xs text-red-600">Low Stock!</div>}
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className="text-sm text-gray-900" data-testid="text-expiration-date">
                               {medication.expirationDate ? new Date(medication.expirationDate).toLocaleDateString() : "—"}
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" data-testid="text-location">{medication.location ?? "—"}</td>
+
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" data-testid="text-location">
+                            {medication.location ?? "—"}
+                          </td>
+
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <Button onClick={() => handleDispense(medication)} size="sm" className="bg-green-600 hover:bg-green-700 text-white" disabled={(medication.quantity ?? 0) === 0} data-testid={`button-dispense-${medication.id}`}>
-                              <HandHeart className="h-4 w-4 mr-1" /> Dispense
+                            <Button
+                              onClick={() => handleDispense(medication)}
+                              size="sm"
+                              className="bg-green-600 hover:bg-green-700 text-white"
+                              disabled={(medication.quantity ?? 0) === 0}
+                              data-testid={`button-dispense-${medication.id}`}
+                            >
+                              <HandHeart className="h-4 w-4 mr-1" />
+                              Dispense
                             </Button>
                           </td>
                         </tr>
@@ -261,7 +306,8 @@ export default function Inventory() {
       <AddMedicationModal
         open={isAddModalOpen}
         onOpenChange={setIsAddModalOpen}
-        onSave={(newMed) => {
+        onSave={(newMed: any) => {
+          // Note: replace with your backend mutation; this is only local client push
           medications.push(newMed);
           setIsAddModalOpen(false);
         }}
