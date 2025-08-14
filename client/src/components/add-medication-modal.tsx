@@ -92,7 +92,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       form.setValue("medicalName", medication.medicalName || "");
       form.setValue("genericName", medication.genericName || "");
       form.setValue("type", medication.type || "");
-      form.setValue("formType", medication.formType || ""); // ✅ Auto-fill form type
+      form.setValue("formType", medication.formType || ""); // ✅ Auto-populate Form dropdown
       form.setValue("dose", medication.dose || "");
       form.setValue("quantity", 0);
       form.setValue("expirationDate", "");
@@ -319,7 +319,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                 Expiration Date <span className="text-destructive">*</span>
               </Label>
               <Input
-                type="month" // ✅ Month/Year only
+                type="date"
                 {...form.register("expirationDate", { required: "Expiration date is required" })}
                 required
               />
