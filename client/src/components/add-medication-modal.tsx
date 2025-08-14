@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef } from "react"; 
+import { useMemo, useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,9 +16,11 @@ import { Plus } from "lucide-react";
 interface AddMedicationModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // keep optional onSave for backward compatibility (Inventory uses onSave in some earlier versions)
+  onSave?: (med: Medication) => void;
 }
 
-export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalProps) {
+export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedicationModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -73,7 +75,9 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       quantity: 0,
       expirationDate: "",
       location: "",
-    },
+      // add administrativeForm default
+      administrativeForm: "",
+    } as any,
   });
 
   const [locationDropdownValue, setLocationDropdownValue] = useState("");
@@ -94,6 +98,22 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       form.setValue("dose", medication.dose || "");
       form.setValue("quantity", 0);
       form.setValue("expirationDate", "");
+      // set administrative form from either administrativeForm or formType (backwards compat)
+      const adminFrom =
+        (medication as any).administrativeForm ||
+        (medication as any).formType ||
+        "";
+      // normalize to lowercase token 'pen' or 'injection'
+      const normalized =
+        typeof adminFrom === "string"
+          ? adminFrom.toLowerCase() === "pen"
+            ? "pen"
+            : adminFrom.toLowerCase() === "injection"
+            ? "injection"
+            : ""
+          : "";
+      form.setValue("administrativeForm", normalized);
+
       let maxLocation = "";
       let maxQty = -1;
       medication.locationCounts.forEach((qty, loc) => {
@@ -143,16 +163,31 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       form.setError("quantity", { type: "manual", message: "Quantity must be greater than 0" });
       return;
     }
+    // validate administrativeForm
+    const admin = (form.getValues() as any).administrativeForm;
+    if (!admin || (admin !== "pen" && admin !== "injection")) {
+      form.setError("administrativeForm" as any, { type: "manual", message: "Administrative Form is required" });
+      return;
+    }
+
     const effectiveLocation = watchLocationInput.trim() !== "" ? watchLocationInput.trim() : locationDropdownValue;
-    addMedicationMutation.mutate({ ...data, location: effectiveLocation });
+
+    // Build payload (include administrativeForm explicitly for safety)
+    const payload = {
+      ...data,
+      location: effectiveLocation,
+      administrativeForm: admin,
+    } as any;
+
+    addMedicationMutation.mutate(payload);
   };
 
   const addMedicationMutation = useMutation({
-    mutationFn: async (data: InsertMedication) => {
+    mutationFn: async (data: any) => {
       const response = await apiRequest("POST", "/api/medications", data);
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
       queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"] });
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
@@ -160,6 +195,8 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       form.reset();
       setLocationDropdownValue("");
       onOpenChange(false);
+      // optional callback for callers
+      onSave?.(res);
     },
     onError: (error: any) => {
       toast({
@@ -171,13 +208,14 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     },
   });
 
-  const medicalNameError = form.formState.errors.medicalName;
-  const genericNameError = form.formState.errors.genericName;
-  const typeError = form.formState.errors.type;
-  const doseError = form.formState.errors.dose;
-  const quantityError = form.formState.errors.quantity;
-  const expirationDateError = form.formState.errors.expirationDate;
-  const locationError = form.formState.errors.location;
+  const medicalNameError = (form.formState.errors as any).medicalName;
+  const genericNameError = (form.formState.errors as any).genericName;
+  const typeError = (form.formState.errors as any).type;
+  const doseError = (form.formState.errors as any).dose;
+  const quantityError = (form.formState.errors as any).quantity;
+  const expirationDateError = (form.formState.errors as any).expirationDate;
+  const locationError = (form.formState.errors as any).location;
+  const administrativeFormError = (form.formState.errors as any).administrativeForm;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -309,6 +347,27 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               />
               {expirationDateError && <p className="text-sm text-destructive">{expirationDateError.message}</p>}
             </div>
+          </div>
+
+          {/* Administrative Form */}
+          <div>
+            <Label>
+              Administrative Form <span className="text-destructive">*</span>
+            </Label>
+            <Select
+              value={(form.watch("administrativeForm") as any) ?? ""}
+              onValueChange={(value) => form.setValue("administrativeForm" as any, value)}
+              required
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select administrative form..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="injection">Injection</SelectItem>
+                <SelectItem value="pen">Pen</SelectItem>
+              </SelectContent>
+            </Select>
+            {administrativeFormError && <p className="text-sm text-destructive">{administrativeFormError.message}</p>}
           </div>
 
           {/* Location selector */}
