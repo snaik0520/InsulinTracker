@@ -21,7 +21,6 @@ interface AddMedicationModalProps {
 export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-
   const capitalizeWords = (str: string) => str.replace(/\b\w/g, (c) => c.toUpperCase());
 
   const { data: allMedications = [], isLoading: medsLoading, isError: medsError } = useQuery<Medication[]>({
@@ -35,7 +34,10 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   });
 
   const existingMedications = useMemo(() => {
-    const map = new Map<string, Medication & { quantity: number; locationCounts: Map<string, number> }>();
+    const map = new Map<
+      string,
+      Medication & { quantity: number; locationCounts: Map<string, number> }
+    >();
     for (const med of allMedications) {
       const key = `${med.genericName || ""}||${med.medicalName || ""}`;
       if (!map.has(key)) {
@@ -60,14 +62,14 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     return Array.from(set);
   }, [allMedications]);
 
-  const form = useForm<InsertMedication & { administrationType: string }>({
+  const form = useForm<InsertMedication>({
     resolver: zodResolver(insertMedicationSchema),
     defaultValues: {
       medicalName: "",
       genericName: "",
       type: "",
       formType: "",
-      administrationType: "", // NEW FIELD
+      administrationForm: "",
       dose: "",
       quantity: 0,
       expirationDate: "",
@@ -89,11 +91,12 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     if (medication) {
       form.setValue("medicalName", medication.medicalName || "");
       form.setValue("genericName", medication.genericName || "");
-      form.setValue("type", medication.type || "");  // Insulin Type
-      form.setValue("administrationType", medication.formType || ""); // Admin Type
+      form.setValue("type", medication.type || "");
+      form.setValue("formType", medication.formType || "");
       form.setValue("dose", medication.dose || "");
       form.setValue("quantity", 0);
       form.setValue("expirationDate", "");
+      form.setValue("administrationForm", medication.administrationForm || ""); // autopopulate
       let maxLocation = "";
       let maxQty = -1;
       medication.locationCounts.forEach((qty, loc) => {
@@ -134,7 +137,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
 
   const validateLocation = () => watchLocationInput.trim() !== "" || locationDropdownValue !== "";
 
-  const onSubmit = (data: InsertMedication & { administrationType: string }) => {
+  const onSubmit = (data: InsertMedication) => {
     if (!validateLocation()) {
       form.setError("location", { type: "manual", message: "Please select or enter a storage location" });
       return;
@@ -148,7 +151,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   };
 
   const addMedicationMutation = useMutation({
-    mutationFn: async (data: InsertMedication & { administrationType: string }) => {
+    mutationFn: async (data: InsertMedication) => {
       const response = await apiRequest("POST", "/api/medications", data);
       return response.json();
     },
@@ -174,7 +177,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   const medicalNameError = form.formState.errors.medicalName;
   const genericNameError = form.formState.errors.genericName;
   const typeError = form.formState.errors.type;
-  const administrationTypeError = form.formState.errors.administrationType;
+  const administrationFormError = form.formState.errors.administrationForm;
   const doseError = form.formState.errors.dose;
   const quantityError = form.formState.errors.quantity;
   const expirationDateError = form.formState.errors.expirationDate;
@@ -227,9 +230,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
           {/* Medical Name / Generic Name */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label>
-                Medical Name <span className="text-destructive">*</span>
-              </Label>
+              <Label>Medical Name <span className="text-destructive">*</span></Label>
               <Input
                 placeholder="e.g., Humalog"
                 value={form.watch("medicalName")}
@@ -239,9 +240,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               {medicalNameError && <p className="text-sm text-destructive">{medicalNameError.message}</p>}
             </div>
             <div>
-              <Label>
-                Generic Name <span className="text-destructive">*</span>
-              </Label>
+              <Label>Generic Name <span className="text-destructive">*</span></Label>
               <Input
                 placeholder="e.g., Insulin Lispro"
                 value={form.watch("genericName")}
@@ -252,12 +251,21 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             </div>
           </div>
 
-          {/* Insulin Type & Administration Type */}
-          <div className="grid grid-cols-2 gap-4">
+          {/* Form / Insulin Type / Administration Type */}
+          <div className="grid grid-cols-3 gap-4">
             <div>
-              <Label>
-                Insulin Type <span className="text-destructive">*</span>
-              </Label>
+              <Label>Form <span className="text-destructive">*</span></Label>
+              <Select value={form.watch("formType")} onValueChange={(value) => form.setValue("formType", value)} required>
+                <SelectTrigger><SelectValue placeholder="Select form..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="injection">Injection</SelectItem>
+                  <SelectItem value="pen">Pen</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Insulin Type <span className="text-destructive">*</span></Label>
               <Select value={form.watch("type")} onValueChange={(value) => form.setValue("type", value)} required>
                 <SelectTrigger><SelectValue placeholder="Select type..." /></SelectTrigger>
                 <SelectContent>
@@ -271,106 +279,25 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             </div>
 
             <div>
-              <Label>
-                Administration Type <span className="text-destructive">*</span>
-              </Label>
+              <Label>Administration Type <span className="text-destructive">*</span></Label>
               <Select
-                value={form.watch("administrationType")}
-                onValueChange={(value) => form.setValue("administrationType", value)}
+                value={form.watch("administrationForm")}
+                onValueChange={(value) => form.setValue("administrationForm", value)}
                 required
               >
-                <SelectTrigger><SelectValue placeholder="Select administration type..." /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Select form..." /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="injection">Injection</SelectItem>
-                  <SelectItem value="pen">Pen</SelectItem>
+                  <SelectItem value="Injection">Injection</SelectItem>
+                  <SelectItem value="Pen">Pen</SelectItem>
                 </SelectContent>
               </Select>
-              {administrationTypeError && <p className="text-sm text-destructive">{administrationTypeError.message}</p>}
+              {administrationFormError && <p className="text-sm text-destructive">{administrationFormError.message}</p>}
             </div>
           </div>
 
-          {/* Dose */}
-          <div>
-            <Label>
-              Dose <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              placeholder="e.g., 100 units/mL"
-              value={watchDose}
-              onChange={handleDoseChange}
-              required
-            />
-            {doseError && <p className="text-sm text-destructive">{doseError.message}</p>}
-          </div>
-
-          {/* Quantity / Expiration Date */}
-          <div className="grid grid-cols-2 gap-4">
+          {/* Dose / Quantity / Expiration */}
+          <div className="grid grid-cols-3 gap-4">
             <div>
-              <Label>
-                Quantity <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                type="number"
-                min="1"
-                {...form.register("quantity", {
-                  required: "Quantity is required",
-                  valueAsNumber: true,
-                  validate: (value) => value > 0 || "Quantity must be greater than 0",
-                })}
-                required
-              />
-              {quantityError && <p className="text-sm text-destructive">{quantityError.message}</p>}
-            </div>
-            <div>
-              <Label>
-                Expiration Date <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                type="date"
-                {...form.register("expirationDate", { required: "Expiration date is required" })}
-                required
-              />
-              {expirationDateError && <p className="text-sm text-destructive">{expirationDateError.message}</p>}
-            </div>
-          </div>
-
-          {/* Location selector */}
-          <div className="space-y-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
-            <Label className="text-sm font-medium text-blue-800">Select Existing Storage Location (Optional)</Label>
-            {existingLocations.length > 0 ? (
-              <Select onValueChange={handleExistingLocationSelect} value={locationDropdownValue}>
-                <SelectTrigger><SelectValue placeholder="Select a location..." /></SelectTrigger>
-                <SelectContent>
-                  {existingLocations.map((loc) => (
-                    <SelectItem key={loc} value={loc}>{loc}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <div className="p-3 text-sm text-muted-foreground">No existing storage locations found.</div>
-            )}
-          </div>
-
-          <div>
-            <Label>
-              Or Type New Storage Location <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              placeholder="e.g., Fridge A - Shelf 2"
-              value={watchLocationInput}
-              onChange={handleLocationInputChange}
-            />
-            {locationError && <p className="text-sm text-destructive">{locationError.message}</p>}
-          </div>
-
-          <div className="flex gap-3 pt-4">
-            <Button type="submit" className="flex-1" disabled={addMedicationMutation.isLoading}>
-              {addMedicationMutation.isLoading ? "Adding..." : <><Plus className="h-4 w-4 mr-2" />Add Medication</>}
-            </Button>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
+              <Label>Dose <span className="text-destructive">*</span></Label>
+              <Input placeholder="e.g., 100 units/mL" value={watchDose} onChange={handleDoseChange} required />
+              {doseError && <p className="text-sm text-
