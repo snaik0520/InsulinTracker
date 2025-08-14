@@ -1,9 +1,10 @@
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -34,8 +35,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     staleTime: 1000 * 60 * 2,
   });
 
-  // NOTE: include formType in the key so different administration forms (pen vs injection)
-  // are kept as separate entries in the existingMedications list.
+  // Include formType in grouping key so Injection/Pen is preserved
   const existingMedications = useMemo(() => {
     const map = new Map<
       string,
@@ -97,11 +97,11 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       form.setValue("medicalName", medication.medicalName || "");
       form.setValue("genericName", medication.genericName || "");
       form.setValue("type", medication.type || "");
-      form.setValue("formType", medication.formType || ""); // Auto-populate Form dropdown (injection/pen)
+      form.setValue("formType", medication.formType || ""); // Auto-populate Injection/Pen
       form.setValue("dose", medication.dose || "");
       form.setValue("quantity", 0);
       form.setValue("expirationDate", "");
-      // choose location with highest count for this grouped med (if any)
+
       let maxLocation = "";
       let maxQty = -1;
       medication.locationCounts.forEach((qty, loc) => {
@@ -187,6 +187,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   const quantityError = form.formState.errors.quantity;
   const expirationDateError = form.formState.errors.expirationDate;
   const locationError = form.formState.errors.location;
+  const formTypeError = form.formState.errors.formType;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -226,7 +227,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             <div className="p-3 text-sm text-muted-foreground">No existing medications in inventory.</div>
           )}
 
-          {/* Medical Name then Generic Name */}
+          {/* Medical Name and Generic Name */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>
@@ -237,7 +238,6 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                 value={form.watch("medicalName")}
                 onChange={(e) => {
                   form.setValue("medicalName", capitalizeWords(e.target.value));
-                  // If they edit manual fields, clear the selected existing med id to avoid mismatch
                   setSelectedExistingMedicationId("");
                 }}
                 required
@@ -261,27 +261,32 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             </div>
           </div>
 
-          {/* Injection/Pen dropdown */}
+          {/* Injection/Pen Radio Buttons */}
           <div>
             <Label>
-              Form <span className="text-destructive">*</span>
+              Administration Form <span className="text-destructive">*</span>
             </Label>
-            <Select
+            <RadioGroup
               value={form.watch("formType")}
               onValueChange={(value) => {
-                form.setValue("formType", value);
+                form.setValue("formType", value, { shouldValidate: true });
                 setSelectedExistingMedicationId("");
               }}
-              required
+              className="flex gap-4 mt-2"
             >
-              <SelectTrigger><SelectValue placeholder="Select form..." /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="injection">Injection</SelectItem>
-                <SelectItem value="pen">Pen</SelectItem>
-              </SelectContent>
-            </Select>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="injection" id="injection" />
+                <Label htmlFor="injection">Injection</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <RadioGroupItem value="pen" id="pen" />
+                <Label htmlFor="pen">Pen</Label>
+              </div>
+            </RadioGroup>
+            {formTypeError && <p className="text-sm text-destructive">{formTypeError.message}</p>}
           </div>
 
+          {/* Insulin Type and Dose */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>
@@ -319,6 +324,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             </div>
           </div>
 
+          {/* Quantity and Expiration Date */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>
@@ -349,7 +355,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             </div>
           </div>
 
-          {/* Location selector */}
+          {/* Location */}
           <div className="space-y-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
             <Label className="text-sm font-medium text-blue-800">Select Existing Storage Location (Optional)</Label>
             {existingLocations.length > 0 ? (
