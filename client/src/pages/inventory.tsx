@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import { AddMedicationModal } from "@/components/add-medication-modal";
 import { DispenseModal } from "@/components/dispense-modal";
 import { LowStockTicker } from "@/components/low-stock-ticker";
@@ -13,24 +14,48 @@ import { type Medication } from "@shared/schema";
 import { Search, Plus, HandHeart, Syringe, Zap, Clock, Scale, HelpCircle, List } from "lucide-react";
 import logo from "../assets/noor-logo.png";
 
-const typeIcons = { rapid: Zap, long: Clock, intermediate: Scale, other: HelpCircle };
-const typeColors = { rapid: "bg-blue-100 text-blue-800", long: "bg-purple-100 text-purple-800", intermediate: "bg-green-100 text-green-800", other: "bg-orange-100 text-orange-800" };
-const typeLabels = { rapid: "Rapid Acting", long: "Long Acting", intermediate: "Intermediate", other: "Other" };
+const typeIcons = {
+  rapid: Zap,
+  long: Clock,
+  intermediate: Scale,
+  other: HelpCircle,
+};
+
+const typeColors = {
+  rapid: "bg-blue-100 text-blue-800",
+  long: "bg-purple-100 text-purple-800",
+  intermediate: "bg-green-100 text-green-800",
+  other: "bg-orange-100 text-orange-800",
+};
+
+const typeLabels = {
+  rapid: "Rapid Acting",
+  long: "Long Acting",
+  intermediate: "Intermediate",
+  other: "Other",
+};
 
 const getRowClassName = (type: string) => {
   switch (type) {
-    case "rapid": return "insulin-type-rapid";
-    case "long": return "insulin-type-long";
-    case "intermediate": return "insulin-type-intermediate";
-    case "other": return "insulin-type-other";
-    default: return "";
+    case "rapid":
+      return "insulin-type-rapid";
+    case "long":
+      return "insulin-type-long";
+    case "intermediate":
+      return "insulin-type-intermediate";
+    case "other":
+      return "insulin-type-other";
+    default:
+      return "";
   }
 };
 
 const calculateDaysUntilExpiration = (expirationDate: string) => {
   const today = new Date();
   const expiry = new Date(expirationDate);
-  return Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const diffTime = expiry.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays;
 };
 
 const getExpirationClassName = (days: number) => {
@@ -39,38 +64,12 @@ const getExpirationClassName = (days: number) => {
   return "text-green-600";
 };
 
-// Robust resolver for administration form
-const resolveFormType = (med: Medication): "pen" | "injection" | undefined => {
-  const anyMed = med as any;
-  const strCandidates = [anyMed.formType, anyMed.form, anyMed.form_type, anyMed.formTypeName];
-  for (const c of strCandidates) {
-    if (!c) continue;
-    const v = String(c).toLowerCase();
-    if (v.includes("pen")) return "pen";
-    if (v.includes("injection")) return "injection";
-    if (v === "pen") return "pen";
-    if (v === "injection") return "injection";
-  }
-  const boolCandidates = [anyMed.isPen, anyMed.is_pen, anyMed.pen, anyMed.isPenDevice];
-  for (const b of boolCandidates) {
-    if (typeof b === "boolean") return b ? "pen" : "injection";
-    if (typeof b === "string") {
-      const v = b.toLowerCase();
-      if (v === "true") return "pen";
-      if (v === "false") return "injection";
-    }
-  }
-  if ((med.medicalName ?? "").toLowerCase().includes("pen")) return "pen";
-  return undefined;
-};
-
 export default function Inventory() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedType, setSelectedType] = useState("all");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isDispenseModalOpen, setIsDispenseModalOpen] = useState(false);
   const [selectedMedication, setSelectedMedication] = useState<Medication | null>(null);
-  const [preselectedMedication, setPreselectedMedication] = useState<Medication | null>(null);
 
   const { data: medications = [], isLoading } = useQuery<Medication[]>({
     queryKey: ["/api/medications"],
@@ -78,7 +77,11 @@ export default function Inventory() {
 
   const filteredMedications = useMemo(() => {
     let filtered = medications;
-    filtered = filtered.filter((med) => (med.quantity ?? 0) > 0);
+
+    // Filter out medications with 0 quantity
+    filtered = filtered.filter((medication) => (medication.quantity ?? 0) > 0);
+
+    // Filter by search query
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(
@@ -87,7 +90,12 @@ export default function Inventory() {
           (med.medicalName ?? "").toLowerCase().includes(query)
       );
     }
-    if (selectedType !== "all") filtered = filtered.filter((med) => med.type === selectedType);
+
+    // Filter by insulin type
+    if (selectedType !== "all") {
+      filtered = filtered.filter((med) => med.type === selectedType);
+    }
+
     return filtered;
   }, [medications, searchQuery, selectedType]);
 
@@ -96,9 +104,37 @@ export default function Inventory() {
     setIsDispenseModalOpen(true);
   };
 
-  const handleAddMedication = (medication?: Medication) => {
-    setPreselectedMedication(medication ?? null);
-    setIsAddModalOpen(true);
+  // Robust resolver for stored form type (handles older/newer schema variants)
+  const resolveFormType = (med: Medication): "pen" | "injection" | undefined => {
+    const anyMed = med as any;
+
+    // Common string fields
+    const strCandidates = [anyMed.formType, anyMed.form, anyMed.form_type, anyMed.formTypeName];
+    for (const c of strCandidates) {
+      if (!c) continue;
+      const v = String(c).toLowerCase();
+      if (v.includes("pen")) return "pen";
+      if (v.includes("injection")) return "injection";
+      if (v === "pen") return "pen";
+      if (v === "injection") return "injection";
+    }
+
+    // Boolean-ish fields
+    const boolCandidates = [anyMed.isPen, anyMed.is_pen, anyMed.pen, anyMed.isPenDevice];
+    for (const b of boolCandidates) {
+      if (typeof b === "boolean") return b ? "pen" : "injection";
+      // also accept "true"/"false" strings
+      if (typeof b === "string") {
+        const v = b.toLowerCase();
+        if (v === "true") return "pen";
+        if (v === "false") return "injection";
+      }
+    }
+
+    // Fallback: check medicalName for "pen"
+    if ((med.medicalName ?? "").toLowerCase().includes("pen")) return "pen";
+
+    return undefined;
   };
 
   if (isLoading) {
@@ -114,6 +150,7 @@ export default function Inventory() {
 
   return (
     <div className="bg-gray-50 min-h-screen">
+      {/* Header */}
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
@@ -135,9 +172,11 @@ export default function Inventory() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Search and Filters */}
         <Card className="mb-8">
           <CardContent className="p-6">
             <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between space-y-4 lg:space-y-0 lg:space-x-4">
+              {/* Search Bar */}
               <div className="flex-1 max-w-lg">
                 <Label htmlFor="medication-search" className="block text-sm font-medium text-gray-700 mb-2">
                   Search Insulin Medication
@@ -154,10 +193,12 @@ export default function Inventory() {
                   />
                 </div>
               </div>
+
+              {/* Action Buttons */}
               <div className="flex gap-3 flex-shrink-0">
                 <TransactionHistory />
                 <Button
-                  onClick={() => handleAddMedication()}
+                  onClick={() => setIsAddModalOpen(true)}
                   className="bg-primary hover:bg-primary/90"
                   data-testid="button-add-medication"
                 >
@@ -167,6 +208,7 @@ export default function Inventory() {
               </div>
             </div>
 
+            {/* Insulin Type Filter Buttons */}
             <div className="mt-6">
               <Label className="block text-sm font-medium text-gray-700 mb-3">Filter by Insulin Type</Label>
               <div className="flex flex-wrap gap-2">
@@ -199,6 +241,7 @@ export default function Inventory() {
           </CardContent>
         </Card>
 
+        {/* Inventory Table */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg font-medium text-gray-900">Current Insulin Inventory</CardTitle>
@@ -209,14 +252,32 @@ export default function Inventory() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Medication</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Insulin Type</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dose</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Expiration</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Medication
+                    </th>
+                    {/* Form type column (injection / pen) */}
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Type
+                    </th>
+                    {/* Insulin type */}
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Insulin Type
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Dose
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Quantity
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Expiration
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Location
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -250,18 +311,24 @@ export default function Inventory() {
                               </div>
                             </div>
                           </td>
+
+                          {/* Form type: shows "Pen" or "Injection" based on stored data (robust resolver) */}
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-form-type">
                             {formTypeResolved ? (formTypeResolved === "pen" ? "Pen" : "Injection") : "—"}
                           </td>
+
+                          {/* Insulin type badge */}
                           <td className="px-6 py-4 whitespace-nowrap">
                             <Badge className={typeColors[medication.type as keyof typeof typeColors]}>
                               <Icon className="h-3 w-3 mr-1" />
                               {typeLabels[medication.type as keyof typeof typeLabels]}
                             </Badge>
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-dose">
                             {medication.dose}
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span
                               className={`text-sm font-medium ${
@@ -273,12 +340,17 @@ export default function Inventory() {
                             </span>
                             {(medication.quantity ?? 0) <= 5 && <div className="text-xs text-red-600">Low Stock!</div>}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-expiration-date">
-                            {medication.expirationDate ? new Date(medication.expirationDate).toLocaleDateString() : "—"}
+
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-sm text-gray-900" data-testid="text-expiration-date">
+                              {medication.expirationDate ? new Date(medication.expirationDate).toLocaleDateString() : "—"}
+                            </span>
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" data-testid="text-location">
                             {medication.location ?? "—"}
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap">
                             <Button
                               onClick={() => handleDispense(medication)}
@@ -301,22 +373,17 @@ export default function Inventory() {
           </CardContent>
         </Card>
 
+        {/* Low Stock Ticker */}
         <LowStockTicker />
+
+        {/* Out of Stock Tracker */}
         <OutOfStockTracker />
       </main>
 
       {/* Modals */}
-      <AddMedicationModal
-        open={isAddModalOpen}
-        onOpenChange={setIsAddModalOpen}
-        preselectedMedication={preselectedMedication} // ✅ Pass medication for autopopulate
-      />
+      <AddMedicationModal open={isAddModalOpen} onOpenChange={setIsAddModalOpen} />
 
-      <DispenseModal
-        open={isDispenseModalOpen}
-        onOpenChange={setIsDispenseModalOpen}
-        medication={selectedMedication}
-      />
+      <DispenseModal open={isDispenseModalOpen} onOpenChange={setIsDispenseModalOpen} medication={selectedMedication} />
     </div>
   );
 }
