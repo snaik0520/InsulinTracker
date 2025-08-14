@@ -12,7 +12,9 @@ export const medications = pgTable("medications", {
   quantity: integer("quantity").notNull(),
   expirationDate: date("expiration_date").notNull(),
   location: text("location").notNull(),
+  administrativeForm: text("administrative_form").notNull(), // ADD THIS LINE
 });
+
 
 export const medicationTransactions = pgTable("medication_transactions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
