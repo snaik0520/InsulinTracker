@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,10 +35,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   });
 
   const existingMedications = useMemo(() => {
-    const map = new Map<
-      string,
-      Medication & { quantity: number; locationCounts: Map<string, number> }
-    >();
+    const map = new Map<string, Medication & { quantity: number; locationCounts: Map<string, number> }>();
     for (const med of allMedications) {
       const key = `${med.genericName || ""}||${med.medicalName || ""}`;
       if (!map.has(key)) {
@@ -68,8 +65,8 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     defaultValues: {
       medicalName: "",
       genericName: "",
-      type: "",
-      formType: "",
+      type: "", // UI field for "Insulin Type" (we will persist insulinType separately)
+      formType: "", // UI field for Injection / Pen (we will persist this into DB `type` column)
       dose: "",
       quantity: 0,
       expirationDate: "",
@@ -78,24 +75,42 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   });
 
   const [locationDropdownValue, setLocationDropdownValue] = useState("");
+  const [selectedExistingMedId, setSelectedExistingMedId] = useState<string>("");
 
   useEffect(() => {
     if (!open) {
       form.reset();
       setLocationDropdownValue("");
+      setSelectedExistingMedId("");
     }
   }, [open, form]);
 
   const handleExistingMedicationSelect = (medicationId: string) => {
+    setSelectedExistingMedId(medicationId);
     const medication = existingMedications.find((med) => med.id === medicationId);
     if (medication) {
       form.setValue("medicalName", medication.medicalName || "");
       form.setValue("genericName", medication.genericName || "");
-      form.setValue("type", medication.type || "");
-      form.setValue("formType", medication.formType || ""); // ✅ Auto-populate Form dropdown
+
+      // Normalize: some DBs may have stored 'type' as injection/pen previously OR as insulin type.
+      // We prefer to populate the 'formType' (injection/pen) UI from medication.formType if present,
+      // otherwise check medication.type for 'injection'/'pen'. For the insulin type UI field we look
+      // for medication.insulinType (if we started persisting it) or fallback to medication.type if it's not 'injection'/'pen'.
+      const medFormType =
+        medication.formType ??
+        (medication.type === "injection" || medication.type === "pen" ? medication.type : "");
+      const medInsulinType =
+        (medication as any).insulinType ??
+        (medication.type && medication.type !== "injection" && medication.type !== "pen"
+          ? medication.type
+          : "");
+
+      form.setValue("formType", medFormType || "");
+      form.setValue("type", medInsulinType || "");
       form.setValue("dose", medication.dose || "");
       form.setValue("quantity", 0);
       form.setValue("expirationDate", "");
+
       let maxLocation = "";
       let maxQty = -1;
       medication.locationCounts.forEach((qty, loc) => {
@@ -121,6 +136,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
 
   const handleLocationInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     form.setValue("location", capitalizeWords(e.target.value));
+    setLocationDropdownValue("");
   };
 
   const watchDose = form.watch("dose");
@@ -136,6 +152,8 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
 
   const validateLocation = () => watchLocationInput.trim() !== "" || locationDropdownValue !== "";
 
+  // When submitting, explicitly set the DB 'type' column to the injection/pen value (formType),
+  // and persist the insulin classification under a separate property (insulinType).
   const onSubmit = (data: InsertMedication) => {
     if (!validateLocation()) {
       form.setError("location", { type: "manual", message: "Please select or enter a storage location" });
@@ -146,11 +164,25 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       return;
     }
     const effectiveLocation = watchLocationInput.trim() !== "" ? watchLocationInput.trim() : locationDropdownValue;
-    addMedicationMutation.mutate({ ...data, location: effectiveLocation });
+
+    // Build payload that sets `type` (DB column) to injection/pen and also includes `insulinType` for the insulin classification.
+    const payload = {
+      ...data,
+      location: effectiveLocation,
+      // ensure DB `type` gets the injection/pen value:
+      type: data.formType || "", // <--- THIS ensures the "type" column will reflect injection or pen
+      // keep insulin classification under a separate field so we don't lose it:
+      insulinType: data.type || "", // backend can store this in its own column if supported
+      // keep formType as-is as well in case backend expects it:
+      formType: data.formType || "",
+    };
+
+    addMedicationMutation.mutate(payload as any);
   };
 
   const addMedicationMutation = useMutation({
-    mutationFn: async (data: InsertMedication) => {
+    mutationFn: async (data: any) => {
+      // POST body includes type (injection/pen) and insulinType (classification)
       const response = await apiRequest("POST", "/api/medications", data);
       return response.json();
     },
@@ -161,6 +193,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       toast({ title: "Success", description: "Medication added successfully", duration: 3000 });
       form.reset();
       setLocationDropdownValue("");
+      setSelectedExistingMedId("");
       onOpenChange(false);
     },
     onError: (error: any) => {
@@ -181,6 +214,15 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   const expirationDateError = form.formState.errors.expirationDate;
   const locationError = form.formState.errors.location;
 
+  const handleMedicalNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    form.setValue("medicalName", capitalizeWords(e.target.value));
+    if (selectedExistingMedId) setSelectedExistingMedId("");
+  };
+  const handleGenericNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    form.setValue("genericName", capitalizeWords(e.target.value));
+    if (selectedExistingMedId) setSelectedExistingMedId("");
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
@@ -199,19 +241,10 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
           ) : existingMedications.length > 0 ? (
             <div className="space-y-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
               <Label className="text-sm font-medium text-blue-800">Select Existing Medication (Optional)</Label>
-              <Select
-                onValueChange={handleExistingMedicationSelect}
-                value={
-                  form.watch("medicalName")
-                    ? existingMedications.find(
-                        (med) =>
-                          med.medicalName === form.watch("medicalName") &&
-                          med.genericName === form.watch("genericName")
-                      )?.id ?? ""
-                    : ""
-                }
-              >
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+              <Select onValueChange={handleExistingMedicationSelect} value={selectedExistingMedId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select" />
+                </SelectTrigger>
                 <SelectContent>
                   {existingMedications.map((medication) => (
                     <SelectItem key={medication.id} value={medication.id}>
@@ -234,7 +267,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               <Input
                 placeholder="e.g., Humalog"
                 value={form.watch("medicalName")}
-                onChange={(e) => form.setValue("medicalName", capitalizeWords(e.target.value))}
+                onChange={handleMedicalNameChange}
                 required
               />
               {medicalNameError && <p className="text-sm text-destructive">{medicalNameError.message}</p>}
@@ -246,7 +279,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               <Input
                 placeholder="e.g., Insulin Lispro"
                 value={form.watch("genericName")}
-                onChange={(e) => form.setValue("genericName", capitalizeWords(e.target.value))}
+                onChange={handleGenericNameChange}
                 required
               />
               {genericNameError && <p className="text-sm text-destructive">{genericNameError.message}</p>}
@@ -259,7 +292,9 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               Form <span className="text-destructive">*</span>
             </Label>
             <Select value={form.watch("formType")} onValueChange={(value) => form.setValue("formType", value)} required>
-              <SelectTrigger><SelectValue placeholder="Select form..." /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue placeholder="Select form..." />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="injection">Injection</SelectItem>
                 <SelectItem value="pen">Pen</SelectItem>
@@ -273,7 +308,9 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                 Insulin Type <span className="text-destructive">*</span>
               </Label>
               <Select value={form.watch("type")} onValueChange={(value) => form.setValue("type", value)} required>
-                <SelectTrigger><SelectValue placeholder="Select type..." /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select type..." />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="rapid">Rapid Acting</SelectItem>
                   <SelectItem value="long">Long Acting</SelectItem>
@@ -287,12 +324,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               <Label>
                 Dose <span className="text-destructive">*</span>
               </Label>
-              <Input
-                placeholder="e.g., 100 units/mL"
-                value={watchDose}
-                onChange={handleDoseChange}
-                required
-              />
+              <Input placeholder="e.g., 100 units/mL" value={watchDose} onChange={handleDoseChange} required />
               {doseError && <p className="text-sm text-destructive">{doseError.message}</p>}
             </div>
           </div>
@@ -318,11 +350,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               <Label>
                 Expiration Date <span className="text-destructive">*</span>
               </Label>
-              <Input
-                type="date"
-                {...form.register("expirationDate", { required: "Expiration date is required" })}
-                required
-              />
+              <Input type="date" {...form.register("expirationDate", { required: "Expiration date is required" })} required />
               {expirationDateError && <p className="text-sm text-destructive">{expirationDateError.message}</p>}
             </div>
           </div>
@@ -332,10 +360,14 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             <Label className="text-sm font-medium text-blue-800">Select Existing Storage Location (Optional)</Label>
             {existingLocations.length > 0 ? (
               <Select onValueChange={handleExistingLocationSelect} value={locationDropdownValue}>
-                <SelectTrigger><SelectValue placeholder="Select a location..." /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a location..." />
+                </SelectTrigger>
                 <SelectContent>
                   {existingLocations.map((loc) => (
-                    <SelectItem key={loc} value={loc}>{loc}</SelectItem>
+                    <SelectItem key={loc} value={loc}>
+                      {loc}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -348,11 +380,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             <Label>
               Or Type New Storage Location <span className="text-destructive">*</span>
             </Label>
-            <Input
-              placeholder="e.g., Fridge A - Shelf 2"
-              value={watchLocationInput}
-              onChange={handleLocationInputChange}
-            />
+            <Input placeholder="e.g., Fridge A - Shelf 2" value={watchLocationInput} onChange={handleLocationInputChange} />
             {locationError && <p className="text-sm text-destructive">{locationError.message}</p>}
           </div>
 
@@ -360,7 +388,9 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             <Button type="submit" className="flex-1" disabled={addMedicationMutation.isLoading}>
               {addMedicationMutation.isLoading ? "Adding..." : <><Plus className="h-4 w-4 mr-2" />Add Medication</>}
             </Button>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
           </div>
         </form>
       </DialogContent>
