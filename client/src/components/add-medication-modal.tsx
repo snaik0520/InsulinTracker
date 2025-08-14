@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -75,7 +75,6 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   });
 
   const [locationDropdownValue, setLocationDropdownValue] = useState("");
-  // track selected existing med id explicitly
   const [selectedExistingMedId, setSelectedExistingMedId] = useState<string>("");
 
   useEffect(() => {
@@ -92,34 +91,13 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     if (medication) {
       form.setValue("medicalName", medication.medicalName || "");
       form.setValue("genericName", medication.genericName || "");
-
-      // --- Robustly resolve "form" (injection/pen) and insulin classification ---
-      // Some records might use:
-      //  - med.formType (preferred new field) for injection/pen
-      //  - med.insulinType for rapid/long/etc (if we store both)
-      //  - older records may have used med.type for either purpose
-      const possibleType = (medication as any).type as string | undefined;
-      const possibleFormType = (medication as any).formType as string | undefined;
-      const possibleInsulinType = (medication as any).insulinType as string | undefined;
-
-      // Determine formType (injection | pen)
-      const formValue =
-        possibleFormType ||
-        (possibleType && ["injection", "pen"].includes(possibleType.toLowerCase()) ? possibleType : "");
-
-      // Determine insulin classification (rapid | long | intermediate | other)
-      const insulinValue =
-        possibleInsulinType ||
-        (possibleType && !["injection", "pen"].includes(possibleType.toLowerCase()) ? possibleType : "") ||
-        "";
-
-      form.setValue("formType", formValue);
-      form.setValue("type", insulinValue);
-
+      // Auto-populate insulin type and the bubble-form selection (injection/pen)
+      form.setValue("type", medication.type || "");
+      form.setValue("formType", medication.formType || "");
       form.setValue("dose", medication.dose || "");
       form.setValue("quantity", 0);
       form.setValue("expirationDate", "");
-      // choose highest quantity location as before
+      // pick location with highest qty
       let maxLocation = "";
       let maxQty = -1;
       medication.locationCounts.forEach((qty, loc) => {
@@ -161,12 +139,13 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
 
   const validateLocation = () => watchLocationInput.trim() !== "" || locationDropdownValue !== "";
 
-  // When submitting, we send:
-  //  - type: <formType>  (so inventory's "type" column will show injection | pen)
-  //  - insulinType: <type> (preserve insulin classification separately)
   const onSubmit = (data: InsertMedication) => {
     if (!validateLocation()) {
       form.setError("location", { type: "manual", message: "Please select or enter a storage location" });
+      return;
+    }
+    if (!form.getValues("formType")) {
+      form.setError("formType", { type: "manual", message: "Please select Injection or Pen" });
       return;
     }
     if (data.quantity <= 0) {
@@ -174,24 +153,11 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       return;
     }
     const effectiveLocation = watchLocationInput.trim() !== "" ? watchLocationInput.trim() : locationDropdownValue;
-
-    // Prepare payload: map formType (injection/pen) into `type` (so inventory's "type" column will reflect injection/pen)
-    // and preserve insulin classification in `insulinType`.
-    const payload = {
-      ...data,
-      location: effectiveLocation,
-      // map formType into type (injection | pen) for inventory display
-      type: data.formType,
-      // keep insulin classification separate so we don't lose it
-      insulinType: data.type,
-    } as any;
-
-    addMedicationMutation.mutate(payload);
+    addMedicationMutation.mutate({ ...data, location: effectiveLocation, formType: data.formType, type: data.type });
   };
 
   const addMedicationMutation = useMutation({
-    mutationFn: async (data: any) => {
-      // POST body will include `type` (injection/pen) and `insulinType` (rapid/long/etc.)
+    mutationFn: async (data: InsertMedication) => {
       const response = await apiRequest("POST", "/api/medications", data);
       return response.json();
     },
@@ -218,12 +184,12 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   const medicalNameError = form.formState.errors.medicalName;
   const genericNameError = form.formState.errors.genericName;
   const typeError = form.formState.errors.type;
+  const formTypeError = form.formState.errors.formType;
   const doseError = form.formState.errors.dose;
   const quantityError = form.formState.errors.quantity;
   const expirationDateError = form.formState.errors.expirationDate;
   const locationError = form.formState.errors.location;
 
-  // when user edits name fields, clear selected existing med
   const handleMedicalNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     form.setValue("medicalName", capitalizeWords(e.target.value));
     if (selectedExistingMedId) setSelectedExistingMedId("");
@@ -232,6 +198,9 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     form.setValue("genericName", capitalizeWords(e.target.value));
     if (selectedExistingMedId) setSelectedExistingMedId("");
   };
+
+  // convenience for the bubble buttons
+  const selectedFormType = form.watch("formType");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -294,18 +263,47 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             </div>
           </div>
 
-          {/* Injection/Pen dropdown */}
+          {/* Bubble selection for Injection / Pen (required) */}
           <div>
             <Label>
               Form <span className="text-destructive">*</span>
             </Label>
-            <Select value={form.watch("formType")} onValueChange={(value) => form.setValue("formType", value)} required>
-              <SelectTrigger><SelectValue placeholder="Select form..." /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="injection">Injection</SelectItem>
-                <SelectItem value="pen">Pen</SelectItem>
-              </SelectContent>
-            </Select>
+            <div role="radiogroup" aria-label="Form type" className="mt-2 flex gap-2">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={selectedFormType === "injection"}
+                onClick={() => {
+                  form.setValue("formType", "injection", { shouldValidate: true, shouldDirty: true });
+                }}
+                className={
+                  "rounded-full px-4 py-2 border focus:outline-none transition text-sm " +
+                  (selectedFormType === "injection"
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-white text-gray-700 border-gray-300")
+                }
+              >
+                Injection
+              </button>
+
+              <button
+                type="button"
+                role="radio"
+                aria-checked={selectedFormType === "pen"}
+                onClick={() => {
+                  form.setValue("formType", "pen", { shouldValidate: true, shouldDirty: true });
+                }}
+                className={
+                  "rounded-full px-4 py-2 border focus:outline-none transition text-sm " +
+                  (selectedFormType === "pen"
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-white text-gray-700 border-gray-300")
+                }
+              >
+                Pen
+              </button>
+            </div>
+            {formTypeError && <p className="text-sm text-destructive mt-2">{formTypeError.message}</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
