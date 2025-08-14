@@ -75,7 +75,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   });
 
   const [locationDropdownValue, setLocationDropdownValue] = useState("");
-  // Keep explicit selected existing medication id to drive the Select's value reliably
+  // track selected existing med id explicitly
   const [selectedExistingMedId, setSelectedExistingMedId] = useState<string>("");
 
   useEffect(() => {
@@ -92,13 +92,34 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     if (medication) {
       form.setValue("medicalName", medication.medicalName || "");
       form.setValue("genericName", medication.genericName || "");
-      // Auto-populate BOTH the insulin type and the form (injection/pen)
-      form.setValue("type", medication.type || "");
-      form.setValue("formType", medication.formType || "");
+
+      // --- Robustly resolve "form" (injection/pen) and insulin classification ---
+      // Some records might use:
+      //  - med.formType (preferred new field) for injection/pen
+      //  - med.insulinType for rapid/long/etc (if we store both)
+      //  - older records may have used med.type for either purpose
+      const possibleType = (medication as any).type as string | undefined;
+      const possibleFormType = (medication as any).formType as string | undefined;
+      const possibleInsulinType = (medication as any).insulinType as string | undefined;
+
+      // Determine formType (injection | pen)
+      const formValue =
+        possibleFormType ||
+        (possibleType && ["injection", "pen"].includes(possibleType.toLowerCase()) ? possibleType : "");
+
+      // Determine insulin classification (rapid | long | intermediate | other)
+      const insulinValue =
+        possibleInsulinType ||
+        (possibleType && !["injection", "pen"].includes(possibleType.toLowerCase()) ? possibleType : "") ||
+        "";
+
+      form.setValue("formType", formValue);
+      form.setValue("type", insulinValue);
+
       form.setValue("dose", medication.dose || "");
       form.setValue("quantity", 0);
       form.setValue("expirationDate", "");
-      // pick the location with highest qty as before
+      // choose highest quantity location as before
       let maxLocation = "";
       let maxQty = -1;
       medication.locationCounts.forEach((qty, loc) => {
@@ -124,7 +145,6 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
 
   const handleLocationInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     form.setValue("location", capitalizeWords(e.target.value));
-    // if they start typing a new location, clear any selected location dropdown hint
     setLocationDropdownValue("");
   };
 
@@ -141,6 +161,9 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
 
   const validateLocation = () => watchLocationInput.trim() !== "" || locationDropdownValue !== "";
 
+  // When submitting, we send:
+  //  - type: <formType>  (so inventory's "type" column will show injection | pen)
+  //  - insulinType: <type> (preserve insulin classification separately)
   const onSubmit = (data: InsertMedication) => {
     if (!validateLocation()) {
       form.setError("location", { type: "manual", message: "Please select or enter a storage location" });
@@ -151,13 +174,24 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       return;
     }
     const effectiveLocation = watchLocationInput.trim() !== "" ? watchLocationInput.trim() : locationDropdownValue;
-    // ensure we send both formType and type in the payload so backend persists them
-    addMedicationMutation.mutate({ ...data, location: effectiveLocation, formType: data.formType, type: data.type });
+
+    // Prepare payload: map formType (injection/pen) into `type` (so inventory's "type" column will reflect injection/pen)
+    // and preserve insulin classification in `insulinType`.
+    const payload = {
+      ...data,
+      location: effectiveLocation,
+      // map formType into type (injection | pen) for inventory display
+      type: data.formType,
+      // keep insulin classification separate so we don't lose it
+      insulinType: data.type,
+    } as any;
+
+    addMedicationMutation.mutate(payload);
   };
 
   const addMedicationMutation = useMutation({
-    mutationFn: async (data: InsertMedication) => {
-      // POST body will include formType and type (insulin type & injection/pen)
+    mutationFn: async (data: any) => {
+      // POST body will include `type` (injection/pen) and `insulinType` (rapid/long/etc.)
       const response = await apiRequest("POST", "/api/medications", data);
       return response.json();
     },
@@ -189,7 +223,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   const expirationDateError = form.formState.errors.expirationDate;
   const locationError = form.formState.errors.location;
 
-  // when user manually edits the name fields, clear the selected existing medication id
+  // when user edits name fields, clear selected existing med
   const handleMedicalNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     form.setValue("medicalName", capitalizeWords(e.target.value));
     if (selectedExistingMedId) setSelectedExistingMedId("");
