@@ -60,13 +60,14 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     return Array.from(set);
   }, [allMedications]);
 
-  const form = useForm<InsertMedication>({
+  const form = useForm<InsertMedication & { administrationType: string }>({
     resolver: zodResolver(insertMedicationSchema),
     defaultValues: {
       medicalName: "",
       genericName: "",
       type: "",
       formType: "",
+      administrationType: "", // NEW FIELD
       dose: "",
       quantity: 0,
       expirationDate: "",
@@ -88,8 +89,8 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     if (medication) {
       form.setValue("medicalName", medication.medicalName || "");
       form.setValue("genericName", medication.genericName || "");
-      form.setValue("type", medication.type || "");
-      form.setValue("formType", medication.formType || "");
+      form.setValue("type", medication.type || "");  // Insulin Type
+      form.setValue("administrationType", medication.formType || ""); // Admin Type
       form.setValue("dose", medication.dose || "");
       form.setValue("quantity", 0);
       form.setValue("expirationDate", "");
@@ -133,7 +134,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
 
   const validateLocation = () => watchLocationInput.trim() !== "" || locationDropdownValue !== "";
 
-  const onSubmit = (data: InsertMedication) => {
+  const onSubmit = (data: InsertMedication & { administrationType: string }) => {
     if (!validateLocation()) {
       form.setError("location", { type: "manual", message: "Please select or enter a storage location" });
       return;
@@ -147,7 +148,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   };
 
   const addMedicationMutation = useMutation({
-    mutationFn: async (data: InsertMedication) => {
+    mutationFn: async (data: InsertMedication & { administrationType: string }) => {
       const response = await apiRequest("POST", "/api/medications", data);
       return response.json();
     },
@@ -173,7 +174,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   const medicalNameError = form.formState.errors.medicalName;
   const genericNameError = form.formState.errors.genericName;
   const typeError = form.formState.errors.type;
-  const formTypeError = form.formState.errors.formType;
+  const administrationTypeError = form.formState.errors.administrationType;
   const doseError = form.formState.errors.dose;
   const quantityError = form.formState.errors.quantity;
   const expirationDateError = form.formState.errors.expirationDate;
@@ -251,7 +252,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
             </div>
           </div>
 
-          {/* Insulin Type & Administration Type & Dose */}
+          {/* Insulin Type & Administration Type */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>
@@ -274,8 +275,8 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                 Administration Type <span className="text-destructive">*</span>
               </Label>
               <Select
-                value={form.watch("formType")}
-                onValueChange={(value) => form.setValue("formType", value)}
+                value={form.watch("administrationType")}
+                onValueChange={(value) => form.setValue("administrationType", value)}
                 required
               >
                 <SelectTrigger><SelectValue placeholder="Select administration type..." /></SelectTrigger>
@@ -284,10 +285,11 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
                   <SelectItem value="pen">Pen</SelectItem>
                 </SelectContent>
               </Select>
-              {formTypeError && <p className="text-sm text-destructive">{formTypeError.message}</p>}
+              {administrationTypeError && <p className="text-sm text-destructive">{administrationTypeError.message}</p>}
             </div>
           </div>
 
+          {/* Dose */}
           <div>
             <Label>
               Dose <span className="text-destructive">*</span>
