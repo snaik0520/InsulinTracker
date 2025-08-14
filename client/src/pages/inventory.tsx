@@ -23,7 +23,7 @@ const typeIcons = {
 
 const typeColors = {
   rapid: "bg-blue-100 text-blue-800",
-  long: "bg-purple-100 text-purple-800",
+  long: "bg-purple-100 text-purple-800", 
   intermediate: "bg-green-100 text-green-800",
   other: "bg-orange-100 text-orange-800",
 };
@@ -58,12 +58,6 @@ const calculateDaysUntilExpiration = (expirationDate: string) => {
   return diffDays;
 };
 
-const getExpirationClassName = (days: number) => {
-  if (days < 30) return "text-red-600";
-  if (days < 90) return "text-orange-600";
-  return "text-green-600";
-};
-
 export default function Inventory() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedType, setSelectedType] = useState("all");
@@ -78,20 +72,17 @@ export default function Inventory() {
   const filteredMedications = useMemo(() => {
     let filtered = medications;
 
-    // Filter out medications with 0 quantity
-    filtered = filtered.filter((medication) => (medication.quantity ?? 0) > 0);
+    filtered = filtered.filter(medication => medication.quantity > 0);
 
-    // Filter by search query
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(
         (med) =>
-          (med.genericName ?? "").toLowerCase().includes(query) ||
-          (med.medicalName ?? "").toLowerCase().includes(query)
+          med.genericName.toLowerCase().includes(query) ||
+          med.medicalName.toLowerCase().includes(query)
       );
     }
 
-    // Filter by insulin type
     if (selectedType !== "all") {
       filtered = filtered.filter((med) => med.type === selectedType);
     }
@@ -102,39 +93,6 @@ export default function Inventory() {
   const handleDispense = (medication: Medication) => {
     setSelectedMedication(medication);
     setIsDispenseModalOpen(true);
-  };
-
-  // Robust resolver for stored form type (handles older/newer schema variants)
-  const resolveFormType = (med: Medication): "pen" | "injection" | undefined => {
-    const anyMed = med as any;
-
-    // Common string fields
-    const strCandidates = [anyMed.formType, anyMed.form, anyMed.form_type, anyMed.formTypeName];
-    for (const c of strCandidates) {
-      if (!c) continue;
-      const v = String(c).toLowerCase();
-      if (v.includes("pen")) return "pen";
-      if (v.includes("injection")) return "injection";
-      if (v === "pen") return "pen";
-      if (v === "injection") return "injection";
-    }
-
-    // Boolean-ish fields
-    const boolCandidates = [anyMed.isPen, anyMed.is_pen, anyMed.pen, anyMed.isPenDevice];
-    for (const b of boolCandidates) {
-      if (typeof b === "boolean") return b ? "pen" : "injection";
-      // also accept "true"/"false" strings
-      if (typeof b === "string") {
-        const v = b.toLowerCase();
-        if (v === "true") return "pen";
-        if (v === "false") return "injection";
-      }
-    }
-
-    // Fallback: check medicalName for "pen"
-    if ((med.medicalName ?? "").toLowerCase().includes("pen")) return "pen";
-
-    return undefined;
   };
 
   if (isLoading) {
@@ -164,7 +122,6 @@ export default function Inventory() {
                 src={logo}
                 alt="SLO Noor Foundation logo"
                 className="h-16 w-auto object-contain"
-                data-testid="logo"
               />
             </div>
           </div>
@@ -189,7 +146,6 @@ export default function Inventory() {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="pl-10"
-                    data-testid="input-search-medication"
                   />
                 </div>
               </div>
@@ -200,7 +156,6 @@ export default function Inventory() {
                 <Button
                   onClick={() => setIsAddModalOpen(true)}
                   className="bg-primary hover:bg-primary/90"
-                  data-testid="button-add-medication"
                 >
                   <Plus className="h-4 w-4 mr-2" />
                   Add New Medication
@@ -216,7 +171,6 @@ export default function Inventory() {
                   variant={selectedType === "all" ? "default" : "outline"}
                   onClick={() => setSelectedType("all")}
                   className="text-sm"
-                  data-testid="filter-all"
                 >
                   <List className="h-4 w-4 mr-2" />
                   All Types
@@ -229,7 +183,6 @@ export default function Inventory() {
                       variant={selectedType === type ? "default" : "outline"}
                       onClick={() => setSelectedType(type)}
                       className="text-sm"
-                      data-testid={`filter-${type}`}
                     >
                       <Icon className="h-4 w-4 mr-2" />
                       {label}
@@ -255,13 +208,8 @@ export default function Inventory() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Medication
                     </th>
-                    {/* Form type column (injection / pen) */}
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Type
-                    </th>
-                    {/* Insulin type */}
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Insulin Type
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Dose
@@ -283,9 +231,9 @@ export default function Inventory() {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredMedications.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
-                        {searchQuery || selectedType !== "all"
-                          ? "No medications found matching your criteria."
+                      <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                        {searchQuery || selectedType !== "all" 
+                          ? "No medications found matching your criteria." 
                           : "No medications in inventory. Add your first medication to get started."}
                       </td>
                     </tr>
@@ -293,70 +241,58 @@ export default function Inventory() {
                     filteredMedications.map((medication) => {
                       const daysUntilExpiration = calculateDaysUntilExpiration(medication.expirationDate);
                       const Icon = typeIcons[medication.type as keyof typeof typeIcons];
-                      const formTypeResolved = resolveFormType(medication);
-
+                      
                       return (
                         <tr
                           key={medication.id}
                           className={`${getRowClassName(medication.type)} hover:bg-gray-50`}
-                          data-testid={`row-medication-${medication.id}`}
                         >
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div>
                               <div className="text-sm font-medium text-gray-900" data-testid="text-medical-name">
-                                {medication.medicalName ?? medication.genericName ?? "—"}
+                                {medication.medicalName}
                               </div>
                               <div className="text-sm text-gray-500" data-testid="text-generic-name">
-                                {medication.genericName ? `(${medication.genericName})` : ""}
+                                ({medication.genericName})
                               </div>
                             </div>
                           </td>
-
-                          {/* Form type: shows "Pen" or "Injection" based on stored data (robust resolver) */}
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-form-type">
-                            {formTypeResolved ? (formTypeResolved === "pen" ? "Pen" : "Injection") : "—"}
-                          </td>
-
-                          {/* Insulin type badge */}
                           <td className="px-6 py-4 whitespace-nowrap">
                             <Badge className={typeColors[medication.type as keyof typeof typeColors]}>
                               <Icon className="h-3 w-3 mr-1" />
                               {typeLabels[medication.type as keyof typeof typeLabels]}
                             </Badge>
                           </td>
-
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-dose">
                             {medication.dose}
                           </td>
-
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span
+                            <span 
                               className={`text-sm font-medium ${
-                                (medication.quantity ?? 0) <= 5 ? "text-red-600" : "text-gray-900"
+                                medication.quantity <= 5 ? 'text-red-600' : 'text-gray-900'
                               }`}
                               data-testid="text-quantity"
                             >
-                              {medication.quantity ?? 0}
+                              {medication.quantity}
                             </span>
-                            {(medication.quantity ?? 0) <= 5 && <div className="text-xs text-red-600">Low Stock!</div>}
+                            {medication.quantity <= 5 && (
+                              <div className="text-xs text-red-600">Low Stock!</div>
+                            )}
                           </td>
-
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className="text-sm text-gray-900" data-testid="text-expiration-date">
-                              {medication.expirationDate ? new Date(medication.expirationDate).toLocaleDateString() : "—"}
+                              {new Date(medication.expirationDate).toLocaleDateString()}
                             </span>
                           </td>
-
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" data-testid="text-location">
-                            {medication.location ?? "—"}
+                            {medication.location}
                           </td>
-
                           <td className="px-6 py-4 whitespace-nowrap">
                             <Button
                               onClick={() => handleDispense(medication)}
                               size="sm"
                               className="bg-green-600 hover:bg-green-700 text-white"
-                              disabled={(medication.quantity ?? 0) === 0}
+                              disabled={medication.quantity === 0}
                               data-testid={`button-dispense-${medication.id}`}
                             >
                               <HandHeart className="h-4 w-4 mr-1" />
@@ -375,15 +311,22 @@ export default function Inventory() {
 
         {/* Low Stock Ticker */}
         <LowStockTicker />
-
-        {/* Out of Stock Tracker */}
+        
+        {/* OutOfStock Tracker */}
         <OutOfStockTracker />
       </main>
 
       {/* Modals */}
-      <AddMedicationModal open={isAddModalOpen} onOpenChange={setIsAddModalOpen} />
-
-      <DispenseModal open={isDispenseModalOpen} onOpenChange={setIsDispenseModalOpen} medication={selectedMedication} />
+      <AddMedicationModal
+        open={isAddModalOpen}
+        onOpenChange={setIsAddModalOpen}
+      />
+      
+      <DispenseModal
+        open={isDispenseModalOpen}
+        onOpenChange={setIsDispenseModalOpen}
+        medication={selectedMedication}
+      />
     </div>
   );
 }
