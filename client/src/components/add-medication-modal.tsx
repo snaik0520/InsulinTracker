@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,6 @@ import { Plus } from "lucide-react";
 interface AddMedicationModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  // keep optional onSave for backward compatibility (Inventory uses onSave in some earlier versions)
   onSave?: (med: Medication) => void;
 }
 
@@ -75,7 +74,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
       quantity: 0,
       expirationDate: "",
       location: "",
-      // add administrativeForm default
+      // administrativeForm (not necessarily in the shared schema yet) — stored in form state
       administrativeForm: "",
     } as any,
   });
@@ -98,12 +97,16 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
       form.setValue("dose", medication.dose || "");
       form.setValue("quantity", 0);
       form.setValue("expirationDate", "");
-      // set administrative form from either administrativeForm or formType (backwards compat)
+
+      // pick administrative form from multiple possible keys (backwards compatibility)
       const adminFrom =
-        (medication as any).administrativeForm ||
-        (medication as any).formType ||
+        (medication as any).administrativeForm ??
+        (medication as any).formType ??
+        (medication as any).administrationForm ??
+        (medication as any).form_type ??
+        (medication as any).administration_form ??
         "";
-      // normalize to lowercase token 'pen' or 'injection'
+
       const normalized =
         typeof adminFrom === "string"
           ? adminFrom.toLowerCase() === "pen"
@@ -112,7 +115,8 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
             ? "injection"
             : ""
           : "";
-      form.setValue("administrativeForm", normalized);
+
+      form.setValue("administrativeForm" as any, normalized);
 
       let maxLocation = "";
       let maxQty = -1;
@@ -172,12 +176,21 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
 
     const effectiveLocation = watchLocationInput.trim() !== "" ? watchLocationInput.trim() : locationDropdownValue;
 
-    // Build payload (include administrativeForm explicitly for safety)
-    const payload = {
+    // normalize admin value to token used in UI/backend
+    const normalizedAdmin = admin === "pen" ? "pen" : "injection";
+
+    // Build payload and include multiple keys for compatibility with different backends.
+    const payload: any = {
       ...data,
       location: effectiveLocation,
-      administrativeForm: admin,
-    } as any;
+      // primary field
+      administrativeForm: normalizedAdmin,
+      // common aliases to increase chance the server persists at least one
+      formType: normalizedAdmin,
+      administrationForm: normalizedAdmin,
+      form_type: normalizedAdmin,
+      administration_form: normalizedAdmin,
+    };
 
     addMedicationMutation.mutate(payload);
   };
@@ -195,7 +208,6 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
       form.reset();
       setLocationDropdownValue("");
       onOpenChange(false);
-      // optional callback for callers
       onSave?.(res);
     },
     onError: (error: any) => {
