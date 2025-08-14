@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,10 +34,15 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
     staleTime: 1000 * 60 * 2,
   });
 
+  // NOTE: include formType in the key so different administration forms (pen vs injection)
+  // are kept as separate entries in the existingMedications list.
   const existingMedications = useMemo(() => {
-    const map = new Map<string, Medication & { quantity: number; locationCounts: Map<string, number> }>();
+    const map = new Map<
+      string,
+      Medication & { quantity: number; locationCounts: Map<string, number> }
+    >();
     for (const med of allMedications) {
-      const key = `${med.genericName || ""}||${med.medicalName || ""}`;
+      const key = `${med.genericName || ""}||${med.medicalName || ""}||${med.formType || ""}`;
       if (!map.has(key)) {
         const locationCounts = new Map<string, number>();
         if (med.location?.trim()) locationCounts.set(med.location.trim(), med.quantity ?? 0);
@@ -75,29 +80,28 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   });
 
   const [locationDropdownValue, setLocationDropdownValue] = useState("");
-  const [selectedExistingMedId, setSelectedExistingMedId] = useState<string>("");
+  const [selectedExistingMedicationId, setSelectedExistingMedicationId] = useState("");
 
   useEffect(() => {
     if (!open) {
       form.reset();
       setLocationDropdownValue("");
-      setSelectedExistingMedId("");
+      setSelectedExistingMedicationId("");
     }
   }, [open, form]);
 
   const handleExistingMedicationSelect = (medicationId: string) => {
-    setSelectedExistingMedId(medicationId);
+    setSelectedExistingMedicationId(medicationId);
     const medication = existingMedications.find((med) => med.id === medicationId);
     if (medication) {
       form.setValue("medicalName", medication.medicalName || "");
       form.setValue("genericName", medication.genericName || "");
-      // Auto-populate insulin type and the bubble-form selection (injection/pen)
       form.setValue("type", medication.type || "");
-      form.setValue("formType", medication.formType || "");
+      form.setValue("formType", medication.formType || ""); // Auto-populate Form dropdown (injection/pen)
       form.setValue("dose", medication.dose || "");
       form.setValue("quantity", 0);
       form.setValue("expirationDate", "");
-      // pick location with highest qty
+      // choose location with highest count for this grouped med (if any)
       let maxLocation = "";
       let maxQty = -1;
       medication.locationCounts.forEach((qty, loc) => {
@@ -123,7 +127,6 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
 
   const handleLocationInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     form.setValue("location", capitalizeWords(e.target.value));
-    setLocationDropdownValue("");
   };
 
   const watchDose = form.watch("dose");
@@ -144,16 +147,12 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       form.setError("location", { type: "manual", message: "Please select or enter a storage location" });
       return;
     }
-    if (!form.getValues("formType")) {
-      form.setError("formType", { type: "manual", message: "Please select Injection or Pen" });
-      return;
-    }
     if (data.quantity <= 0) {
       form.setError("quantity", { type: "manual", message: "Quantity must be greater than 0" });
       return;
     }
     const effectiveLocation = watchLocationInput.trim() !== "" ? watchLocationInput.trim() : locationDropdownValue;
-    addMedicationMutation.mutate({ ...data, location: effectiveLocation, formType: data.formType, type: data.type });
+    addMedicationMutation.mutate({ ...data, location: effectiveLocation });
   };
 
   const addMedicationMutation = useMutation({
@@ -168,7 +167,7 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
       toast({ title: "Success", description: "Medication added successfully", duration: 3000 });
       form.reset();
       setLocationDropdownValue("");
-      setSelectedExistingMedId("");
+      setSelectedExistingMedicationId("");
       onOpenChange(false);
     },
     onError: (error: any) => {
@@ -184,23 +183,10 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
   const medicalNameError = form.formState.errors.medicalName;
   const genericNameError = form.formState.errors.genericName;
   const typeError = form.formState.errors.type;
-  const formTypeError = form.formState.errors.formType;
   const doseError = form.formState.errors.dose;
   const quantityError = form.formState.errors.quantity;
   const expirationDateError = form.formState.errors.expirationDate;
   const locationError = form.formState.errors.location;
-
-  const handleMedicalNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    form.setValue("medicalName", capitalizeWords(e.target.value));
-    if (selectedExistingMedId) setSelectedExistingMedId("");
-  };
-  const handleGenericNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    form.setValue("genericName", capitalizeWords(e.target.value));
-    if (selectedExistingMedId) setSelectedExistingMedId("");
-  };
-
-  // convenience for the bubble buttons
-  const selectedFormType = form.watch("formType");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -220,12 +206,17 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
           ) : existingMedications.length > 0 ? (
             <div className="space-y-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
               <Label className="text-sm font-medium text-blue-800">Select Existing Medication (Optional)</Label>
-              <Select onValueChange={handleExistingMedicationSelect} value={selectedExistingMedId}>
+              <Select
+                onValueChange={handleExistingMedicationSelect}
+                value={selectedExistingMedicationId}
+              >
                 <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                 <SelectContent>
                   {existingMedications.map((medication) => (
                     <SelectItem key={medication.id} value={medication.id}>
-                      {medication.medicalName} {medication.genericName && `(${medication.genericName})`}
+                      {medication.medicalName}
+                      {medication.genericName && ` (${medication.genericName})`}
+                      {medication.formType && ` — ${capitalizeWords(medication.formType)}`}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -244,7 +235,11 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               <Input
                 placeholder="e.g., Humalog"
                 value={form.watch("medicalName")}
-                onChange={handleMedicalNameChange}
+                onChange={(e) => {
+                  form.setValue("medicalName", capitalizeWords(e.target.value));
+                  // If they edit manual fields, clear the selected existing med id to avoid mismatch
+                  setSelectedExistingMedicationId("");
+                }}
                 required
               />
               {medicalNameError && <p className="text-sm text-destructive">{medicalNameError.message}</p>}
@@ -256,54 +251,35 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               <Input
                 placeholder="e.g., Insulin Lispro"
                 value={form.watch("genericName")}
-                onChange={handleGenericNameChange}
+                onChange={(e) => {
+                  form.setValue("genericName", capitalizeWords(e.target.value));
+                  setSelectedExistingMedicationId("");
+                }}
                 required
               />
               {genericNameError && <p className="text-sm text-destructive">{genericNameError.message}</p>}
             </div>
           </div>
 
-          {/* Bubble selection for Injection / Pen (required) */}
+          {/* Injection/Pen dropdown */}
           <div>
             <Label>
               Form <span className="text-destructive">*</span>
             </Label>
-            <div role="radiogroup" aria-label="Form type" className="mt-2 flex gap-2">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={selectedFormType === "injection"}
-                onClick={() => {
-                  form.setValue("formType", "injection", { shouldValidate: true, shouldDirty: true });
-                }}
-                className={
-                  "rounded-full px-4 py-2 border focus:outline-none transition text-sm " +
-                  (selectedFormType === "injection"
-                    ? "bg-blue-600 text-white border-blue-600"
-                    : "bg-white text-gray-700 border-gray-300")
-                }
-              >
-                Injection
-              </button>
-
-              <button
-                type="button"
-                role="radio"
-                aria-checked={selectedFormType === "pen"}
-                onClick={() => {
-                  form.setValue("formType", "pen", { shouldValidate: true, shouldDirty: true });
-                }}
-                className={
-                  "rounded-full px-4 py-2 border focus:outline-none transition text-sm " +
-                  (selectedFormType === "pen"
-                    ? "bg-blue-600 text-white border-blue-600"
-                    : "bg-white text-gray-700 border-gray-300")
-                }
-              >
-                Pen
-              </button>
-            </div>
-            {formTypeError && <p className="text-sm text-destructive mt-2">{formTypeError.message}</p>}
+            <Select
+              value={form.watch("formType")}
+              onValueChange={(value) => {
+                form.setValue("formType", value);
+                setSelectedExistingMedicationId("");
+              }}
+              required
+            >
+              <SelectTrigger><SelectValue placeholder="Select form..." /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="injection">Injection</SelectItem>
+                <SelectItem value="pen">Pen</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -311,7 +287,14 @@ export function AddMedicationModal({ open, onOpenChange }: AddMedicationModalPro
               <Label>
                 Insulin Type <span className="text-destructive">*</span>
               </Label>
-              <Select value={form.watch("type")} onValueChange={(value) => form.setValue("type", value)} required>
+              <Select
+                value={form.watch("type")}
+                onValueChange={(value) => {
+                  form.setValue("type", value);
+                  setSelectedExistingMedicationId("");
+                }}
+                required
+              >
                 <SelectTrigger><SelectValue placeholder="Select type..." /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="rapid">Rapid Acting</SelectItem>
