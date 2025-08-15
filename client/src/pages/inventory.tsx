@@ -1,6 +1,5 @@
-
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,8 +11,16 @@ import { LowStockTicker } from "@/components/low-stock-ticker";
 import { OutOfStockTracker } from "@/components/out-of-stock-tracker";
 import { TransactionHistory } from "@/components/transaction-history";
 import { type Medication } from "@shared/schema";
-import { Search, Plus, HandHeart, Syringe, Zap, Clock, Scale, HelpCircle, List } from "lucide-react";
+import { Search, Plus, HandHeart, Syringe, Zap, Clock, Scale, HelpCircle, List, Move as MoveIcon } from "lucide-react";
 import logo from "../assets/noor-logo.png";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea"; // if you have a Textarea component; otherwise fallback to native <textarea>
 
 const typeIcons = {
   rapid: Zap,
@@ -99,7 +106,10 @@ export default function Inventory() {
   const [selectedType, setSelectedType] = useState("all");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isDispenseModalOpen, setIsDispenseModalOpen] = useState(false);
+  const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [selectedMedication, setSelectedMedication] = useState<Medication | null>(null);
+
+  const queryClient = useQueryClient();
 
   const { data: medications = [], isLoading } = useQuery<Medication[]>({
     queryKey: ["/api/medications"],
@@ -131,6 +141,40 @@ export default function Inventory() {
     setIsDispenseModalOpen(true);
   };
 
+  const openMoveModal = (med: Medication) => {
+    setSelectedMedication(med);
+    setIsMoveModalOpen(true);
+  };
+
+  // Mutation for performing move (calls backend)
+  const moveMutation = useMutation(
+    async (payload: {
+      medicationId: string;
+      quantity: number;
+      fromLocation?: string | null;
+      toLocation: string;
+      comment?: string | null;
+    }) => {
+      const res = await fetch("/api/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Move failed");
+      }
+      return res.json();
+    },
+    {
+      onSuccess: () => {
+        // Refresh medications and transactions
+        queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
+      },
+    }
+  );
+
   // Scroll target: LowStockTicker element
   const scrollToTrackers = () => {
     if (typeof document !== "undefined") {
@@ -153,6 +197,11 @@ export default function Inventory() {
       </div>
     );
   }
+
+  // derive previously used locations from all medications (unique)
+  const previousLocations = Array.from(
+    new Set(medications.map((m) => (m.location ?? "").trim()).filter((l) => l && l.length > 0))
+  );
 
   return (
     <div className="bg-gray-50 min-h-screen">
@@ -335,7 +384,7 @@ export default function Inventory() {
 
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span
-                              className={`text-sm font-medium ${
+                              className={`text-sm font-medium $ ${
                                 (medication.quantity ?? 0) <= 5 ? "text-red-600" : "text-gray-900"
                               }`}
                               data-testid="text-quantity"
@@ -355,7 +404,7 @@ export default function Inventory() {
                             {medication.location ?? "—"}
                           </td>
 
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-6 py-4 whitespace-nowrap flex gap-2">
                             <Button
                               onClick={() => handleDispense(medication)}
                               size="sm"
@@ -365,6 +414,18 @@ export default function Inventory() {
                             >
                               <HandHeart className="h-4 w-4 mr-1" />
                               Dispense
+                            </Button>
+
+                            <Button
+                              onClick={() => openMoveModal(medication)}
+                              size="sm"
+                              className="bg-purple-600 hover:bg-purple-700 text-white flex items-center"
+                              disabled={(medication.quantity ?? 0) === 0}
+                              data-testid={`button-move-${medication.id}`}
+                              title="Move stock to another location"
+                            >
+                              <MoveIcon className="h-4 w-4 mr-1" />
+                              Move
                             </Button>
                           </td>
                         </tr>
@@ -396,6 +457,131 @@ export default function Inventory() {
       />
 
       <DispenseModal open={isDispenseModalOpen} onOpenChange={setIsDispenseModalOpen} medication={selectedMedication} />
+
+      {/* Move Modal (inline) */}
+      <Dialog open={isMoveModalOpen} onOpenChange={setIsMoveModalOpen}>
+        <DialogTrigger asChild>
+          {/* We open the dialog programmatically by setting state; DialogTrigger left empty */}
+          <span />
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>Move stock</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label className="text-sm font-medium">Medication</Label>
+              <div className="text-sm text-gray-900">{selectedMedication ? (selectedMedication.medicalName ?? selectedMedication.genericName) : "—"}</div>
+            </div>
+
+            <div>
+              <Label htmlFor="move-quantity" className="text-sm font-medium">Quantity to move</Label>
+              <div className="mt-1 flex gap-2 items-center">
+                <Input
+                  id="move-quantity"
+                  type="number"
+                  min={1}
+                  max={selectedMedication ? selectedMedication.quantity ?? 0 : 0}
+                  defaultValue={selectedMedication ? Math.min(1, selectedMedication.quantity ?? 1) : 1}
+                  data-testid="input-move-quantity"
+                  onChange={() => {}}
+                  // we'll read value on submit
+                />
+                <div className="text-sm text-gray-500">Available: {selectedMedication?.quantity ?? 0}</div>
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-sm font-medium">Move to (choose existing or add new)</Label>
+              <div className="mt-1 flex gap-2">
+                <select id="move-to-select" className="rounded border px-3 py-2 w-2/3" defaultValue="">
+                  <option value="">Select existing location</option>
+                  {previousLocations.map((loc) => (
+                    <option key={loc} value={loc}>
+                      {loc}
+                    </option>
+                  ))}
+                  <option value="__NEW__">Use a new location</option>
+                </select>
+
+                <Input id="move-to-new" placeholder="New location (if selected)" className="w-1/3" />
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-sm font-medium">Optional comment</Label>
+              {/* use Textarea if available; fallback to native */}
+              {typeof Textarea !== "undefined" ? (
+                <Textarea id="move-comment" className="mt-1" placeholder="Optional comment" />
+              ) : (
+                <textarea id="move-comment" className="mt-1 w-full rounded border p-2" placeholder="Optional comment" />
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setIsMoveModalOpen(false)}>Cancel</Button>
+
+              <Button
+                onClick={async () => {
+                  if (!selectedMedication) return;
+
+                  // Grab values from the DOM inputs (keeps this modal self-contained)
+                  const qtyEl = document.getElementById("move-quantity") as HTMLInputElement | null;
+                  const selEl = document.getElementById("move-to-select") as HTMLSelectElement | null;
+                  const newLocEl = document.getElementById("move-to-new") as HTMLInputElement | null;
+                  const commentEl = document.getElementById("move-comment") as HTMLTextAreaElement | HTMLInputElement | null;
+
+                  const quantity = qtyEl ? Math.max(1, Math.min(Number(qtyEl.value || "0"), selectedMedication.quantity ?? 0)) : 0;
+                  if (quantity <= 0) {
+                    alert("Please enter a valid quantity to move.");
+                    return;
+                  }
+
+                  const selectedValue = selEl?.value ?? "";
+                  let toLocation = "";
+                  if (selectedValue === "__NEW__") {
+                    toLocation = newLocEl?.value?.trim() ?? "";
+                    if (!toLocation) {
+                      alert("Please enter a new location.");
+                      return;
+                    }
+                  } else if (selectedValue) {
+                    toLocation = selectedValue;
+                  } else {
+                    // if no select chosen but user typed in new location
+                    toLocation = newLocEl?.value?.trim() ?? "";
+                    if (!toLocation) {
+                      alert("Please select or enter a location to move to.");
+                      return;
+                    }
+                  }
+
+                  const payload = {
+                    medicationId: selectedMedication.id,
+                    quantity,
+                    fromLocation: selectedMedication.location ?? null,
+                    toLocation,
+                    comment: commentEl?.value?.trim() ?? null,
+                  };
+
+                  try {
+                    await moveMutation.mutateAsync(payload);
+                    setIsMoveModalOpen(false);
+                    setSelectedMedication(null);
+                  } catch (err: any) {
+                    console.error("Move failed", err);
+                    alert("Move failed: " + (err?.message ?? "unknown error"));
+                  }
+                }}
+                className="bg-purple-600 hover:bg-purple-700 text-white"
+              >
+                Move
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
