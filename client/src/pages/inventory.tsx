@@ -101,9 +101,15 @@ export default function Inventory() {
     setIsDispenseModalOpen(true);
   };
 
-  // NEW: scroll handler to jump to trackers at the bottom of the page
+  // NEW: scroll handler to jump to the Low Stock tracker element
   const scrollToTrackers = () => {
-    if (typeof window !== "undefined") {
+    if (typeof document !== "undefined") {
+      const el = document.getElementById("low-stock-ticker");
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
+      // fallback to bottom if element not found
       window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
     }
   };
@@ -319,7 +325,11 @@ export default function Inventory() {
           </CardContent>
         </Card>
 
-        <LowStockTicker />
+        {/* Give the LowStockTicker a stable id so the button can scroll to it */}
+        <div id="low-stock-ticker" className="mt-8">
+          <LowStockTicker />
+        </div>
+
         <OutOfStockTracker />
       </main>
 
