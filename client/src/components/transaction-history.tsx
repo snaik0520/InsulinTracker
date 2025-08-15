@@ -76,13 +76,13 @@ export function TransactionHistory() {
                   const { date, time } = formatTimestamp(transaction.timestamp);
                   const Icon = getTransactionIcon(transaction.type);
 
-                  // Split "generic (medical)" into generic and medical
-                  const [generic, withParen] = transaction.medicationName.split(" (");
+                  // Remove any " - form" suffix, then split "generic (medical)"
+                  const nameOnly = transaction.medicationName.split(" - ")[0];
+                  const [generic, withParen] = nameOnly.split(" (");
                   const medical = withParen?.replace(")", "") ?? "";
 
-                  // Determine unit based on "pen" in administrativeForm or fallback
-                  const lower = transaction.medicationName.toLowerCase();
-                  const isPen = lower.includes("pen");
+                  // Determine unit based on "pen" presence
+                  const isPen = nameOnly.toLowerCase().includes("pen");
                   const unit = isPen
                     ? transaction.quantity === 1
                       ? "pen"
