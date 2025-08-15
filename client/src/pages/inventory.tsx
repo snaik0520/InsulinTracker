@@ -99,6 +99,14 @@ const getExpirationClassName = (days: number) => {
   return "text-green-600";
 };
 
+/**
+ * Capitalize the first letter of each word (Title Case).
+ * Example: "main fridge" -> "Main Fridge"
+ */
+const capitalizeWords = (value: string) => {
+  return value.replace(/\b\w+/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
+};
+
 export default function Inventory() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedType, setSelectedType] = useState("all");
@@ -533,7 +541,7 @@ export default function Inventory() {
                 id="move-to-location"
                 placeholder="Enter destination location"
                 value={moveToLocation}
-                onChange={(e) => setMoveToLocation(e.target.value)}
+                onChange={(e) => setMoveToLocation(capitalizeWords(e.target.value))}
                 className="mt-1"
                 data-testid="input-move-to-location"
                 list="location-suggestions"
