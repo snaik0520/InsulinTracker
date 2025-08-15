@@ -101,6 +101,13 @@ export default function Inventory() {
     setIsDispenseModalOpen(true);
   };
 
+  // NEW: scroll handler to jump to trackers at the bottom of the page
+  const scrollToTrackers = () => {
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -151,7 +158,20 @@ export default function Inventory() {
               </div>
 
               <div className="flex gap-3 flex-shrink-0">
+                <Button
+                  onClick={scrollToTrackers}
+                  size="sm"
+                  variant="outline"
+                  className="flex items-center"
+                  data-testid="button-jump-low-outstock"
+                  title="Jump to low / out of stock trackers"
+                >
+                  <List className="h-4 w-4 mr-2" />
+                  Low / Out of Stock
+                </Button>
+
                 <TransactionHistory />
+
                 <Button onClick={() => setIsAddModalOpen(true)} className="bg-primary hover:bg-primary/90" data-testid="button-add-medication">
                   <Plus className="h-4 w-4 mr-2" />
                   Add New Medication
