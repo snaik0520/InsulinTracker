@@ -16,31 +16,34 @@ interface DispenseModalProps {
 }
 
 export function DispenseModal({ open, onOpenChange, medication }: DispenseModalProps) {
-  const [dispenseQuantity, setDispenseQuantity] = useState<string>(""); // start empty
+  // allow empty string initially so box is blank; otherwise a number
+  const [dispenseQuantity, setDispenseQuantity] = useState<number | "">("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
-
-  if (!medication) return null;
-
-  const isPens = medication.administrationForm === "pens";
-  const singularLabel = isPens ? "pen" : "injection";
-  const pluralLabel = isPens ? "pens" : "injections";
 
   const dispenseMutation = useMutation({
     mutationFn: async (data: { medicationId: string; quantity: number }) => {
       const response = await apiRequest("POST", "/api/medications/dispense", data);
       return response.json();
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
       queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"] });
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
-      const qty = variables.quantity;
+
+      // build admin label based on medication form and singular/plural
+      const qtyNum = typeof dispenseQuantity === "number" ? dispenseQuantity : 0;
+      const isPen = medication?.administrationForm?.toLowerCase() === "pen";
+      const adminWord =
+        qtyNum === 1 ? (isPen ? "pen" : "injection") : isPen ? "pens" : "injections";
+
       toast({
         title: "Success",
-        description: `Successfully dispensed ${qty} ${qty === 1 ? singularLabel : pluralLabel}`,
-        duration: 3000,
+        description: `Successfully dispensed ${qtyNum} ${adminWord}`,
+        duration: 3000, // 3 seconds
       });
+
+      // reset to empty so next time user must enter a value again
       setDispenseQuantity("");
       onOpenChange(false);
     },
@@ -49,15 +52,15 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
         title: "Error",
         description: error.message,
         variant: "destructive",
-        duration: 3000,
+        duration: 3000, // 3 seconds
       });
     },
   });
 
   const handleDispense = () => {
-    const qty = parseInt(dispenseQuantity, 10);
     if (!medication) return;
-    if (isNaN(qty) || qty < 1) {
+
+    if (dispenseQuantity === "" || typeof dispenseQuantity !== "number" || dispenseQuantity < 1) {
       toast({
         title: "Error",
         description: "Please enter a quantity of at least 1",
@@ -65,7 +68,8 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
       });
       return;
     }
-    if (qty > medication.quantity) {
+
+    if (dispenseQuantity > medication.quantity) {
       toast({
         title: "Error",
         description: "Cannot dispense more than available stock",
@@ -73,25 +77,39 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
       });
       return;
     }
+
     dispenseMutation.mutate({
       medicationId: medication.id,
-      quantity: qty,
+      quantity: dispenseQuantity,
     });
   };
 
   const incrementQuantity = () => {
-    const current = parseInt(dispenseQuantity || "0", 10);
-    if (medication && current < medication.quantity) {
-      setDispenseQuantity(String(current + 1));
+    if (!medication) return;
+
+    if (dispenseQuantity === "") {
+      setDispenseQuantity(1);
+      return;
+    }
+
+    if (typeof dispenseQuantity === "number" && dispenseQuantity < medication.quantity) {
+      setDispenseQuantity(dispenseQuantity + 1);
     }
   };
 
   const decrementQuantity = () => {
-    const current = parseInt(dispenseQuantity || "0", 10);
-    if (current > 1) {
-      setDispenseQuantity(String(current - 1));
+    if (dispenseQuantity === "" || typeof dispenseQuantity !== "number") return;
+    if (dispenseQuantity > 1) {
+      setDispenseQuantity(dispenseQuantity - 1);
     }
   };
+
+  if (!medication) return null;
+
+  // conveniences for UI disabling
+  const qtyNumber = typeof dispenseQuantity === "number" ? dispenseQuantity : 0;
+  const decrementDisabled = qtyNumber <= 1;
+  const incrementDisabled = qtyNumber >= medication.quantity;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -108,7 +126,7 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
               {medication.medicalName} ({medication.genericName})
             </p>
             <p className="text-xs text-gray-500 mt-1" data-testid="text-available-stock">
-              Available: {medication.quantity} {medication.administrationForm}
+              Available: {medication.quantity}
             </p>
           </div>
           <div>
@@ -119,7 +137,7 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
                 variant="outline"
                 size="sm"
                 onClick={decrementQuantity}
-                disabled={parseInt(dispenseQuantity || "0", 10) <= 1}
+                disabled={decrementDisabled}
                 data-testid="button-decrement"
               >
                 <Minus className="h-4 w-4" />
@@ -127,11 +145,25 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
               <Input
                 id="dispenseQuantity"
                 type="number"
-                placeholder=" "
-                min="1"
+                min={1}
                 max={medication.quantity}
-                value={dispenseQuantity}
-                onChange={(e) => setDispenseQuantity(e.target.value)}
+                // allow empty string for initial blank
+                value={dispenseQuantity === "" ? "" : dispenseQuantity}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  if (raw === "") {
+                    setDispenseQuantity("");
+                    return;
+                  }
+                  const parsed = parseInt(raw, 10);
+                  if (isNaN(parsed)) {
+                    setDispenseQuantity("");
+                    return;
+                  }
+                  // clamp to [1, medication.quantity]
+                  const clamped = Math.max(1, Math.min(parsed, medication.quantity));
+                  setDispenseQuantity(clamped);
+                }}
                 className="w-20 text-center"
                 data-testid="input-dispense-quantity"
               />
@@ -140,9 +172,7 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
                 variant="outline"
                 size="sm"
                 onClick={incrementQuantity}
-                disabled={
-                  parseInt(dispenseQuantity || "0", 10) >= medication.quantity
-                }
+                disabled={incrementDisabled}
                 data-testid="button-increment"
               >
                 <Plus className="h-4 w-4" />
