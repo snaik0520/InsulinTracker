@@ -15,8 +15,7 @@ import { Search, Plus, HandHeart, Syringe, Zap, Clock, Scale, HelpCircle, List }
 import logo from "../assets/noor-logo.png";
 
 /**
- * Small dialog components used for the Move modal
- * (these exist in other parts of the codebase; import them if present)
+ * Dialog components used for the Move modal
  */
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
@@ -119,6 +118,7 @@ export default function Inventory() {
   const [moveMedication, setMoveMedication] = useState<Medication | null>(null);
   const [moveToLocation, setMoveToLocation] = useState("");
   const [moveComment, setMoveComment] = useState("");
+  const [moveAmount, setMoveAmount] = useState<number>(1);
   const [moveError, setMoveError] = useState<string | null>(null);
   const [isSubmittingMove, setIsSubmittingMove] = useState(false);
 
@@ -159,11 +159,21 @@ export default function Inventory() {
     setMoveMedication(medication);
     setMoveToLocation(""); // require user to choose/enter
     setMoveComment("");
+    setMoveAmount(1);
     setMoveError(null);
     setIsMoveModalOpen(true);
   };
 
-  // Submit move action: optimistic local update + POST to backend endpoints for persistence/transaction
+  // gather existing locations for suggestions in the Move modal
+  const locationSuggestions = useMemo(() => {
+    const s = new Set<string>();
+    for (const m of medications) {
+      if (m.location) s.add(m.location);
+    }
+    return Array.from(s).filter(Boolean);
+  }, [medications]);
+
+  // Submit move action: optimistic local update + POST to backend for persistence/transaction
   const handleMoveSubmit = async () => {
     setMoveError(null);
 
@@ -177,62 +187,83 @@ export default function Inventory() {
       return;
     }
 
+    const available = moveMedication.quantity ?? 0;
+    const amount = Number(moveAmount);
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setMoveError("Please enter a valid quantity to move (must be > 0).");
+      return;
+    }
+
+    if (amount > available) {
+      setMoveError(`Cannot move more than available quantity (${available}).`);
+      return;
+    }
+
     setIsSubmittingMove(true);
 
     const medicationId = moveMedication.id;
     const fromLocation = moveMedication.location ?? "—";
-    const toLocation = moveToLocation.trim();
+    const toLocation = capitalizeWords(moveToLocation.trim());
     const comment = moveComment.trim();
 
-    // Create a transaction payload (add a temporary id so the UI can render it immediately)
-    const transactionPayload = {
-      id: `local-move-${Date.now()}`,
-      medicationId,
-      type: "move",
-      fromLocation,
-      toLocation,
-      comment,
-      timestamp: new Date().toISOString(),
-      // optionally include medication display name for easier UI rendering
-      medicationName: moveMedication.medicalName ?? moveMedication.genericName ?? "—",
-    };
-
     try {
-      // 1) Optimistically update medications cache so the location updates immediately
-      queryClient.setQueryData(["/api/medications"], (old: any) => {
-        if (!old) return old;
-        // handle both array and {data: array} shapes
-        if (Array.isArray(old)) {
-          return old.map((m: any) => (m.id === medicationId ? { ...m, location: toLocation } : m));
-        }
-        if (old.data && Array.isArray(old.data)) {
-          return { ...old, data: old.data.map((m: any) => (m.id === medicationId ? { ...m, location: toLocation } : m)) };
-        }
-        return old;
+      // Optimistic local update:
+      // 1) subtract from source medication
+      const sourceIndex = medications.findIndex((m) => m.id === medicationId);
+      if (sourceIndex !== -1) {
+        const src = medications[sourceIndex];
+        src.quantity = (src.quantity ?? 0) - amount;
+      }
+
+      // 2) find an existing batch at destination with same identifying properties (so UI remains tidy)
+      // match by medicalName, genericName, dose, expirationDate, type, administrativeForm
+      const matchIndex = medications.findIndex((m) => {
+        if (!m.location) return false;
+        return (
+          m.location.toLowerCase() === toLocation.toLowerCase() &&
+          (m.medicalName ?? "").toLowerCase() === (moveMedication.medicalName ?? "").toLowerCase() &&
+          (m.genericName ?? "").toLowerCase() === (moveMedication.genericName ?? "").toLowerCase() &&
+          String(m.dose) === String(moveMedication.dose) &&
+          (m.expirationDate ?? "") === (moveMedication.expirationDate ?? "") &&
+          (m.type ?? "") === (moveMedication.type ?? "") &&
+          ((m.administrativeForm ?? m.formType ?? "") === (moveMedication.administrativeForm ?? moveMedication.formType ?? ""))
+        );
       });
 
-      // 2) Optimistically prepend the transaction into the transactions cache so TransactionHistory shows it
-      queryClient.setQueryData(["/api/transactions"], (old: any) => {
-        if (!old) return [transactionPayload];
-        // common shapes:
-        if (Array.isArray(old)) {
-          return [transactionPayload, ...old];
-        }
-        if (old.data && Array.isArray(old.data)) {
-          return { ...old, data: [transactionPayload, ...old.data] };
-        }
-        // fallback
-        return old;
-      });
+      if (matchIndex !== -1) {
+        // add to existing destination batch
+        medications[matchIndex].quantity = (medications[matchIndex].quantity ?? 0) + amount;
+      } else {
+        // create a new optimistic medication record for the destination
+        const newMed: Medication = {
+          ...moveMedication,
+          id: `${moveMedication.id}-moved-${Date.now()}`, // temporary id
+          location: toLocation,
+          quantity: amount,
+        } as Medication;
+        (medications as Medication[]).push(newMed);
+      }
 
-      // 3) Attempt to persist to backend; do both move endpoint and transaction endpoint if available
+      // Build transaction payload
+      const transactionPayload = {
+        medicationId,
+        type: "move",
+        fromLocation,
+        toLocation,
+        quantity: amount,
+        comment,
+        timestamp: new Date().toISOString(),
+      };
+
+      // Attempt to persist move and transaction - endpoints are examples; adjust to match your backend
       await Promise.all([
         fetch(`/api/medications/${encodeURIComponent(String(medicationId))}/move`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ toLocation, comment }),
+          body: JSON.stringify({ toLocation, quantity: amount, comment }),
         }).catch(() => {
-          // swallow - we still kept optimistic update and will invalidate later
+          // swallow errors so UI remains optimistic
         }),
         fetch(`/api/transactions`, {
           method: "POST",
@@ -243,47 +274,23 @@ export default function Inventory() {
         }),
       ]);
 
-      // Invalidate transactions query to let the real backend response reconcile the optimistic entry
+      // Invalidate relevant queries so TransactionHistory and medications list refresh from backend (if available)
       queryClient.invalidateQueries(["/api/transactions"]);
-      // Also invalidate medications to ensure server canonical state is fetched
       queryClient.invalidateQueries(["/api/medications"]);
 
-      // close modal & reset
+      // close modal and reset
       setIsMoveModalOpen(false);
       setMoveMedication(null);
       setMoveToLocation("");
       setMoveComment("");
+      setMoveAmount(1);
     } catch (err) {
       console.error("Failed to move medication:", err);
       setMoveError("Something went wrong while moving the medication. Please try again.");
-      // optionally we could rollback optimistic updates here, but keeping it simple:
-      queryClient.invalidateQueries(["/api/medications"]);
-      queryClient.invalidateQueries(["/api/transactions"]);
     } finally {
       setIsSubmittingMove(false);
     }
   };
-
-  // Scroll target: LowStockTicker element
-  const scrollToTrackers = () => {
-    if (typeof document !== "undefined") {
-      const el = document.getElementById("low-stock-ticker");
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
-        return;
-      }
-      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
-    }
-  };
-
-  // gather existing locations for suggestions in the Move modal
-  const locationSuggestions = useMemo(() => {
-    const s = new Set<string>();
-    for (const m of medications) {
-      if (m.location) s.add(m.location);
-    }
-    return Array.from(s).filter(Boolean);
-  }, [medications]);
 
   if (isLoading) {
     return (
@@ -336,7 +343,14 @@ export default function Inventory() {
 
               <div className="flex gap-3 flex-shrink-0">
                 <Button
-                  onClick={scrollToTrackers}
+                  onClick={() => {
+                    const el = document.getElementById("low-stock-ticker");
+                    if (el) {
+                      el.scrollIntoView({ behavior: "smooth", block: "start" });
+                      return;
+                    }
+                    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
+                  }}
                   size="sm"
                   variant="outline"
                   className="flex items-center border-rose-200 text-rose-700 hover:bg-rose-50"
@@ -509,7 +523,7 @@ export default function Inventory() {
                               Dispense
                             </Button>
 
-                            {/* NEW: Move button - opens modal to require destination location and optional comment */}
+                            {/* Move button - opens modal to require destination location, optional comment, and quantity to move */}
                             <Button
                               onClick={() => openMoveModal(medication)}
                               size="sm"
@@ -584,6 +598,29 @@ export default function Inventory() {
                   <option key={loc} value={loc} />
                 ))}
               </datalist>
+            </div>
+
+            <div>
+              <Label htmlFor="move-amount" className="text-sm font-medium">
+                Quantity to move (required)
+              </Label>
+              <Input
+                id="move-amount"
+                type="number"
+                min={1}
+                max={moveMedication ? moveMedication.quantity ?? 1 : undefined}
+                value={moveAmount}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  if (Number.isNaN(val)) return setMoveAmount(0);
+                  setMoveAmount(val);
+                }}
+                className="mt-1"
+                data-testid="input-move-amount"
+              />
+              <div className="text-xs text-gray-500 mt-1">
+                {moveMedication ? `Available: ${moveMedication.quantity ?? 0}` : ""}
+              </div>
             </div>
 
             <div>
