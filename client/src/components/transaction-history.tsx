@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -20,36 +26,16 @@ export function TransactionHistory() {
     const date = new Date(timestamp);
     return {
       date: date.toLocaleDateString(),
-      time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      time: date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     };
   };
 
-  const formatMedicationDisplay = (medicationName: string, quantity: number) => {
-    // Parse the medication name to extract form type
-    const parts = medicationName.split(' - ');
-    const nameOnly = parts; // "Humalog (Insulin Lispro)"
-    const formType = parts[5]?.toLowerCase() || 'injection'; // default to injection
-    
-    // Determine unit based on form type and quantity
-    let unit;
-    if (formType === 'pen') {
-      unit = quantity === 1 ? 'pen' : 'pens';
-    } else {
-      unit = quantity === 1 ? 'injection' : 'injections';
-    }
-    
-    return { nameOnly, unit };
-  };
+  const getTransactionIcon = (type: string) => (type === "addition" ? Plus : Minus);
 
-  const getTransactionIcon = (type: string) => {
-    return type === "addition" ? Plus : Minus;
-  };
-
-  const getTransactionColor = (type: string) => {
-    return type === "addition" 
-      ? "bg-green-100 text-green-800 border-green-200" 
+  const getTransactionColor = (type: string) =>
+    type === "addition"
+      ? "bg-green-100 text-green-800 border-green-200"
       : "bg-red-100 text-red-800 border-red-200";
-  };
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -83,9 +69,23 @@ export function TransactionHistory() {
             <div className="space-y-4">
               {transactions.map((transaction) => {
                 const { date, time } = formatTimestamp(transaction.timestamp);
-                const { nameOnly, unit } = formatMedicationDisplay(transaction.medicationName, transaction.quantity);
                 const Icon = getTransactionIcon(transaction.type);
-                
+
+                // Split "generic (medical)" into generic and medical
+                const [generic, withParen] = transaction.medicationName.split(" (");
+                const medical = withParen?.replace(")", "") ?? "";
+
+                // Determine unit based on "pen" in name or default to injection
+                const isPen = transaction.medicationName.toLowerCase().includes("pen");
+                const unit =
+                  isPen
+                    ? transaction.quantity === 1
+                      ? "pen"
+                      : "pens"
+                    : transaction.quantity === 1
+                    ? "injection"
+                    : "injections";
+
                 return (
                   <div
                     key={transaction.id}
@@ -94,10 +94,9 @@ export function TransactionHistory() {
                     <div className={`rounded-full p-2 ${getTransactionColor(transaction.type)}`}>
                       <Icon className="w-4 h-4" />
                     </div>
-                    
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-gray-900">
-                        {nameOnly}
+                        {medical} {generic && `(${generic})`}
                       </div>
                       <div className="text-sm text-gray-600 mt-1">
                         <Badge className={getTransactionColor(transaction.type)}>
@@ -105,17 +104,16 @@ export function TransactionHistory() {
                         </Badge>
                         <span className="ml-2">
                           {transaction.quantity} {unit}
-                          {transaction.type === "addition" ? " added to inventory" : " dispensed to patient"}
+                          {transaction.type === "addition"
+                            ? " added to inventory"
+                            : " dispensed to patient"}
                         </span>
                       </div>
-                      
                       <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
                         <Clock className="w-3 h-3" />
                         {date} at {time}
                         {transaction.notes && (
-                          <span className="ml-2 italic">
-                            {transaction.notes}
-                          </span>
+                          <span className="ml-2 italic">{transaction.notes}</span>
                         )}
                       </div>
                     </div>
