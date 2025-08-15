@@ -370,11 +370,11 @@ export default function Inventory() {
                               Dispense
                             </Button>
 
-                            {/* MOVE button */}
+                            {/* MOVE button - matched style to Dispense */}
                             <Button
                               onClick={() => handleMove(medication)}
                               size="sm"
-                              className="bg-purple-600 hover:bg-purple-700 text-white"
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white"
                               disabled={(medication.quantity ?? 0) === 0}
                               data-testid={`button-move-${medication.id}`}
                               title="Move medication to another location"
@@ -406,7 +406,9 @@ export default function Inventory() {
         onOpenChange={setIsAddModalOpen}
         onSave={(newMed: any) => {
           // client-side push (replace with proper mutation)
-          medications.push(newMed);
+          // NOTE: this local push is temporary — server should be the source of truth
+          const old = queryClient.getQueryData<Medication[]>(["/api/medications"]) ?? [];
+          queryClient.setQueryData(["/api/medications"], [...old, newMed]);
           setIsAddModalOpen(false);
         }}
       />
@@ -488,7 +490,6 @@ function MoveModal({
         timestamp: new Date().toISOString(),
       };
 
-      // First, call backend to perform move + update quantities (adjust endpoint as needed)
       const res = await fetch("/api/medications/move", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -500,8 +501,7 @@ function MoveModal({
         throw new Error(text || "Move failed");
       }
 
-      // Optionally create a transaction entry (if backend doesn't auto-create it).
-      // This tries to create /api/transactions entry with type "move".
+      // Attempt to create a transaction (backend may do this automatically)
       try {
         await fetch("/api/transactions", {
           method: "POST",
@@ -518,11 +518,59 @@ function MoveModal({
           }),
         });
       } catch (err) {
-        // ignore - backend may auto-create transaction
         console.warn("Failed to create transaction record:", err);
       }
 
-      // invalidate queries to refresh UI
+      // OPTIMISTICALLY update cached medications so inventory list reflects the move immediately
+      queryClient.setQueryData<Medication[] | undefined>(["/api/medications"], (old) => {
+        if (!old) return old;
+
+        // decrement source med
+        const updated = old.map((m) => {
+          if (m.id === medication.id) {
+            return { ...m, quantity: Math.max(0, (m.quantity ?? 0) - quantity) };
+          }
+          return m;
+        });
+
+        // try to find destination entry with same name + location
+        const matchIndex = updated.findIndex(
+          (m) =>
+            (m.medicalName ?? m.genericName) === (medication.medicalName ?? medication.genericName) &&
+            (m.location ?? "") === toLocation
+        );
+
+        if (matchIndex >= 0) {
+          // increment existing destination entry
+          updated[matchIndex] = {
+            ...updated[matchIndex],
+            quantity: (updated[matchIndex].quantity ?? 0) + quantity,
+            location: toLocation,
+          };
+        } else {
+          // create temporary client-side entry for the moved items
+          const tempEntry: Medication = {
+            // temp id - server will provide canonical id after invalidation refresh
+            id: `moved-temp-${Date.now()}`,
+            medicalName: medication.medicalName,
+            genericName: medication.genericName,
+            administrativeForm: medication.administrativeForm,
+            formType: medication.formType,
+            type: medication.type,
+            dose: medication.dose,
+            quantity,
+            expirationDate: medication.expirationDate,
+            location: toLocation,
+          } as Medication;
+
+          updated.push(tempEntry);
+        }
+
+        // filter out items that reach zero quantity to keep list tidy (optional)
+        return updated.filter((m) => (m.quantity ?? 0) > 0);
+      });
+
+      // finally invalidate to sync with server
       queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
 
@@ -613,7 +661,7 @@ function MoveModal({
             <Button onClick={() => onOpenChange(false)} variant="outline" size="sm">
               Cancel
             </Button>
-            <Button onClick={handleSubmit} disabled={isSubmitting} size="sm" className="bg-purple-600 text-white">
+            <Button onClick={handleSubmit} disabled={isSubmitting} size="sm" className="bg-emerald-600 text-white">
               {isSubmitting ? "Moving…" : "Move"}
             </Button>
           </div>
