@@ -70,10 +70,20 @@ export function TransactionHistory() {
 
   const getTransactionDescription = (transaction: MedicationTransaction) => {
     if (transaction.type === "move") {
-      return "Location changed";
+      // Show quantity and destination when available
+      const isPen = transaction.medicationName?.toLowerCase().includes("pen");
+      const unit = isPen
+        ? transaction.quantity === 1
+          ? "pen"
+          : "pens"
+        : transaction.quantity === 1
+        ? "injection"
+        : "injections";
+
+      const toLocation = (transaction as any).toLocation || (transaction as any).destination || (transaction as any).location || "";
+      return `${transaction.quantity} ${unit} moved${toLocation ? ` to ${toLocation}` : ""}`;
     } else if (transaction.type === "addition") {
-      // Determine unit based on "pen" presence
-      const isPen = transaction.medicationName.toLowerCase().includes("pen");
+      const isPen = transaction.medicationName?.toLowerCase().includes("pen");
       const unit = isPen
         ? transaction.quantity === 1
           ? "pen"
@@ -84,7 +94,7 @@ export function TransactionHistory() {
       return `${transaction.quantity} ${unit} added to inventory`;
     } else {
       // dispensed
-      const isPen = transaction.medicationName.toLowerCase().includes("pen");
+      const isPen = transaction.medicationName?.toLowerCase().includes("pen");
       const unit = isPen
         ? transaction.quantity === 1
           ? "pen"
@@ -133,9 +143,9 @@ export function TransactionHistory() {
                 const Icon = getTransactionIcon(transaction.type);
 
                 // Remove any " - form" suffix, then split "generic (medical)"
-                const nameOnly = transaction.medicationName.split(" - ")[0];
+                const nameOnly = transaction.medicationName?.split(" - ")[0] ?? "";
                 const [generic, withParen] = nameOnly.split(" (");
-                const medical = withParen?.replace(")", "") ?? "";
+                const medical = withParen?.replace(")", "") ?? generic ?? "";
 
                 return (
                   <div
@@ -151,7 +161,7 @@ export function TransactionHistory() {
 
                         <div className="flex-1 min-w-0">
                           <h4 className="font-medium text-gray-900 truncate">
-                            {medical} {generic && `(${generic})`}
+                            {medical}
                           </h4>
                           <p className="text-sm text-gray-600 mt-2">
                             {getTransactionDescription(transaction)}
@@ -174,6 +184,13 @@ export function TransactionHistory() {
                             {date} at {time}
                           </span>
                         </div>
+
+                        {/* optional comment / notes */}
+                        {transaction.notes && (
+                          <div className="mt-2 text-xs text-gray-600 bg-gray-50 rounded p-2 max-w-xs">
+                            {transaction.notes}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
