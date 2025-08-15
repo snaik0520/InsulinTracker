@@ -71,12 +71,13 @@ export function LowStockAlert() {
                 data-testid={`low-stock-item-${medication.id}`}
               >
                 <div>
-                  <div className="font-medium text-gray-900">
-                    {medication.genericName}
-                  </div>
-                  <div className="text-sm text-gray-600">
-                    {medication.medicalName} • {medication.location}
-                  </div>
+                  <div className="font-medium text-sm">
+  {medication.medicalName}
+</div>
+<div className="text-xs text-muted-foreground">
+  {medication.genericName} • {medication.location}
+</div>
+
                 </div>
                 <div className="text-right">
                   <Badge variant="destructive" className="mb-1">
