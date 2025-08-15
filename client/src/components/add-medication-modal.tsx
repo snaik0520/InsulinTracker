@@ -223,14 +223,15 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
   const administrativeFormError = (form.formState.errors as any).administrativeForm;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Plus className="h-5 w-5 text-primary" />
-            Add Insulin Medication
-          </DialogTitle>
-        </DialogHeader>
+  <Dialog open={open} onOpenChange={onOpenChange}>
+    <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogHeader>
+        <DialogTitle className="text-lg">
+          <Plus className="w-4 h-4 inline mr-2" />
+          Add Insulin Medication
+        </DialogTitle>
+      </DialogHeader>
+
 
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
           {medsLoading ? (
