@@ -19,47 +19,61 @@ const typeIcons = {
   long: Clock,
   intermediate: Scale,
   other: HelpCircle,
-};
+} as const;
 
-// Enhanced color scheme for better visual appeal and medical context
-const typeColors = {
-  rapid: "bg-red-100 text-red-800 border-red-200",
-  long: "bg-blue-100 text-blue-800 border-blue-200",
-  intermediate: "bg-amber-100 text-amber-800 border-amber-200",
-  other: "bg-gray-100 text-gray-800 border-gray-200",
-};
+/**
+ * Muted pastel palette:
+ * - rapid  -> rose / pink pastel
+ * - long   -> violet pastel
+ * - inter -> emerald pastel
+ * - other  -> amber pastel
+ */
+const badgeColors = {
+  rapid: "bg-rose-100 text-rose-800",
+  long: "bg-violet-100 text-violet-800",
+  intermediate: "bg-emerald-100 text-emerald-800",
+  other: "bg-amber-100 text-amber-800",
+} as const;
 
-const typeButtonColors = {
-  rapid: "bg-red-500 hover:bg-red-600 border-red-600",
-  long: "bg-blue-500 hover:bg-blue-600 border-blue-600",
-  intermediate: "bg-amber-500 hover:bg-amber-600 border-amber-600",
-  other: "bg-gray-500 hover:bg-gray-600 border-gray-600",
-};
+// subtle row background tints (muted pastels)
+const rowBgClasses = {
+  rapid: "bg-rose-50",
+  long: "bg-violet-50",
+  intermediate: "bg-emerald-50",
+  other: "bg-amber-50",
+} as const;
 
-const typeRowColors = {
-  rapid: "bg-red-50/30 hover:bg-red-50/50 border-l-red-300",
-  long: "bg-blue-50/30 hover:bg-blue-50/50 border-l-blue-300",
-  intermediate: "bg-amber-50/30 hover:bg-amber-50/50 border-l-amber-300",
-  other: "bg-gray-50/30 hover:bg-gray-50/50 border-l-gray-300",
-};
+const filterSelectedClasses = {
+  rapid: "bg-rose-100 text-rose-800 border-rose-200",
+  long: "bg-violet-100 text-violet-800 border-violet-200",
+  intermediate: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  other: "bg-amber-100 text-amber-800 border-amber-200",
+} as const;
+
+const filterHoverClasses = {
+  rapid: "hover:bg-rose-50 hover:text-rose-700",
+  long: "hover:bg-violet-50 hover:text-violet-700",
+  intermediate: "hover:bg-emerald-50 hover:text-emerald-700",
+  other: "hover:bg-amber-50 hover:text-amber-700",
+} as const;
 
 const typeLabels = {
   rapid: "Rapid Acting",
   long: "Long Acting",
   intermediate: "Intermediate",
   other: "Other",
-};
+} as const;
 
 const getRowClassName = (type: string) => {
   switch (type) {
     case "rapid":
-      return "insulin-type-rapid";
+      return rowBgClasses.rapid;
     case "long":
-      return "insulin-type-long";
+      return rowBgClasses.long;
     case "intermediate":
-      return "insulin-type-intermediate";
+      return rowBgClasses.intermediate;
     case "other":
-      return "insulin-type-other";
+      return rowBgClasses.other;
     default:
       return "";
   }
@@ -74,8 +88,8 @@ const calculateDaysUntilExpiration = (expirationDate: string) => {
 };
 
 const getExpirationClassName = (days: number) => {
-  if (days < 30) return "text-red-600 font-bold";
-  if (days < 90) return "text-orange-600 font-semibold";
+  if (days < 30) return "text-red-600";
+  if (days < 90) return "text-orange-600";
   return "text-green-600";
 };
 
@@ -84,9 +98,9 @@ export default function Inventory() {
   const [selectedType, setSelectedType] = useState("all");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isDispenseModalOpen, setIsDispenseModalOpen] = useState(false);
-  const [selectedMedication, setSelectedMedication] = useState(null);
+  const [selectedMedication, setSelectedMedication] = useState<Medication | null>(null);
 
-  const { data: medications = [], isLoading } = useQuery({
+  const { data: medications = [], isLoading } = useQuery<Medication[]>({
     queryKey: ["/api/medications"],
   });
 
@@ -116,6 +130,7 @@ export default function Inventory() {
     setIsDispenseModalOpen(true);
   };
 
+  // Scroll target: LowStockTicker element
   const scrollToTrackers = () => {
     if (typeof document !== "undefined") {
       const el = document.getElementById("low-stock-ticker");
@@ -129,103 +144,105 @@ export default function Inventory() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-        <Card className="w-96 p-8">
-          <CardContent className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading medications...</p>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-rose-400 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading medications…</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <img src={logo} alt="Noor Logo" className="h-12 w-12" />
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Insulin Inventory</h1>
-                <p className="text-gray-600">Clinic Medication Management</p>
-              </div>
+    <div className="bg-gray-50 min-h-screen">
+      <header className="bg-gradient-to-r from-rose-50 via-white to-emerald-50 shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center">
+              <Syringe className="h-6 w-6 text-rose-600 mr-3" />
+              <h1 className="text-xl font-semibold text-rose-700">Insulin Inventory</h1>
             </div>
-            <div className="flex items-center gap-3">
-              <Button
-                onClick={() => setIsAddModalOpen(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Medication
-              </Button>
-              <Button
-                variant="outline"
-                onClick={scrollToTrackers}
-                className="flex items-center gap-2"
-              >
-                <HandHeart className="h-4 w-4" />
-                Stock Trackers
-              </Button>
+            <div className="flex items-center space-x-4">
+              <span className="text-lg text-gray-600 font-medium tracking-wide">SLO Noor Foundation</span>
+              <img src={logo} alt="SLO Noor Foundation logo" className="h-14 w-auto object-contain" data-testid="logo" />
             </div>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Search and Filter Section */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Search className="h-5 w-5" />
-              Search & Filter Medications
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                type="text"
-                placeholder="Search by medication name..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-                data-testid="input-search-medication"
-              />
+        <Card className="mb-8">
+          <CardContent className="p-6">
+            <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between space-y-4 lg:space-y-0 lg:space-x-4">
+              <div className="flex-1 max-w-lg">
+                <Label htmlFor="medication-search" className="block text-sm font-medium text-gray-700 mb-2">
+                  Search medications
+                </Label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <Input
+                    id="medication-search"
+                    placeholder="Search by generic or medical name"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10"
+                    data-testid="input-search-medication"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 flex-shrink-0">
+                <Button
+                  onClick={scrollToTrackers}
+                  size="sm"
+                  variant="outline"
+                  className="flex items-center border-rose-200 text-rose-700 hover:bg-rose-50"
+                  data-testid="button-jump-low-outstock"
+                  title="Jump to low / out of stock trackers"
+                >
+                  <List className="h-4 w-4 mr-2" />
+                  Low / Out of Stock
+                </Button>
+
+                <TransactionHistory />
+
+                <Button
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="bg-rose-600 hover:bg-rose-700 text-white"
+                  data-testid="button-add-medication"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Medication
+                </Button>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-gray-700">
-                Filter by Insulin Type
-              </Label>
+            <div className="mt-6">
+              <Label className="block text-sm font-medium text-gray-700 mb-3">Filter by insulin type</Label>
               <div className="flex flex-wrap gap-2">
                 <Button
                   variant={selectedType === "all" ? "default" : "outline"}
                   onClick={() => setSelectedType("all")}
-                  className="flex items-center gap-2 transition-all duration-200"
+                  className={`text-sm ${selectedType === "all" ? "bg-white text-gray-700" : "text-gray-700"}`}
+                  data-testid="filter-all"
                 >
-                  <List className="h-4 w-4" />
-                  All Types
+                  <List className="h-4 w-4 mr-2" /> All types
                 </Button>
-                
+
                 {Object.entries(typeLabels).map(([type, label]) => {
                   const Icon = typeIcons[type as keyof typeof typeIcons];
-                  const isSelected = selectedType === type;
-                  const buttonColors = typeButtonColors[type as keyof typeof typeButtonColors];
-                  
+                  const selectedCls = (filterSelectedClasses as any)[type];
+                  const hoverCls = (filterHoverClasses as any)[type];
+
                   return (
                     <Button
                       key={type}
-                      variant={isSelected ? "default" : "outline"}
+                      variant={selectedType === type ? "default" : "outline"}
                       onClick={() => setSelectedType(type)}
-                      className={`flex items-center gap-2 transition-all duration-200 ${
-                        isSelected 
-                          ? `text-white ${buttonColors}` 
-                          : `${typeColors[type as keyof typeof typeColors]} hover:text-white ${buttonColors.split(' ').slice(1).join(' ')}`
-                      }`}
+                      className={`text-sm ${selectedType === type ? selectedCls : `border-gray-200 ${hoverCls}`} `}
+                      data-testid={`filter-${type}`}
                     >
-                      <Icon className="h-4 w-4" />
+                      <Icon className="h-4 w-4 mr-2" />
                       {label}
                     </Button>
                   );
@@ -235,36 +252,35 @@ export default function Inventory() {
           </CardContent>
         </Card>
 
-        {/* Inventory Table */}
-        <Card className="mb-8">
+        <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Syringe className="h-5 w-5" />
-              Current Insulin Inventory
-            </CardTitle>
-            <p className="text-gray-600">Manage and track all insulin medications in your clinic</p>
+            <CardTitle className="text-lg font-medium text-gray-900">Current insulin inventory</CardTitle>
+            <p className="text-sm text-gray-600">Manage and track all insulin medications in your clinic</p>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <table className="min-w-full inventory-table">
-                <thead>
-                  <tr className="border-b bg-gray-50/50">
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">Medication</th>
-                    <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Administrative Form</th>
-                    <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Insulin Type</th>
-                    <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Dose</th>
-                    <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Quantity</th>
-                    <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Expiration</th>
-                    <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Location</th>
-                    <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">Actions</th>
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Medication</th>
+
+                    {/* Administrative Form column */}
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Administrative form</th>
+
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Insulin type</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Dose</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Quantity</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Expiration</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Location</th>
+                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="bg-white divide-y divide-gray-200">
                   {filteredMedications.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-12 text-center text-gray-500">
-                        {searchQuery || selectedType !== "all" 
-                          ? "No medications found matching your criteria." 
+                      <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
+                        {searchQuery || selectedType !== "all"
+                          ? "No medications found matching your criteria."
                           : "No medications in inventory. Add your first medication to get started."}
                       </td>
                     </tr>
@@ -273,100 +289,80 @@ export default function Inventory() {
                       const daysUntilExpiration = calculateDaysUntilExpiration(medication.expirationDate);
                       const Icon = typeIcons[medication.type as keyof typeof typeIcons];
 
+                      // administrative form display logic:
                       const adminFormValue =
                         (medication.administrativeForm as string | undefined) ||
                         (medication.formType as string | undefined) ||
                         "";
                       const adminFormDisplay =
-                        adminFormValue.toLowerCase() === "pen" ? "Pen" : 
-                        adminFormValue.toLowerCase() === "injection" ? "Injection" : "—";
+                        adminFormValue.toLowerCase() === "pen" ? "Pen" : adminFormValue.toLowerCase() === "injection" ? "Injection" : "—";
+
+                      const rowTint = getRowClassName(medication.type);
 
                       return (
-                        <tr 
+                        <tr
                           key={medication.id}
-                          className={`border-b transition-all duration-200 ${
-                            typeRowColors[medication.type as keyof typeof typeRowColors]
-                          } ${getRowClassName(medication.type)} border-l-4`}
+                          className={`${rowTint} hover:bg-gray-50`}
+                          data-testid={`row-medication-${medication.id}`}
                         >
-                          {/* Medication Name */}
-                          <td className="px-4 py-3">
+                          <td className="px-6 py-4 whitespace-nowrap">
                             <div>
-                              <div className="font-medium text-gray-900">
+                              <div className="text-sm font-medium text-gray-900" data-testid="text-medical-name">
                                 {medication.medicalName ?? medication.genericName ?? "—"}
                               </div>
-                              {medication.genericName && (
-                                <div className="text-sm text-gray-500">
-                                  ({medication.genericName})
-                                </div>
-                              )}
+                              <div className="text-sm text-gray-500" data-testid="text-generic-name">
+                                {medication.genericName ? `(${medication.genericName})` : ""}
+                              </div>
                             </div>
                           </td>
 
                           {/* Administrative Form */}
-                          <td className="px-4 py-3 text-center font-medium">{adminFormDisplay}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-administrative-form">
+                            {adminFormDisplay}
+                          </td>
 
-                          {/* Insulin Type with Enhanced Badge */}
-                          <td className="px-4 py-3 text-center">
-                            <Badge 
-                              className={`inline-flex items-center gap-1 ${
-                                typeColors[medication.type as keyof typeof typeColors]
-                              } font-medium border px-3 py-1 rounded-full text-xs uppercase tracking-wide`}
-                            >
-                              <Icon className="h-3 w-3" />
-                              {typeLabels[medication.type as keyof typeof typeLabels]}
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <Badge className={(badgeColors as any)[medication.type]}>
+                              <Icon className="h-3 w-3 mr-1" />
+                              {(typeLabels as any)[medication.type]}
                             </Badge>
                           </td>
 
-                          {/* Dose */}
-                          <td className="px-4 py-3 text-center font-medium">{medication.dose}</td>
-                          
-                          {/* Quantity */}
-                          <td className="px-4 py-3 text-center">
-                            <div className="flex items-center justify-center gap-2">
-                              <span className={`font-medium ${
-                                (medication.quantity ?? 0) <= 5 ? 'text-red-600' : 
-                                (medication.quantity ?? 0) <= 10 ? 'text-orange-600' : 'text-green-600'
-                              }`}>
-                                {medication.quantity ?? 0}
-                              </span>
-                              {(medication.quantity ?? 0) <= 5 && (
-                                <Badge variant="destructive" className="text-xs animate-pulse">
-                                  Low Stock!
-                                </Badge>
-                              )}
-                            </div>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-dose">
+                            {medication.dose}
                           </td>
-                          
-                          {/* Expiration Date */}
-                          <td className="px-4 py-3 text-center">
-                            <div className="flex flex-col items-center">
-                              <span className={`font-medium ${getExpirationClassName(daysUntilExpiration)}`}>
-                                {medication.expirationDate 
-                                  ? new Date(medication.expirationDate).toLocaleDateString() 
-                                  : "—"}
-                              </span>
-                              {medication.expirationDate && (
-                                <span className={`text-xs ${
-                                  daysUntilExpiration < 30 ? 'text-red-500' :
-                                  daysUntilExpiration < 90 ? 'text-orange-500' : 'text-gray-500'
-                                }`}>
-                                  {daysUntilExpiration > 0 ? `${daysUntilExpiration} days` : 'Expired'}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          
-                          {/* Location */}
-                          <td className="px-4 py-3 text-center font-medium">{medication.location ?? "—"}</td>
-                          
-                          {/* Actions */}
-                          <td className="px-4 py-3 text-center">
-                            <Button
-                              size="sm"
-                              onClick={() => handleDispense(medication)}
-                              className="bg-green-600 hover:bg-green-700 text-white transition-all duration-200 hover:scale-105"
+
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span
+                              className={`text-sm font-medium ${
+                                (medication.quantity ?? 0) <= 5 ? "text-red-600" : "text-gray-900"
+                              }`}
+                              data-testid="text-quantity"
                             >
-                              <Syringe className="h-4 w-4 mr-1" />
+                              {medication.quantity ?? 0}
+                            </span>
+                            {(medication.quantity ?? 0) <= 5 && <div className="text-xs text-red-600">Low stock</div>}
+                          </td>
+
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-sm text-gray-900" data-testid="text-expiration-date">
+                              {medication.expirationDate ? new Date(medication.expirationDate).toLocaleDateString() : "—"}
+                            </span>
+                          </td>
+
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" data-testid="text-location">
+                            {medication.location ?? "—"}
+                          </td>
+
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <Button
+                              onClick={() => handleDispense(medication)}
+                              size="sm"
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                              disabled={(medication.quantity ?? 0) === 0}
+                              data-testid={`button-dispense-${medication.id}`}
+                            >
+                              <HandHeart className="h-4 w-4 mr-1" />
                               Dispense
                             </Button>
                           </td>
@@ -380,29 +376,25 @@ export default function Inventory() {
           </CardContent>
         </Card>
 
-        {/* Stock Trackers */}
-        <div id="low-stock-ticker" className="space-y-6">
+        {/* Give the LowStockTicker a stable id so the button can scroll to it */}
+        <div id="low-stock-ticker" className="mt-8">
           <LowStockTicker />
-          <OutOfStockTracker />
-          <TransactionHistory />
         </div>
+
+        <OutOfStockTracker />
       </main>
 
-      {/* Modals */}
       <AddMedicationModal
         open={isAddModalOpen}
         onOpenChange={setIsAddModalOpen}
-        onSave={(newMed) => {
+        onSave={(newMed: any) => {
+          // Note: replace with your backend mutation; this is only local client push
           medications.push(newMed);
           setIsAddModalOpen(false);
         }}
       />
 
-      <DispenseModal
-        open={isDispenseModalOpen}
-        onOpenChange={setIsDispenseModalOpen}
-        medication={selectedMedication}
-      />
+      <DispenseModal open={isDispenseModalOpen} onOpenChange={setIsDispenseModalOpen} medication={selectedMedication} />
     </div>
   );
 }
