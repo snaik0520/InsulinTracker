@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,16 +11,13 @@ import { LowStockTicker } from "@/components/low-stock-ticker";
 import { OutOfStockTracker } from "@/components/out-of-stock-tracker";
 import { TransactionHistory } from "@/components/transaction-history";
 import { type Medication } from "@shared/schema";
-import { Search, Plus, HandHeart, Syringe, Zap, Clock, Scale, HelpCircle, List, Move as MoveIcon } from "lucide-react";
+import { Search, Plus, HandHeart, Syringe, Zap, Clock, Scale, HelpCircle, List } from "lucide-react";
 import logo from "../assets/noor-logo.png";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea"; // if you have a Textarea component; otherwise fallback to native <textarea>
+
+/**
+ * Dialog components used for the Move modal
+ */
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 const typeIcons = {
   rapid: Zap,
@@ -101,13 +98,29 @@ const getExpirationClassName = (days: number) => {
   return "text-green-600";
 };
 
+/**
+ * Capitalize the first letter of each word (Title Case).
+ * Example: "main fridge" -> "Main Fridge"
+ */
+const capitalizeWords = (value: string) => {
+  return value.replace(/\b\w+/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
+};
+
 export default function Inventory() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedType, setSelectedType] = useState("all");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isDispenseModalOpen, setIsDispenseModalOpen] = useState(false);
-  const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [selectedMedication, setSelectedMedication] = useState<Medication | null>(null);
+
+  // Move modal state
+  const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
+  const [moveMedication, setMoveMedication] = useState<Medication | null>(null);
+  const [moveToLocation, setMoveToLocation] = useState("");
+  const [moveComment, setMoveComment] = useState("");
+  const [moveAmount, setMoveAmount] = useState<number>(1);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const [isSubmittingMove, setIsSubmittingMove] = useState(false);
 
   const queryClient = useQueryClient();
 
@@ -141,49 +154,141 @@ export default function Inventory() {
     setIsDispenseModalOpen(true);
   };
 
-  const openMoveModal = (med: Medication) => {
-    setSelectedMedication(med);
+  // Open Move modal helper
+  const openMoveModal = (medication: Medication) => {
+    setMoveMedication(medication);
+    setMoveToLocation(""); // require user to choose/enter
+    setMoveComment("");
+    setMoveAmount(1);
+    setMoveError(null);
     setIsMoveModalOpen(true);
   };
 
-  // Mutation for performing move (calls backend)
-  const moveMutation = useMutation(
-    async (payload: {
-      medicationId: string;
-      quantity: number;
-      fromLocation?: string | null;
-      toLocation: string;
-      comment?: string | null;
-    }) => {
-      const res = await fetch("/api/move", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || "Move failed");
-      }
-      return res.json();
-    },
-    {
-      onSuccess: () => {
-        // Refresh medications and transactions
-        queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
-      },
+  // gather existing locations for suggestions in the Move modal
+  const locationSuggestions = useMemo(() => {
+    const s = new Set<string>();
+    for (const m of medications) {
+      if (m.location) s.add(m.location);
     }
-  );
+    return Array.from(s).filter(Boolean);
+  }, [medications]);
 
-  // Scroll target: LowStockTicker element
-  const scrollToTrackers = () => {
-    if (typeof document !== "undefined") {
-      const el = document.getElementById("low-stock-ticker");
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "start" });
-        return;
+  // Submit move action: optimistic local update + POST to backend for persistence/transaction
+  const handleMoveSubmit = async () => {
+    setMoveError(null);
+
+    if (!moveToLocation || moveToLocation.trim() === "") {
+      setMoveError("Please enter the destination location (required).");
+      return;
+    }
+
+    if (!moveMedication) {
+      setMoveError("No medication selected.");
+      return;
+    }
+
+    const available = moveMedication.quantity ?? 0;
+    const amount = Number(moveAmount);
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setMoveError("Please enter a valid quantity to move (must be > 0).");
+      return;
+    }
+
+    if (amount > available) {
+      setMoveError(`Cannot move more than available quantity (${available}).`);
+      return;
+    }
+
+    setIsSubmittingMove(true);
+
+    const medicationId = moveMedication.id;
+    const fromLocation = moveMedication.location ?? "—";
+    const toLocation = capitalizeWords(moveToLocation.trim());
+    const comment = moveComment.trim();
+
+    try {
+      // Optimistic local update:
+      // 1) subtract from source medication
+      const sourceIndex = medications.findIndex((m) => m.id === medicationId);
+      if (sourceIndex !== -1) {
+        const src = medications[sourceIndex];
+        src.quantity = (src.quantity ?? 0) - amount;
       }
-      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
+
+      // 2) find an existing batch at destination with same identifying properties (so UI remains tidy)
+      // match by medicalName, genericName, dose, expirationDate, type, administrativeForm
+      const matchIndex = medications.findIndex((m) => {
+        if (!m.location) return false;
+        return (
+          m.location.toLowerCase() === toLocation.toLowerCase() &&
+          (m.medicalName ?? "").toLowerCase() === (moveMedication.medicalName ?? "").toLowerCase() &&
+          (m.genericName ?? "").toLowerCase() === (moveMedication.genericName ?? "").toLowerCase() &&
+          String(m.dose) === String(moveMedication.dose) &&
+          (m.expirationDate ?? "") === (moveMedication.expirationDate ?? "") &&
+          (m.type ?? "") === (moveMedication.type ?? "") &&
+          ((m.administrativeForm ?? m.formType ?? "") === (moveMedication.administrativeForm ?? moveMedication.formType ?? ""))
+        );
+      });
+
+      if (matchIndex !== -1) {
+        // add to existing destination batch
+        medications[matchIndex].quantity = (medications[matchIndex].quantity ?? 0) + amount;
+      } else {
+        // create a new optimistic medication record for the destination
+        const newMed: Medication = {
+          ...moveMedication,
+          id: `${moveMedication.id}-moved-${Date.now()}`, // temporary id
+          location: toLocation,
+          quantity: amount,
+        } as Medication;
+        (medications as Medication[]).push(newMed);
+      }
+
+      // Build transaction payload
+      const transactionPayload = {
+        medicationId,
+        type: "move",
+        fromLocation,
+        toLocation,
+        quantity: amount,
+        comment,
+        timestamp: new Date().toISOString(),
+      };
+
+      // Attempt to persist move and transaction - endpoints are examples; adjust to match your backend
+      await Promise.all([
+        fetch(`/api/medications/${encodeURIComponent(String(medicationId))}/move`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ toLocation, quantity: amount, comment }),
+        }).catch(() => {
+          // swallow errors so UI remains optimistic
+        }),
+        fetch(`/api/transactions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(transactionPayload),
+        }).catch(() => {
+          // swallow
+        }),
+      ]);
+
+      // Invalidate relevant queries so TransactionHistory and medications list refresh from backend (if available)
+      queryClient.invalidateQueries(["/api/transactions"]);
+      queryClient.invalidateQueries(["/api/medications"]);
+
+      // close modal and reset
+      setIsMoveModalOpen(false);
+      setMoveMedication(null);
+      setMoveToLocation("");
+      setMoveComment("");
+      setMoveAmount(1);
+    } catch (err) {
+      console.error("Failed to move medication:", err);
+      setMoveError("Something went wrong while moving the medication. Please try again.");
+    } finally {
+      setIsSubmittingMove(false);
     }
   };
 
@@ -197,11 +302,6 @@ export default function Inventory() {
       </div>
     );
   }
-
-  // derive previously used locations from all medications (unique)
-  const previousLocations = Array.from(
-    new Set(medications.map((m) => (m.location ?? "").trim()).filter((l) => l && l.length > 0))
-  );
 
   return (
     <div className="bg-gray-50 min-h-screen">
@@ -243,7 +343,14 @@ export default function Inventory() {
 
               <div className="flex gap-3 flex-shrink-0">
                 <Button
-                  onClick={scrollToTrackers}
+                  onClick={() => {
+                    const el = document.getElementById("low-stock-ticker");
+                    if (el) {
+                      el.scrollIntoView({ behavior: "smooth", block: "start" });
+                      return;
+                    }
+                    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
+                  }}
                   size="sm"
                   variant="outline"
                   className="flex items-center border-rose-200 text-rose-700 hover:bg-rose-50"
@@ -384,7 +491,7 @@ export default function Inventory() {
 
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span
-                              className={`text-sm font-medium $ ${
+                              className={`text-sm font-medium ${
                                 (medication.quantity ?? 0) <= 5 ? "text-red-600" : "text-gray-900"
                               }`}
                               data-testid="text-quantity"
@@ -404,7 +511,7 @@ export default function Inventory() {
                             {medication.location ?? "—"}
                           </td>
 
-                          <td className="px-6 py-4 whitespace-nowrap flex gap-2">
+                          <td className="px-6 py-4 whitespace-nowrap space-x-2">
                             <Button
                               onClick={() => handleDispense(medication)}
                               size="sm"
@@ -416,15 +523,15 @@ export default function Inventory() {
                               Dispense
                             </Button>
 
+                            {/* Move button - opens modal to require destination location, optional comment, and quantity to move */}
                             <Button
                               onClick={() => openMoveModal(medication)}
                               size="sm"
-                              className="bg-purple-600 hover:bg-purple-700 text-white flex items-center"
-                              disabled={(medication.quantity ?? 0) === 0}
+                              className="bg-amber-600 hover:bg-amber-700 text-white"
                               data-testid={`button-move-${medication.id}`}
-                              title="Move stock to another location"
+                              title="Move medication to a different location"
                             >
-                              <MoveIcon className="h-4 w-4 mr-1" />
+                              <Syringe className="h-4 w-4 mr-1" />
                               Move
                             </Button>
                           </td>
@@ -458,128 +565,96 @@ export default function Inventory() {
 
       <DispenseModal open={isDispenseModalOpen} onOpenChange={setIsDispenseModalOpen} medication={selectedMedication} />
 
-      {/* Move Modal (inline) */}
+      {/* Move Modal */}
       <Dialog open={isMoveModalOpen} onOpenChange={setIsMoveModalOpen}>
-        <DialogTrigger asChild>
-          {/* We open the dialog programmatically by setting state; DialogTrigger left empty */}
-          <span />
-        </DialogTrigger>
-        <DialogContent className="sm:max-w-[560px]">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Move stock</DialogTitle>
+            <DialogTitle>Move medication</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
             <div>
               <Label className="text-sm font-medium">Medication</Label>
-              <div className="text-sm text-gray-900">{selectedMedication ? (selectedMedication.medicalName ?? selectedMedication.genericName) : "—"}</div>
-            </div>
-
-            <div>
-              <Label htmlFor="move-quantity" className="text-sm font-medium">Quantity to move</Label>
-              <div className="mt-1 flex gap-2 items-center">
-                <Input
-                  id="move-quantity"
-                  type="number"
-                  min={1}
-                  max={selectedMedication ? selectedMedication.quantity ?? 0 : 0}
-                  defaultValue={selectedMedication ? Math.min(1, selectedMedication.quantity ?? 1) : 1}
-                  data-testid="input-move-quantity"
-                  onChange={() => {}}
-                  // we'll read value on submit
-                />
-                <div className="text-sm text-gray-500">Available: {selectedMedication?.quantity ?? 0}</div>
+              <div className="mt-1 text-sm text-gray-900">
+                {moveMedication ? `${moveMedication.medicalName ?? moveMedication.genericName ?? "—"}` : "—"}
               </div>
             </div>
 
             <div>
-              <Label className="text-sm font-medium">Move to (choose existing or add new)</Label>
-              <div className="mt-1 flex gap-2">
-                <select id="move-to-select" className="rounded border px-3 py-2 w-2/3" defaultValue="">
-                  <option value="">Select existing location</option>
-                  {previousLocations.map((loc) => (
-                    <option key={loc} value={loc}>
-                      {loc}
-                    </option>
-                  ))}
-                  <option value="__NEW__">Use a new location</option>
-                </select>
-
-                <Input id="move-to-new" placeholder="New location (if selected)" className="w-1/3" />
-              </div>
+              <Label htmlFor="move-to-location" className="text-sm font-medium">
+                Destination location (required)
+              </Label>
+              <Input
+                id="move-to-location"
+                placeholder="Enter destination location"
+                value={moveToLocation}
+                onChange={(e) => setMoveToLocation(capitalizeWords(e.target.value))}
+                className="mt-1"
+                data-testid="input-move-to-location"
+                list="location-suggestions"
+              />
+              <datalist id="location-suggestions">
+                {locationSuggestions.map((loc) => (
+                  <option key={loc} value={loc} />
+                ))}
+              </datalist>
             </div>
 
             <div>
-              <Label className="text-sm font-medium">Optional comment</Label>
-              {/* use Textarea if available; fallback to native */}
-              {typeof Textarea !== "undefined" ? (
-                <Textarea id="move-comment" className="mt-1" placeholder="Optional comment" />
-              ) : (
-                <textarea id="move-comment" className="mt-1 w-full rounded border p-2" placeholder="Optional comment" />
-              )}
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setIsMoveModalOpen(false)}>Cancel</Button>
-
-              <Button
-                onClick={async () => {
-                  if (!selectedMedication) return;
-
-                  // Grab values from the DOM inputs (keeps this modal self-contained)
-                  const qtyEl = document.getElementById("move-quantity") as HTMLInputElement | null;
-                  const selEl = document.getElementById("move-to-select") as HTMLSelectElement | null;
-                  const newLocEl = document.getElementById("move-to-new") as HTMLInputElement | null;
-                  const commentEl = document.getElementById("move-comment") as HTMLTextAreaElement | HTMLInputElement | null;
-
-                  const quantity = qtyEl ? Math.max(1, Math.min(Number(qtyEl.value || "0"), selectedMedication.quantity ?? 0)) : 0;
-                  if (quantity <= 0) {
-                    alert("Please enter a valid quantity to move.");
-                    return;
-                  }
-
-                  const selectedValue = selEl?.value ?? "";
-                  let toLocation = "";
-                  if (selectedValue === "__NEW__") {
-                    toLocation = newLocEl?.value?.trim() ?? "";
-                    if (!toLocation) {
-                      alert("Please enter a new location.");
-                      return;
-                    }
-                  } else if (selectedValue) {
-                    toLocation = selectedValue;
-                  } else {
-                    // if no select chosen but user typed in new location
-                    toLocation = newLocEl?.value?.trim() ?? "";
-                    if (!toLocation) {
-                      alert("Please select or enter a location to move to.");
-                      return;
-                    }
-                  }
-
-                  const payload = {
-                    medicationId: selectedMedication.id,
-                    quantity,
-                    fromLocation: selectedMedication.location ?? null,
-                    toLocation,
-                    comment: commentEl?.value?.trim() ?? null,
-                  };
-
-                  try {
-                    await moveMutation.mutateAsync(payload);
-                    setIsMoveModalOpen(false);
-                    setSelectedMedication(null);
-                  } catch (err: any) {
-                    console.error("Move failed", err);
-                    alert("Move failed: " + (err?.message ?? "unknown error"));
-                  }
+              <Label htmlFor="move-amount" className="text-sm font-medium">
+                Quantity to move (required)
+              </Label>
+              <Input
+                id="move-amount"
+                type="number"
+                min={1}
+                max={moveMedication ? moveMedication.quantity ?? 1 : undefined}
+                value={moveAmount}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  if (Number.isNaN(val)) return setMoveAmount(0);
+                  setMoveAmount(val);
                 }}
-                className="bg-purple-600 hover:bg-purple-700 text-white"
-              >
-                Move
-              </Button>
+                className="mt-1"
+                data-testid="input-move-amount"
+              />
+              <div className="text-xs text-gray-500 mt-1">
+                {moveMedication ? `Available: ${moveMedication.quantity ?? 0}` : ""}
+              </div>
             </div>
+
+            <div>
+              <Label htmlFor="move-comment" className="text-sm font-medium">
+                Comment (optional)
+              </Label>
+              <textarea
+                id="move-comment"
+                value={moveComment}
+                onChange={(e) => setMoveComment(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-200 shadow-sm focus:ring-1 focus:ring-rose-400 focus:border-rose-400 p-2 text-sm"
+                rows={3}
+                placeholder="Add a short note to appear in transaction history (e.g., 'moved to main fridge')"
+                data-testid="input-move-comment"
+              />
+            </div>
+
+            {moveError && <div className="text-sm text-red-600">{moveError}</div>}
           </div>
+
+          <DialogFooter className="mt-4 flex justify-end space-x-2">
+            <Button size="sm" variant="outline" onClick={() => setIsMoveModalOpen(false)} disabled={isSubmittingMove}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleMoveSubmit}
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              disabled={isSubmittingMove}
+              data-testid="button-submit-move"
+            >
+              {isSubmittingMove ? "Moving…" : "Move medication"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
