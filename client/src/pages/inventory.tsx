@@ -5,139 +5,125 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { Plus, List } from "lucide-react";
-import LowStockTicker from "@/components/LowStockTicker";
-import OutOfStockTracker from "@/components/OutOfStockTracker";
-import TransactionHistory from "@/components/TransactionHistory";
-import AddMedicationModal from "@/components/AddMedicationModal";
+import LowStockTicker from "@/components/low-stock-ticker"; // ✅ Fixed case for Linux
+
+// Pastel color mapping for insulin types
+const insulinTypeColors: Record<string, string> = {
+  Rapid: "bg-pastel-pink",
+  Short: "bg-pastel-yellow",
+  Intermediate: "bg-pastel-green",
+  Long: "bg-pastel-blue",
+  Mixed: "bg-pastel-purple",
+};
 
 export default function Inventory() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [filterType, setFilterType] = useState("");
+  const { data: medications } = useQuery(["inventory"], fetchInventory);
 
-  const { data: inventory = [] } = useQuery({
-    queryKey: ["inventory"],
-    queryFn: async () => {
-      const res = await fetch("/api/inventory");
-      return res.json();
-    },
-  });
-
-  const filteredInventory = useMemo(() => {
-    return inventory.filter((item: any) =>
-      item.medicalName.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredMeds = useMemo(() => {
+    return medications?.filter(
+      (med) =>
+        med.name.toLowerCase().includes(search.toLowerCase()) &&
+        (filterType === "" || med.insulinType === filterType)
     );
-  }, [inventory, searchTerm]);
-
-  const insulinTypeColors: Record<string, string> = {
-    Rapid: "bg-pink-100 hover:bg-pink-200",
-    Short: "bg-yellow-100 hover:bg-yellow-200",
-    Intermediate: "bg-green-100 hover:bg-green-200",
-    Long: "bg-blue-100 hover:bg-blue-200",
-    Mixed: "bg-purple-100 hover:bg-purple-200",
-  };
-
-  const scrollToTrackers = () => {
-    const el = document.getElementById("low-stock-tracker");
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  };
+  }, [medications, search, filterType]);
 
   return (
-    <div className="p-6 space-y-6 bg-gray-50 min-h-screen">
-      <Card className="shadow-lg rounded-2xl bg-white border border-gray-200">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-2xl font-semibold text-gray-800">
-            Inventory
-          </CardTitle>
-          <div className="flex gap-3 flex-shrink-0">
-            {/* Low / Out of Stock Button */}
-            <Button
-              onClick={scrollToTrackers}
-              size="sm"
-              variant="outline"
-              className="flex items-center border border-gray-300 bg-pastel-green-100 hover:bg-pastel-green-200"
-              data-testid="button-jump-low-outstock"
-              title="Jump to low / out of stock trackers"
-            >
-              <List className="h-4 w-4 mr-2" />
-              Low / Out of Stock
-            </Button>
+    <div className="p-4 bg-pastel-gray min-h-screen">
+      {/* Low Stock Tracker */}
+      <LowStockTicker />
 
-            {/* View Transaction History Button */}
-            <TransactionHistory
-              buttonClassName="bg-pastel-purple-200 hover:bg-pastel-purple-300 text-gray-800"
-            />
-
-            {/* Add Medication Button */}
-            <Button
-              onClick={() => setIsAddModalOpen(true)}
-              className="bg-pastel-pink-200 hover:bg-pastel-pink-300 text-gray-800"
-              data-testid="button-add-medication"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              + Add Medication
-            </Button>
-          </div>
-        </CardHeader>
-
-        <CardContent className="space-y-4">
-          {/* Search Bar */}
-          <div>
-            <Label htmlFor="search" className="text-gray-700">
-              Search
-            </Label>
-            <Input
-              id="search"
-              placeholder="Search medications..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="border border-gray-300 focus:ring-2 focus:ring-pastel-blue-300"
-            />
-          </div>
-
-          {/* Inventory Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full border border-gray-200 rounded-lg overflow-hidden">
-              <thead className="bg-gray-100 text-gray-700">
-                <tr>
-                  <th className="p-2 text-left">Medical Name</th>
-                  <th className="p-2 text-left">Generic Name</th>
-                  <th className="p-2 text-left">Insulin Type</th>
-                  <th className="p-2 text-left">Quantity</th>
-                  <th className="p-2 text-left">Expiration Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredInventory.map((item: any, idx: number) => (
-                  <tr
-                    key={idx}
-                    className={`${insulinTypeColors[item.insulinType] || ""} transition-colors`}
-                  >
-                    <td className="p-2">{item.medicalName}</td>
-                    <td className="p-2">{item.genericName}</td>
-                    <td className="p-2">{item.insulinType}</td>
-                    <td className="p-2">{item.quantity}</td>
-                    <td className="p-2">{item.expirationDate}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Trackers */}
-      <div id="low-stock-tracker" className="space-y-4">
-        <LowStockTicker />
-        <OutOfStockTracker />
+      {/* Header */}
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-3xl font-bold text-pastel-navy">Inventory</h1>
+        <div className="flex gap-2">
+          <Button className="bg-pastel-teal hover:bg-pastel-teal-dark text-white font-semibold px-4 py-2 rounded-lg">
+            + Add Medication
+          </Button>
+          <Button className="bg-pastel-orange hover:bg-pastel-orange-dark text-white font-semibold px-4 py-2 rounded-lg">
+            View Transaction History
+          </Button>
+        </div>
       </div>
 
-      <AddMedicationModal
-        isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-      />
+      {/* Search & Filters */}
+      <div className="flex gap-4 items-end mb-4">
+        <div>
+          <Label htmlFor="search" className="text-pastel-navy font-semibold">
+            Search
+          </Label>
+          <Input
+            id="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="border-pastel-navy focus:ring-pastel-teal"
+            placeholder="Search medications..."
+          />
+        </div>
+
+        <div>
+          <Label className="text-pastel-navy font-semibold">Filter by Type</Label>
+          <div className="flex gap-2">
+            {Object.keys(insulinTypeColors).map((type) => (
+              <Button
+                key={type}
+                onClick={() => setFilterType(type)}
+                className={`px-3 py-1 rounded-lg ${
+                  insulinTypeColors[type]
+                } hover:${insulinTypeColors[type]} text-black ${
+                  filterType === type ? "ring-2 ring-pastel-navy" : ""
+                }`}
+              >
+                {type}
+              </Button>
+            ))}
+            <Button
+              onClick={() => setFilterType("")}
+              className="bg-pastel-gray hover:bg-pastel-gray-dark px-3 py-1 rounded-lg"
+            >
+              All
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Inventory List */}
+      <Card className="shadow-lg">
+        <CardHeader className="bg-pastel-navy text-white rounded-t-lg">
+          <CardTitle>Medication List</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {filteredMeds?.map((med) => (
+            <div
+              key={med.id}
+              className={`flex justify-between items-center px-4 py-2 border-b last:border-none ${
+                insulinTypeColors[med.insulinType] || ""
+              }`}
+            >
+              <span className="font-medium">{med.name}</span>
+              <Badge variant="outline">{med.insulinType}</Badge>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
     </div>
   );
 }
+
+// Pastel Tailwind custom colors (add to tailwind.config.js)
+const pastelColors = `
+  .bg-pastel-pink { background-color: #f8d7da; }
+  .bg-pastel-yellow { background-color: #fff3cd; }
+  .bg-pastel-green { background-color: #d4edda; }
+  .bg-pastel-blue { background-color: #d1ecf1; }
+  .bg-pastel-purple { background-color: #e2d6f5; }
+  .bg-pastel-gray { background-color: #f7f7f7; }
+  .bg-pastel-navy { background-color: #6c7b95; }
+  .bg-pastel-teal { background-color: #77c7c7; }
+  .bg-pastel-teal-dark { background-color: #5bb0b0; }
+  .bg-pastel-orange { background-color: #f7c59f; }
+  .bg-pastel-orange-dark { background-color: #f6a97b; }
+  .bg-pastel-gray-dark { background-color: #e2e2e2; }
+  .text-pastel-navy { color: #4a5568; }
+`;
