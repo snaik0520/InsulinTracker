@@ -151,7 +151,7 @@ export function TransactionHistory() {
 
                         <div className="flex-1 min-w-0">
                           <h4 className="font-medium text-gray-900 truncate">
-                            {medical} {generic && `(${generic})`}
+                            {generic} {medical && `(${medical})`}
                           </h4>
                           <p className="text-sm text-gray-600 mt-2">
                             {getTransactionDescription(transaction)}
