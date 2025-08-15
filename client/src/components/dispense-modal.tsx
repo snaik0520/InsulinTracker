@@ -20,6 +20,8 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  const administrationLabel = medication?.administrationForm === "pens" ? "pens" : "injections";
+
   const dispenseMutation = useMutation({
     mutationFn: async (data: { medicationId: string; quantity: number }) => {
       const response = await apiRequest("POST", "/api/medications/dispense", data);
@@ -31,8 +33,8 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
       toast({
         title: "Success",
-        description: `Successfully dispensed ${dispenseQuantity} injection(s)`,
-        duration: 3000, // 3 seconds
+        description: `Successfully dispensed ${dispenseQuantity} ${administrationLabel}`,
+        duration: 3000,
       });
       setDispenseQuantity(1);
       onOpenChange(false);
@@ -42,23 +44,21 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
         title: "Error",
         description: error.message,
         variant: "destructive",
-        duration: 3000, // 3 seconds
+        duration: 3000,
       });
     },
   });
 
   const handleDispense = () => {
     if (!medication) return;
-    
     if (dispenseQuantity > medication.quantity) {
       toast({
         title: "Error",
-        description: "Cannot dispense more than available stock",
+        description: `Cannot dispense more than available stock`,
         variant: "destructive",
       });
       return;
     }
-
     dispenseMutation.mutate({
       medicationId: medication.id,
       quantity: dispenseQuantity,
@@ -88,17 +88,15 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
             Dispense Medication
           </DialogTitle>
         </DialogHeader>
-
         <div className="space-y-4">
           <div>
             <p className="text-sm text-gray-900" data-testid="text-medication-name">
-              {medication.genericName} ({medication.medicalName})
+              {medication.medicalName} ({medication.genericName})
             </p>
             <p className="text-xs text-gray-500 mt-1" data-testid="text-available-stock">
-              Available: {medication.quantity} injections
+              Available: {medication.quantity} {administrationLabel}
             </p>
           </div>
-
           <div>
             <Label htmlFor="dispenseQuantity">Quantity to Dispense</Label>
             <div className="flex items-center space-x-2 mt-1">
@@ -134,7 +132,6 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
               </Button>
             </div>
           </div>
-
           <div className="flex gap-3 pt-4">
             <Button
               onClick={handleDispense}
