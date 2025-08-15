@@ -1,15 +1,12 @@
 import { useState } from "react";
-
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-
 import { type Medication } from "@shared/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-
 import { HandHeart, Minus, Plus, Check } from "lucide-react";
 
 interface DispenseModalProps {
@@ -23,6 +20,16 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  const getFormLabel = () => {
+    if (!medication) return "";
+    return medication.administrationForm === "pens" ? "pen" : "injection";
+  };
+
+  const pluralizeForm = (count: number) => {
+    const form = getFormLabel();
+    return count === 1 ? form : `${form}s`;
+  };
+
   const dispenseMutation = useMutation({
     mutationFn: async (data: { medicationId: string; quantity: number }) => {
       const response = await apiRequest("POST", "/api/medications/dispense", data);
@@ -34,10 +41,8 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
       toast({
         title: "Success",
-        description: `Successfully dispensed ${dispenseQuantity} ${
-          medication?.administrationForm === "Pen" ? "pen(s)" : "injection(s)"
-        }`,
-        duration: 3000, // 3 seconds
+        description: `Successfully dispensed ${dispenseQuantity} ${pluralizeForm(dispenseQuantity)}`,
+        duration: 3000,
       });
       setDispenseQuantity(1);
       onOpenChange(false);
@@ -47,7 +52,7 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
         title: "Error",
         description: error.message,
         variant: "destructive",
-        duration: 3000, // 3 seconds
+        duration: 3000,
       });
     },
   });
@@ -63,7 +68,6 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
       });
       return;
     }
-
     dispenseMutation.mutate({
       medicationId: medication.id,
       quantity: dispenseQuantity,
@@ -93,18 +97,15 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
             Dispense Medication
           </DialogTitle>
         </DialogHeader>
-
         <div className="space-y-4">
           <div>
             <p className="text-sm text-gray-900" data-testid="text-medication-name">
               {medication.medicalName} ({medication.genericName})
             </p>
             <p className="text-xs text-gray-500 mt-1" data-testid="text-available-stock">
-              Available: {medication.quantity}{" "}
-              {medication.administrationForm === "Pen" ? "pens" : "injections"}
+              Available: {medication.quantity} {pluralizeForm(medication.quantity)}
             </p>
           </div>
-
           <div>
             <Label htmlFor="dispenseQuantity">Quantity to Dispense</Label>
             <div className="flex items-center space-x-2 mt-1">
@@ -142,7 +143,6 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
               </Button>
             </div>
           </div>
-
           <div className="flex gap-3 pt-4">
             <Button
               onClick={handleDispense}
