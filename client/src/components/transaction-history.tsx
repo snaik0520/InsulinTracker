@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -9,7 +15,6 @@ import { History, Plus, Minus, Clock } from "lucide-react";
 
 export function TransactionHistory() {
   const [isOpen, setIsOpen] = useState(false);
-
   const { data: transactions = [], isLoading } = useQuery<MedicationTransaction[]>({
     queryKey: ["/api/transactions"],
     enabled: isOpen, // Only fetch when modal is open
@@ -20,25 +25,22 @@ export function TransactionHistory() {
     const date = new Date(timestamp);
     return {
       date: date.toLocaleDateString(),
-      time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      time: date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     };
   };
 
-  const getTransactionIcon = (type: string) => {
-    return type === "addition" ? Plus : Minus;
-  };
+  const getTransactionIcon = (type: string) => (type === "addition" ? Plus : Minus);
 
-  const getTransactionColor = (type: string) => {
-    return type === "addition" 
-      ? "bg-green-100 text-green-800 border-green-200" 
+  const getTransactionColor = (type: string) =>
+    type === "addition"
+      ? "bg-green-100 text-green-800 border-green-200"
       : "bg-red-100 text-red-800 border-red-200";
-  };
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button 
-          variant="outline" 
+        <Button
+          variant="outline"
           className="bg-white hover:bg-gray-50"
           data-testid="button-view-transactions"
         >
@@ -46,7 +48,7 @@ export function TransactionHistory() {
           View Transaction History
         </Button>
       </DialogTrigger>
-      
+
       <DialogContent className="sm:max-w-2xl sm:max-h-[80vh]" data-testid="modal-transaction-history">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -73,7 +75,22 @@ export function TransactionHistory() {
                 {transactions.map((transaction) => {
                   const { date, time } = formatTimestamp(transaction.timestamp);
                   const Icon = getTransactionIcon(transaction.type);
-                  
+
+                  // Split "generic (medical)" into generic and medical
+                  const [generic, withParen] = transaction.medicationName.split(" (");
+                  const medical = withParen?.replace(")", "") ?? "";
+
+                  // Determine unit based on "pen" in administrativeForm or fallback
+                  const lower = transaction.medicationName.toLowerCase();
+                  const isPen = lower.includes("pen");
+                  const unit = isPen
+                    ? transaction.quantity === 1
+                      ? "pen"
+                      : "pens"
+                    : transaction.quantity === 1
+                    ? "injection"
+                    : "injections";
+
                   return (
                     <div
                       key={transaction.id}
@@ -83,31 +100,35 @@ export function TransactionHistory() {
                       <div className={`p-2 rounded-full ${getTransactionColor(transaction.type)}`}>
                         <Icon className="h-4 w-4" />
                       </div>
-                      
+
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
                           <p className="font-medium text-gray-900" data-testid="text-medication-name">
-                            {transaction.medicationName}
+                            {medical} {generic && `(${generic})`}
                           </p>
-                          <Badge 
+                          <Badge
                             className={getTransactionColor(transaction.type)}
                             data-testid="badge-transaction-type"
                           >
                             {transaction.type === "addition" ? "Added" : "Dispensed"}
                           </Badge>
                         </div>
-                        
+
                         <div className="mt-1 flex items-center justify-between">
                           <p className="text-sm text-gray-600">
                             <span className="font-medium" data-testid="text-quantity">
-                              {transaction.quantity} vial{transaction.quantity !== 1 ? 's' : ''}
+                              {transaction.quantity} {unit}
                             </span>
-                            {transaction.type === "addition" ? " added to inventory" : " dispensed to patient"}
+                            {transaction.type === "addition"
+                              ? " added to inventory"
+                              : " dispensed to patient"}
                           </p>
                         </div>
-                        
+
                         <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
-                          <span data-testid="text-timestamp">{date} at {time}</span>
+                          <span data-testid="text-timestamp">
+                            {date} at {time}
+                          </span>
                           {transaction.notes && (
                             <span className="italic" data-testid="text-notes">
                               {transaction.notes}
