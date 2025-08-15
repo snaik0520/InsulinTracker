@@ -31,14 +31,15 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
       queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"] });
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
 
-      // Determine the unit for the toast message based on quantity and administration form
-      const unit = isPen
-        ? dispenseQuantity === 1 ? "pen" : "pens"
-        : dispenseQuantity === 1 ? "injection" : "injections";
-        
+      // build admin label based on medication form and singular/plural
+      const qtyNum = typeof dispenseQuantity === "number" ? dispenseQuantity : 0;
+      const isPen = medication?.administrationForm?.toLowerCase() === "pen";
+      const adminWord =
+        qtyNum === 1 ? (isPen ? "pen" : "injection") : isPen ? "pens" : "injections";
+
       toast({
         title: "Success",
-        description: `Successfully dispensed ${dispenseQuantity} ${unit}`,
+        description: `Successfully dispensed ${qtyNum} ${adminWord}`,
         duration: 3000, // 3 seconds
       });
 
