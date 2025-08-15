@@ -143,7 +143,8 @@ export function TransactionHistory() {
                     className="border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow"
                   >
                     <div className="flex items-start justify-between">
-                      <div className="flex items-start gap-3 flex-1">
+                      {/* LEFT: icon + name + description */}
+                      <div className="flex items-start gap-3 flex-1 min-w-0">
                         <div className={`p-2 rounded-full ${getTransactionColor(transaction.type)}`}>
                           <Icon className="h-4 w-4" />
                         </div>
@@ -152,25 +153,28 @@ export function TransactionHistory() {
                           <h4 className="font-medium text-gray-900 truncate">
                             {medical} {generic && `(${generic})`}
                           </h4>
-                          <div className="flex items-center gap-2 mt-1">
-                            <Badge
-                              variant="outline"
-                              className={getTransactionColor(transaction.type)}
-                            >
-                              {getTransactionTitle(transaction.type)}
-                            </Badge>
-                          </div>
                           <p className="text-sm text-gray-600 mt-2">
                             {getTransactionDescription(transaction)}
                           </p>
                         </div>
                       </div>
 
-                      <div className="text-right ml-4">
-                        <div className="flex items-center gap-1 text-xs text-gray-500">
+                      {/* RIGHT: Badge (title) and timestamp aligned to right */}
+                      <div className="ml-4 flex flex-col items-end text-right">
+                        <Badge
+                          variant="outline"
+                          className={`${getTransactionColor(transaction.type)} px-2 py-1`}
+                        >
+                          {getTransactionTitle(transaction.type)}
+                        </Badge>
+
+                        <div className="flex items-center gap-1 text-xs text-gray-500 mt-2">
                           <Clock className="h-3 w-3" />
-                          {date} at {time}
+                          <span>
+                            {date} at {time}
+                          </span>
                         </div>
+
                         {transaction.notes && (
                           <div className="mt-2 text-xs text-gray-600 bg-gray-50 rounded p-2 max-w-xs">
                             {transaction.notes}
