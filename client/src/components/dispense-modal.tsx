@@ -31,7 +31,7 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
       toast({
         title: "Success",
-        description: `Successfully dispensed ${dispenseQuantity} injection(s)`,
+        description: `Successfully dispensed ${dispenseQuantity} medication.medicalName`,
         duration: 3000, // 3 seconds
       });
       setDispenseQuantity(1);
