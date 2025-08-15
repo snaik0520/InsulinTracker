@@ -20,9 +20,9 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Determine label based on administration form
+  // Normalize form string so both "Pen" or "pens" work
   const administrationLabel =
-    medication?.administrationForm === "pens" ? "pens" : "injections";
+    medication?.administrationForm?.toLowerCase() === "pen" ? "pens" : "injections";
 
   const dispenseMutation = useMutation({
     mutationFn: async (data: { medicationId: string; quantity: number }) => {
@@ -56,7 +56,7 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
     if (dispenseQuantity > medication.quantity) {
       toast({
         title: "Error",
-        description: "Cannot dispense more than available stock",
+        description: `Cannot dispense more than available stock`,
         variant: "destructive",
       });
       return;
@@ -118,9 +118,7 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
                 min="1"
                 max={medication.quantity}
                 value={dispenseQuantity}
-                onChange={(e) =>
-                  setDispenseQuantity(Math.max(1, parseInt(e.target.value) || 1))
-                }
+                onChange={(e) => setDispenseQuantity(Math.max(1, parseInt(e.target.value) || 1))}
                 className="w-20 text-center"
                 data-testid="input-dispense-quantity"
               />
@@ -155,13 +153,3 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
             <Button
               variant="outline"
               onClick={() => onOpenChange(false)}
-              data-testid="button-cancel-dispense"
-            >
-              Cancel
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
