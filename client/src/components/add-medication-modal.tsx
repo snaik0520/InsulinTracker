@@ -187,17 +187,22 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
       const response = await apiRequest("POST", "/api/medications", data);
       return response.json();
     },
-    onSuccess: (res: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
-      toast({ title: "Success", description: "Medication added successfully", duration: 3000 });
-      form.reset();
-      setLocationDropdownValue("");
-      onOpenChange(false);
-      // optional callback for callers
-      onSave?.(res);
-    },
+    onSuccess: async (res: any) => {
+  // Invalidate and refetch queries to ensure UI updates
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["/api/medications"], refetchType: 'active' }),
+    queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"], refetchType: 'active' }),
+    queryClient.invalidateQueries({ queryKey: ["/api/transactions"], refetchType: 'active' })
+  ]);
+  
+  toast({ title: "Success", description: "Medication added successfully", duration: 3000 });
+  form.reset();
+  setLocationDropdownValue("");
+  onOpenChange(false);
+  // optional callback for callers
+  onSave?.(res);
+}
+,
     onError: (error: any) => {
       toast({
         title: "Error",
