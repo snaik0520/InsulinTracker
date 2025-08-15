@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -114,13 +114,15 @@ export default function Inventory() {
   const [isDispenseModalOpen, setIsDispenseModalOpen] = useState(false);
   const [selectedMedication, setSelectedMedication] = useState<Medication | null>(null);
 
-  // Move modal state (new)
+  // Move modal state
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [moveMedication, setMoveMedication] = useState<Medication | null>(null);
   const [moveToLocation, setMoveToLocation] = useState("");
   const [moveComment, setMoveComment] = useState("");
   const [moveError, setMoveError] = useState<string | null>(null);
   const [isSubmittingMove, setIsSubmittingMove] = useState(false);
+
+  const queryClient = useQueryClient();
 
   const { data: medications = [], isLoading } = useQuery<Medication[]>({
     queryKey: ["/api/medications"],
@@ -182,32 +184,55 @@ export default function Inventory() {
     const toLocation = moveToLocation.trim();
     const comment = moveComment.trim();
 
-    // Optimistically update UI (matches pattern used elsewhere in the file)
+    // Create a transaction payload (add a temporary id so the UI can render it immediately)
+    const transactionPayload = {
+      id: `local-move-${Date.now()}`,
+      medicationId,
+      type: "move",
+      fromLocation,
+      toLocation,
+      comment,
+      timestamp: new Date().toISOString(),
+      // optionally include medication display name for easier UI rendering
+      medicationName: moveMedication.medicalName ?? moveMedication.genericName ?? "—",
+    };
+
     try {
-      // update the medication in local array (note: medications comes from useQuery; this mirrors the existing pattern of local mutation)
-      const localMed = medications.find((m) => m.id === medicationId);
-      if (localMed) {
-        localMed.location = toLocation;
-      }
+      // 1) Optimistically update medications cache so the location updates immediately
+      queryClient.setQueryData(["/api/medications"], (old: any) => {
+        if (!old) return old;
+        // handle both array and {data: array} shapes
+        if (Array.isArray(old)) {
+          return old.map((m: any) => (m.id === medicationId ? { ...m, location: toLocation } : m));
+        }
+        if (old.data && Array.isArray(old.data)) {
+          return { ...old, data: old.data.map((m: any) => (m.id === medicationId ? { ...m, location: toLocation } : m)) };
+        }
+        return old;
+      });
 
-      // create transaction payload so transaction history component / backend can record it
-      const transactionPayload = {
-        medicationId,
-        type: "move",
-        fromLocation,
-        toLocation,
-        comment,
-        timestamp: new Date().toISOString(),
-      };
+      // 2) Optimistically prepend the transaction into the transactions cache so TransactionHistory shows it
+      queryClient.setQueryData(["/api/transactions"], (old: any) => {
+        if (!old) return [transactionPayload];
+        // common shapes:
+        if (Array.isArray(old)) {
+          return [transactionPayload, ...old];
+        }
+        if (old.data && Array.isArray(old.data)) {
+          return { ...old, data: [transactionPayload, ...old.data] };
+        }
+        // fallback
+        return old;
+      });
 
-      // Attempt to persist move and transaction - endpoints are examples; adjust to match your backend
+      // 3) Attempt to persist to backend; do both move endpoint and transaction endpoint if available
       await Promise.all([
         fetch(`/api/medications/${encodeURIComponent(String(medicationId))}/move`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ toLocation, comment }),
         }).catch(() => {
-          // swallow to allow optimistic UI even if backend not present
+          // swallow - we still kept optimistic update and will invalidate later
         }),
         fetch(`/api/transactions`, {
           method: "POST",
@@ -218,7 +243,12 @@ export default function Inventory() {
         }),
       ]);
 
-      // close modal
+      // Invalidate transactions query to let the real backend response reconcile the optimistic entry
+      queryClient.invalidateQueries(["/api/transactions"]);
+      // Also invalidate medications to ensure server canonical state is fetched
+      queryClient.invalidateQueries(["/api/medications"]);
+
+      // close modal & reset
       setIsMoveModalOpen(false);
       setMoveMedication(null);
       setMoveToLocation("");
@@ -226,6 +256,9 @@ export default function Inventory() {
     } catch (err) {
       console.error("Failed to move medication:", err);
       setMoveError("Something went wrong while moving the medication. Please try again.");
+      // optionally we could rollback optimistic updates here, but keeping it simple:
+      queryClient.invalidateQueries(["/api/medications"]);
+      queryClient.invalidateQueries(["/api/transactions"]);
     } finally {
       setIsSubmittingMove(false);
     }
