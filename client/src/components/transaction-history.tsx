@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -175,6 +174,12 @@ export function TransactionHistory() {
                             {date} at {time}
                           </span>
                         </div>
+
+                        {transaction.notes && (
+                          <div className="mt-2 text-xs text-gray-600 bg-gray-50 rounded p-2 max-w-xs">
+                            {transaction.notes}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
