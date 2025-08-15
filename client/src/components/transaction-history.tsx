@@ -10,7 +10,7 @@ import { History, Plus, Minus, Clock } from "lucide-react";
 export function TransactionHistory() {
   const [isOpen, setIsOpen] = useState(false);
 
-  const { data: transactions = [], isLoading } = useQuery<MedicationTransaction[]>({
+  const { data: transactions = [], isLoading } = useQuery({
     queryKey: ["/api/transactions"],
     enabled: isOpen, // Only fetch when modal is open
     refetchOnMount: true,
@@ -22,6 +22,23 @@ export function TransactionHistory() {
       date: date.toLocaleDateString(),
       time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
+  };
+
+  const formatMedicationDisplay = (medicationName: string, quantity: number) => {
+    // Parse the medication name to extract form type
+    const parts = medicationName.split(' - ');
+    const nameOnly = parts; // "Humalog (Insulin Lispro)"
+    const formType = parts[5]?.toLowerCase() || 'injection'; // default to injection
+    
+    // Determine unit based on form type and quantity
+    let unit;
+    if (formType === 'pen') {
+      unit = quantity === 1 ? 'pen' : 'pens';
+    } else {
+      unit = quantity === 1 ? 'injection' : 'injections';
+    }
+    
+    return { nameOnly, unit };
   };
 
   const getTransactionIcon = (type: string) => {
@@ -37,91 +54,77 @@ export function TransactionHistory() {
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button 
-          variant="outline" 
-          className="bg-white hover:bg-gray-50"
-          data-testid="button-view-transactions"
-        >
-          <History className="h-4 w-4 mr-2" />
-          View Transaction History
+        <Button variant="outline" size="sm">
+          <History className="w-4 h-4 mr-2" />
+          View Transactions
         </Button>
       </DialogTrigger>
-      
-      <DialogContent className="sm:max-w-2xl sm:max-h-[80vh]" data-testid="modal-transaction-history">
+      <DialogContent className="max-w-2xl max-h-[80vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <History className="h-5 w-5 text-primary" />
+            <Clock className="w-5 h-5" />
             Medication Transaction History
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <ScrollArea className="h-[500px] w-full">
           {isLoading ? (
             <div className="flex items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
-              <span className="ml-2">Loading transactions...</span>
+              <div className="text-gray-500">Loading transactions...</div>
             </div>
           ) : transactions.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <Clock className="h-8 w-8 mx-auto mb-2 text-gray-300" />
-              <p>No transactions recorded yet.</p>
-              <p className="text-sm">Add or dispense medications to see transaction history.</p>
+            <div className="text-center py-8">
+              <div className="text-gray-500 mb-2">No transactions recorded yet.</div>
+              <div className="text-sm text-gray-400">
+                Add or dispense medications to see transaction history.
+              </div>
             </div>
           ) : (
-            <ScrollArea className="h-[400px] pr-4">
-              <div className="space-y-3">
-                {transactions.map((transaction) => {
-                  const { date, time } = formatTimestamp(transaction.timestamp);
-                  const Icon = getTransactionIcon(transaction.type);
-                  
-                  return (
-                    <div
-                      key={transaction.id}
-                      className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg border"
-                      data-testid={`transaction-${transaction.id}`}
-                    >
-                      <div className={`p-2 rounded-full ${getTransactionColor(transaction.type)}`}>
-                        <Icon className="h-4 w-4" />
+            <div className="space-y-4">
+              {transactions.map((transaction) => {
+                const { date, time } = formatTimestamp(transaction.timestamp);
+                const { nameOnly, unit } = formatMedicationDisplay(transaction.medicationName, transaction.quantity);
+                const Icon = getTransactionIcon(transaction.type);
+                
+                return (
+                  <div
+                    key={transaction.id}
+                    className="flex items-start gap-3 p-4 border rounded-lg hover:bg-gray-50"
+                  >
+                    <div className={`rounded-full p-2 ${getTransactionColor(transaction.type)}`}>
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-gray-900">
+                        {nameOnly}
+                      </div>
+                      <div className="text-sm text-gray-600 mt-1">
+                        <Badge className={getTransactionColor(transaction.type)}>
+                          {transaction.type === "addition" ? "Added" : "Dispensed"}
+                        </Badge>
+                        <span className="ml-2">
+                          {transaction.quantity} {unit}
+                          {transaction.type === "addition" ? " added to inventory" : " dispensed to patient"}
+                        </span>
                       </div>
                       
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <p className="font-medium text-gray-900" data-testid="text-medication-name">
-                            {transaction.medicationName}
-                          </p>
-                          <Badge 
-                            className={getTransactionColor(transaction.type)}
-                            data-testid="badge-transaction-type"
-                          >
-                            {transaction.type === "addition" ? "Added" : "Dispensed"}
-                          </Badge>
-                        </div>
-                        
-                        <div className="mt-1 flex items-center justify-between">
-                          <p className="text-sm text-gray-600">
-                            <span className="font-medium" data-testid="text-quantity">
-                              {transaction.quantity} vial{transaction.quantity !== 1 ? 's' : ''}
-                            </span>
-                            {transaction.type === "addition" ? " added to inventory" : " dispensed to patient"}
-                          </p>
-                        </div>
-                        
-                        <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
-                          <span data-testid="text-timestamp">{date} at {time}</span>
-                          {transaction.notes && (
-                            <span className="italic" data-testid="text-notes">
-                              {transaction.notes}
-                            </span>
-                          )}
-                        </div>
+                      <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
+                        <Clock className="w-3 h-3" />
+                        {date} at {time}
+                        {transaction.notes && (
+                          <span className="ml-2 italic">
+                            {transaction.notes}
+                          </span>
+                        )}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            </ScrollArea>
+                  </div>
+                );
+              })}
+            </div>
           )}
-        </div>
+        </ScrollArea>
       </DialogContent>
     </Dialog>
   );
