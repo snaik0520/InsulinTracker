@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,16 +11,8 @@ import { LowStockTicker } from "@/components/low-stock-ticker";
 import { OutOfStockTracker } from "@/components/out-of-stock-tracker";
 import { TransactionHistory } from "@/components/transaction-history";
 import { type Medication } from "@shared/schema";
-import { Search, Plus, HandHeart, Syringe, Zap, Clock, Scale, HelpCircle, List, Move as MoveIcon } from "lucide-react";
+import { Search, Plus, HandHeart, Syringe, Zap, Clock, Scale, HelpCircle, List, Move } from "lucide-react";
 import logo from "../assets/noor-logo.png";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea"; // if you have a Textarea component; otherwise fallback to native <textarea>
 
 const typeIcons = {
   rapid: Zap,
@@ -29,13 +21,6 @@ const typeIcons = {
   other: HelpCircle,
 } as const;
 
-/**
- * Muted pastel palette:
- * - rapid  -> rose / pink pastel
- * - long   -> violet pastel
- * - inter -> emerald pastel
- * - other  -> amber pastel
- */
 const badgeColors = {
   rapid: "bg-rose-100 text-rose-800",
   long: "bg-violet-100 text-violet-800",
@@ -43,7 +28,6 @@ const badgeColors = {
   other: "bg-amber-100 text-amber-800",
 } as const;
 
-// subtle row background tints (muted pastels)
 const rowBgClasses = {
   rapid: "bg-rose-50",
   long: "bg-violet-50",
@@ -95,12 +79,6 @@ const calculateDaysUntilExpiration = (expirationDate: string) => {
   return diffDays;
 };
 
-const getExpirationClassName = (days: number) => {
-  if (days < 30) return "text-red-600";
-  if (days < 90) return "text-orange-600";
-  return "text-green-600";
-};
-
 export default function Inventory() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedType, setSelectedType] = useState("all");
@@ -114,6 +92,15 @@ export default function Inventory() {
   const { data: medications = [], isLoading } = useQuery<Medication[]>({
     queryKey: ["/api/medications"],
   });
+
+  // pull distinct previously used locations to populate choose-list
+  const usedLocations = useMemo(() => {
+    const set = new Set<string>();
+    medications.forEach((m) => {
+      if (m.location) set.add(m.location);
+    });
+    return Array.from(set).filter(Boolean);
+  }, [medications]);
 
   const filteredMedications = useMemo(() => {
     let filtered = medications;
@@ -141,39 +128,11 @@ export default function Inventory() {
     setIsDispenseModalOpen(true);
   };
 
-  const openMoveModal = (med: Medication) => {
-    setSelectedMedication(med);
+  // open move modal
+  const handleMove = (medication: Medication) => {
+    setSelectedMedication(medication);
     setIsMoveModalOpen(true);
   };
-
-  // Mutation for performing move (calls backend)
-  const moveMutation = useMutation(
-    async (payload: {
-      medicationId: string;
-      quantity: number;
-      fromLocation?: string | null;
-      toLocation: string;
-      comment?: string | null;
-    }) => {
-      const res = await fetch("/api/move", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || "Move failed");
-      }
-      return res.json();
-    },
-    {
-      onSuccess: () => {
-        // Refresh medications and transactions
-        queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
-      },
-    }
-  );
 
   // Scroll target: LowStockTicker element
   const scrollToTrackers = () => {
@@ -197,11 +156,6 @@ export default function Inventory() {
       </div>
     );
   }
-
-  // derive previously used locations from all medications (unique)
-  const previousLocations = Array.from(
-    new Set(medications.map((m) => (m.location ?? "").trim()).filter((l) => l && l.length > 0))
-  );
 
   return (
     <div className="bg-gray-50 min-h-screen">
@@ -384,7 +338,7 @@ export default function Inventory() {
 
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span
-                              className={`text-sm font-medium $ ${
+                              className={`text-sm font-medium ${
                                 (medication.quantity ?? 0) <= 5 ? "text-red-600" : "text-gray-900"
                               }`}
                               data-testid="text-quantity"
@@ -416,15 +370,16 @@ export default function Inventory() {
                               Dispense
                             </Button>
 
+                            {/* MOVE button */}
                             <Button
-                              onClick={() => openMoveModal(medication)}
+                              onClick={() => handleMove(medication)}
                               size="sm"
-                              className="bg-purple-600 hover:bg-purple-700 text-white flex items-center"
+                              className="bg-purple-600 hover:bg-purple-700 text-white"
                               disabled={(medication.quantity ?? 0) === 0}
                               data-testid={`button-move-${medication.id}`}
-                              title="Move stock to another location"
+                              title="Move medication to another location"
                             >
-                              <MoveIcon className="h-4 w-4 mr-1" />
+                              <Move className="h-4 w-4 mr-1" />
                               Move
                             </Button>
                           </td>
@@ -450,7 +405,7 @@ export default function Inventory() {
         open={isAddModalOpen}
         onOpenChange={setIsAddModalOpen}
         onSave={(newMed: any) => {
-          // Note: replace with your backend mutation; this is only local client push
+          // client-side push (replace with proper mutation)
           medications.push(newMed);
           setIsAddModalOpen(false);
         }}
@@ -458,130 +413,212 @@ export default function Inventory() {
 
       <DispenseModal open={isDispenseModalOpen} onOpenChange={setIsDispenseModalOpen} medication={selectedMedication} />
 
-      {/* Move Modal (inline) */}
-      <Dialog open={isMoveModalOpen} onOpenChange={setIsMoveModalOpen}>
-        <DialogTrigger asChild>
-          {/* We open the dialog programmatically by setting state; DialogTrigger left empty */}
-          <span />
-        </DialogTrigger>
-        <DialogContent className="sm:max-w-[560px]">
-          <DialogHeader>
-            <DialogTitle>Move stock</DialogTitle>
-          </DialogHeader>
+      {/* Move Modal */}
+      {isMoveModalOpen && selectedMedication && (
+        <MoveModal
+          open={isMoveModalOpen}
+          onOpenChange={(v: boolean) => {
+            setIsMoveModalOpen(v);
+            if (!v) setSelectedMedication(null);
+          }}
+          medication={selectedMedication}
+          usedLocations={usedLocations}
+          onSuccess={() => {
+            // invalidate meds & transactions and close
+            queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
+            setIsMoveModalOpen(false);
+            setSelectedMedication(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
 
-          <div className="space-y-4">
-            <div>
-              <Label className="text-sm font-medium">Medication</Label>
-              <div className="text-sm text-gray-900">{selectedMedication ? (selectedMedication.medicalName ?? selectedMedication.genericName) : "—"}</div>
-            </div>
+/**
+ * MoveModal - local component inside the file for convenience
+ */
+function MoveModal({
+  open,
+  onOpenChange,
+  medication,
+  usedLocations,
+  onSuccess,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  medication: Medication;
+  usedLocations: string[];
+  onSuccess: () => void;
+}) {
+  const [quantity, setQuantity] = useState<number>(1);
+  const [selectedLocation, setSelectedLocation] = useState<string>(usedLocations[0] ?? "");
+  const [newLocation, setNewLocation] = useState<string>("");
+  const [useNewLocation, setUseNewLocation] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-            <div>
-              <Label htmlFor="move-quantity" className="text-sm font-medium">Quantity to move</Label>
-              <div className="mt-1 flex gap-2 items-center">
-                <Input
-                  id="move-quantity"
-                  type="number"
-                  min={1}
-                  max={selectedMedication ? selectedMedication.quantity ?? 0 : 0}
-                  defaultValue={selectedMedication ? Math.min(1, selectedMedication.quantity ?? 1) : 1}
-                  data-testid="input-move-quantity"
-                  onChange={() => {}}
-                  // we'll read value on submit
-                />
-                <div className="text-sm text-gray-500">Available: {selectedMedication?.quantity ?? 0}</div>
-              </div>
-            </div>
+  const queryClient = useQueryClient();
 
-            <div>
-              <Label className="text-sm font-medium">Move to (choose existing or add new)</Label>
-              <div className="mt-1 flex gap-2">
-                <select id="move-to-select" className="rounded border px-3 py-2 w-2/3" defaultValue="">
-                  <option value="">Select existing location</option>
-                  {previousLocations.map((loc) => (
-                    <option key={loc} value={loc}>
-                      {loc}
-                    </option>
-                  ))}
-                  <option value="__NEW__">Use a new location</option>
-                </select>
+  const max = medication.quantity ?? 0;
 
-                <Input id="move-to-new" placeholder="New location (if selected)" className="w-1/3" />
-              </div>
-            </div>
+  const handleSubmit = async () => {
+    if (quantity <= 0 || quantity > max) {
+      alert(`Please enter a quantity between 1 and ${max}`);
+      return;
+    }
+    const toLocation = useNewLocation ? newLocation.trim() : selectedLocation;
+    if (!toLocation) {
+      alert("Please select or enter a destination location.");
+      return;
+    }
 
-            <div>
-              <Label className="text-sm font-medium">Optional comment</Label>
-              {/* use Textarea if available; fallback to native */}
-              {typeof Textarea !== "undefined" ? (
-                <Textarea id="move-comment" className="mt-1" placeholder="Optional comment" />
-              ) : (
-                <textarea id="move-comment" className="mt-1 w-full rounded border p-2" placeholder="Optional comment" />
-              )}
-            </div>
+    setIsSubmitting(true);
 
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setIsMoveModalOpen(false)}>Cancel</Button>
+    try {
+      // POST to your move endpoint (adjust path/fields to match backend)
+      const payload = {
+        medicationId: medication.id,
+        medicationName: medication.medicalName ?? medication.genericName ?? "",
+        quantity,
+        fromLocation: medication.location ?? "",
+        toLocation,
+        notes: notes?.trim() ?? "",
+        timestamp: new Date().toISOString(),
+      };
 
-              <Button
-                onClick={async () => {
-                  if (!selectedMedication) return;
+      // First, call backend to perform move + update quantities (adjust endpoint as needed)
+      const res = await fetch("/api/medications/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-                  // Grab values from the DOM inputs (keeps this modal self-contained)
-                  const qtyEl = document.getElementById("move-quantity") as HTMLInputElement | null;
-                  const selEl = document.getElementById("move-to-select") as HTMLSelectElement | null;
-                  const newLocEl = document.getElementById("move-to-new") as HTMLInputElement | null;
-                  const commentEl = document.getElementById("move-comment") as HTMLTextAreaElement | HTMLInputElement | null;
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Move failed");
+      }
 
-                  const quantity = qtyEl ? Math.max(1, Math.min(Number(qtyEl.value || "0"), selectedMedication.quantity ?? 0)) : 0;
-                  if (quantity <= 0) {
-                    alert("Please enter a valid quantity to move.");
-                    return;
-                  }
+      // Optionally create a transaction entry (if backend doesn't auto-create it).
+      // This tries to create /api/transactions entry with type "move".
+      try {
+        await fetch("/api/transactions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "move",
+            medicationId: medication.id,
+            medicationName: medication.medicalName ?? medication.genericName ?? "",
+            quantity,
+            fromLocation: medication.location ?? "",
+            toLocation,
+            notes: notes?.trim() ?? "",
+            timestamp: new Date().toISOString(),
+          }),
+        });
+      } catch (err) {
+        // ignore - backend may auto-create transaction
+        console.warn("Failed to create transaction record:", err);
+      }
 
-                  const selectedValue = selEl?.value ?? "";
-                  let toLocation = "";
-                  if (selectedValue === "__NEW__") {
-                    toLocation = newLocEl?.value?.trim() ?? "";
-                    if (!toLocation) {
-                      alert("Please enter a new location.");
-                      return;
-                    }
-                  } else if (selectedValue) {
-                    toLocation = selectedValue;
-                  } else {
-                    // if no select chosen but user typed in new location
-                    toLocation = newLocEl?.value?.trim() ?? "";
-                    if (!toLocation) {
-                      alert("Please select or enter a location to move to.");
-                      return;
-                    }
-                  }
+      // invalidate queries to refresh UI
+      queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
 
-                  const payload = {
-                    medicationId: selectedMedication.id,
-                    quantity,
-                    fromLocation: selectedMedication.location ?? null,
-                    toLocation,
-                    comment: commentEl?.value?.trim() ?? null,
-                  };
+      onSuccess();
+    } catch (err: any) {
+      console.error(err);
+      alert("Failed to move medication: " + (err?.message ?? "unknown error"));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
-                  try {
-                    await moveMutation.mutateAsync(payload);
-                    setIsMoveModalOpen(false);
-                    setSelectedMedication(null);
-                  } catch (err: any) {
-                    console.error("Move failed", err);
-                    alert("Move failed: " + (err?.message ?? "unknown error"));
-                  }
-                }}
-                className="bg-purple-600 hover:bg-purple-700 text-white"
-              >
-                Move
-              </Button>
-            </div>
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-md">
+        <div className="p-4 border-b">
+          <h3 className="text-lg font-medium">Move medication</h3>
+          <div className="text-sm text-gray-600">{medication.medicalName ?? medication.genericName}</div>
+        </div>
+
+        <div className="p-4 space-y-3">
+          <div>
+            <Label className="block text-sm font-medium mb-1">Quantity to move</Label>
+            <Input
+              type="number"
+              min={1}
+              max={medication.quantity ?? 0}
+              value={quantity}
+              onChange={(e) => setQuantity(Number(e.target.value))}
+              aria-label="quantity-to-move"
+            />
+            <div className="text-xs text-gray-500 mt-1">Available: {medication.quantity ?? 0}</div>
           </div>
-        </DialogContent>
-      </Dialog>
+
+          <div>
+            <Label className="block text-sm font-medium mb-1">Destination location</Label>
+
+            <div className="flex items-center gap-2">
+              <select
+                className="flex-1 border rounded px-2 py-2"
+                disabled={useNewLocation}
+                value={selectedLocation}
+                onChange={(e) => setSelectedLocation(e.target.value)}
+                aria-label="select-used-location"
+              >
+                <option value="">Select previously used location</option>
+                {usedLocations.map((loc) => (
+                  <option key={loc} value={loc}>
+                    {loc}
+                  </option>
+                ))}
+              </select>
+
+              <div className="flex items-center gap-2">
+                <label className="flex items-center space-x-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={useNewLocation}
+                    onChange={() => setUseNewLocation((s) => !s)}
+                  />
+                  <span>New</span>
+                </label>
+              </div>
+            </div>
+
+            {useNewLocation && (
+              <div className="mt-2">
+                <Input
+                  placeholder="Enter new location"
+                  value={newLocation}
+                  onChange={(e) => setNewLocation(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+
+          <div>
+            <Label className="block text-sm font-medium mb-1">Optional comment</Label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="w-full border rounded p-2 min-h-[80px]"
+              placeholder="Add a note (e.g., reason for move)"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button onClick={() => onOpenChange(false)} variant="outline" size="sm">
+              Cancel
+            </Button>
+            <Button onClick={handleSubmit} disabled={isSubmitting} size="sm" className="bg-purple-600 text-white">
+              {isSubmitting ? "Moving…" : "Move"}
+            </Button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
