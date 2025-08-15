@@ -102,12 +102,13 @@ export function LowStockTicker() {
                       data-testid={`ticker-low-stock-item-${medication.id}`}
                     >
                       <div className="flex-1">
-                        <div className="font-medium text-gray-900 text-sm">
-                          {medication.genericName}
-                        </div>
-                        <div className="text-xs text-gray-600">
-                          {medication.medicalName} • {medication.dose} • {medication.location}
-                        </div>
+                        <div className="font-medium">
+  {medication.medicalName}
+</div>
+<div className="text-sm text-muted-foreground">
+  {medication.genericName} • {medication.dose} • {medication.location}
+</div>
+
                         <div className="text-xs text-gray-500 mt-1">
                           Expires: {new Date(medication.expirationDate).toLocaleDateString()}
                         </div>
