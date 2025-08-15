@@ -6,9 +6,11 @@ export interface IStorage {
   getMedicationById(id: string): Promise<Medication | undefined>;
   createMedication(medication: InsertMedication): Promise<Medication>;
   updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined>;
+  updateMedicationLocation(id: string, newLocation: string): Promise<Medication | undefined>;
   searchMedications(query: string): Promise<Medication[]>;
   filterMedicationsByType(type: string): Promise<Medication[]>;
   getLowStockMedications(threshold?: number): Promise<Medication[]>;
+  getOutOfStockMedications(): Promise<Medication[]>;
   getTransactions(): Promise<MedicationTransaction[]>;
   createTransaction(transaction: InsertTransaction): Promise<MedicationTransaction>;
 }
@@ -59,8 +61,19 @@ export class MemStorage implements IStorage {
     if (!medication) {
       return undefined;
     }
-    
+
     const updatedMedication = { ...medication, quantity: newQuantity };
+    this.medications.set(id, updatedMedication);
+    return updatedMedication;
+  }
+
+  async updateMedicationLocation(id: string, newLocation: string): Promise<Medication | undefined> {
+    const medication = this.medications.get(id);
+    if (!medication) {
+      return undefined;
+    }
+
+    const updatedMedication = { ...medication, location: newLocation };
     this.medications.set(id, updatedMedication);
     return updatedMedication;
   }
