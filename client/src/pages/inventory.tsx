@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,19 +13,16 @@ import { TransactionHistory } from "@/components/transaction-history";
 import { type Medication } from "@shared/schema";
 import { Search, Plus, HandHeart, Syringe, Zap, Clock, Scale, HelpCircle, List } from "lucide-react";
 import logo from "../assets/noor-logo.png";
-
 /**
  * Dialog components used for the Move modal
  */
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-
 const typeIcons = {
   rapid: Zap,
   long: Clock,
   intermediate: Scale,
   other: HelpCircle,
 } as const;
-
 /**
  * Muted pastel palette:
  * - rapid  -> rose / pink pastel
@@ -39,7 +36,6 @@ const badgeColors = {
   intermediate: "bg-emerald-100 text-emerald-800",
   other: "bg-amber-100 text-amber-800",
 } as const;
-
 // subtle row background tints (muted pastels)
 const rowBgClasses = {
   rapid: "bg-rose-50",
@@ -47,28 +43,24 @@ const rowBgClasses = {
   intermediate: "bg-emerald-50",
   other: "bg-amber-50",
 } as const;
-
 const filterSelectedClasses = {
   rapid: "bg-rose-100 text-rose-800 border-rose-200",
   long: "bg-violet-100 text-violet-800 border-violet-200",
   intermediate: "bg-emerald-100 text-emerald-800 border-emerald-200",
   other: "bg-amber-100 text-amber-800 border-amber-200",
 } as const;
-
 const filterHoverClasses = {
   rapid: "hover:bg-rose-50 hover:text-rose-700",
   long: "hover:bg-violet-50 hover:text-violet-700",
   intermediate: "hover:bg-emerald-50 hover:text-emerald-700",
   other: "hover:bg-amber-50 hover:text-amber-700",
 } as const;
-
 const typeLabels = {
   rapid: "Rapid Acting",
   long: "Long Acting",
   intermediate: "Intermediate",
   other: "Other",
 } as const;
-
 const getRowClassName = (type: string) => {
   switch (type) {
     case "rapid":
@@ -83,7 +75,6 @@ const getRowClassName = (type: string) => {
       return "";
   }
 };
-
 const calculateDaysUntilExpiration = (expirationDate: string) => {
   const today = new Date();
   const expiry = new Date(expirationDate);
@@ -91,13 +82,11 @@ const calculateDaysUntilExpiration = (expirationDate: string) => {
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   return diffDays;
 };
-
 const getExpirationClassName = (days: number) => {
   if (days < 30) return "text-red-600";
   if (days < 90) return "text-orange-600";
   return "text-green-600";
 };
-
 /**
  * Capitalize the first letter of each word (Title Case).
  * Example: "main fridge" -> "Main Fridge"
@@ -112,7 +101,6 @@ export default function Inventory() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isDispenseModalOpen, setIsDispenseModalOpen] = useState(false);
   const [selectedMedication, setSelectedMedication] = useState<Medication | null>(null);
-
   // Move modal state
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [moveMedication, setMoveMedication] = useState<Medication | null>(null);
@@ -120,19 +108,132 @@ export default function Inventory() {
   const [moveComment, setMoveComment] = useState("");
   const [moveAmount, setMoveAmount] = useState<number>(1);
   const [moveError, setMoveError] = useState<string | null>(null);
-  const [isSubmittingMove, setIsSubmittingMove] = useState(false);
 
   const queryClient = useQueryClient();
 
+  // Fetch medications
   const { data: medications = [], isLoading } = useQuery<Medication[]>({
     queryKey: ["/api/medications"],
   });
 
+  // Move mutation using useMutation for proper optimistic update and error handling
+  const moveMedicationMutation = useMutation(
+    async ({
+      medicationId,
+      toLocation,
+      quantity,
+      comment,
+      fromLocation,
+    }: {
+      medicationId: string;
+      toLocation: string;
+      quantity: number;
+      comment: string;
+      fromLocation: string;
+    }) => {
+      // POST move operation
+      const medRes = await fetch(`/api/medications/${encodeURIComponent(String(medicationId))}/move`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toLocation, quantity, comment }),
+      });
+      if (!medRes.ok) throw new Error("Failed to move medication");
+      // POST transaction
+      const transactionPayload = {
+        medicationId,
+        type: "move",
+        fromLocation,
+        toLocation,
+        quantity,
+        comment,
+        timestamp: new Date().toISOString(),
+      };
+      const txnRes = await fetch(`/api/transactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(transactionPayload),
+      });
+      if (!txnRes.ok) throw new Error("Failed to record transaction");
+      return { success: true };
+    },
+    {
+      onMutate: async (vars) => {
+        setMoveError(null);
+        // Cancel ongoing fetch for medications to avoid race
+        await queryClient.cancelQueries(["/api/medications"]);
+        const previousMedications = queryClient.getQueryData<Medication[]>(["/api/medications"]);
+
+        // Optimistically update medications in cache
+        queryClient.setQueryData<Medication[]>(["/api/medications"], (old = []) => {
+          // Clone array to avoid mutation
+          const meds = [...old];
+
+          // Find source medication index and subtract quantity
+          const sourceIndex = meds.findIndex((m) => m.id === vars.medicationId);
+          if (sourceIndex !== -1) {
+            const src = { ...meds[sourceIndex] };
+            src.quantity = (src.quantity ?? 0) - vars.quantity;
+            meds[sourceIndex] = src;
+          }
+
+          // Normalize destination location casing
+          const destination = vars.toLocation.toLowerCase();
+
+          // Try to find matching medication batch at destination
+          const matchIndex = meds.findIndex((m) => {
+            if (!m.location) return false;
+            return (
+              m.location.toLowerCase() === destination &&
+              (m.medicalName ?? "").toLowerCase() === (meds[sourceIndex]?.medicalName ?? "").toLowerCase() &&
+              (m.genericName ?? "").toLowerCase() === (meds[sourceIndex]?.genericName ?? "").toLowerCase() &&
+              String(m.dose) === String(meds[sourceIndex]?.dose) &&
+              (m.expirationDate ?? "") === (meds[sourceIndex]?.expirationDate ?? "") &&
+              (m.type ?? "") === (meds[sourceIndex]?.type ?? "") &&
+              ((m.administrativeForm ?? m.formType ?? "") ===
+                (meds[sourceIndex]?.administrativeForm ?? meds[sourceIndex]?.formType ?? ""))
+            );
+          });
+
+          if (matchIndex !== -1) {
+            // Add to existing batch quantity
+            const existing = { ...meds[matchIndex] };
+            existing.quantity = (existing.quantity ?? 0) + vars.quantity;
+            meds[matchIndex] = existing;
+          } else if (sourceIndex !== -1) {
+            // Create a new batch at destination with a temporary ID
+            const newMed: Medication = {
+              ...meds[sourceIndex],
+              id: `${vars.medicationId}-moved-${Date.now()}`, // temporary id for optimistic UI
+              location: vars.toLocation,
+              quantity: vars.quantity,
+            };
+            meds.push(newMed);
+          }
+
+          return meds;
+        });
+
+        // Return context for rollback on error
+        return { previousMedications };
+      },
+      onError: (err, vars, context: any) => {
+        setMoveError((err as Error).message ?? "Failed to move medication.");
+        // Rollback to previous medications if error
+        if (context?.previousMedications) {
+          queryClient.setQueryData(["/api/medications"], context.previousMedications);
+        }
+      },
+      onSettled: () => {
+        // After mutation success or failure, invalidate to refetch true backend state
+        queryClient.invalidateQueries(["/api/medications"]);
+        queryClient.invalidateQueries(["/api/transactions"]);
+      },
+    }
+  );
+
   const filteredMedications = useMemo(() => {
     let filtered = medications;
-
     filtered = filtered.filter((medication) => (medication.quantity ?? 0) > 0);
-
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(
@@ -141,11 +242,9 @@ export default function Inventory() {
           (med.medicalName ?? "").toLowerCase().includes(query)
       );
     }
-
     if (selectedType !== "all") {
       filtered = filtered.filter((med) => med.type === selectedType);
     }
-
     return filtered;
   }, [medications, searchQuery, selectedType]);
 
@@ -173,122 +272,43 @@ export default function Inventory() {
     return Array.from(s).filter(Boolean);
   }, [medications]);
 
-  // Submit move action: optimistic local update + POST to backend for persistence/transaction
-  const handleMoveSubmit = async () => {
+  // Submit move action using mutation
+  const handleMoveSubmit = () => {
     setMoveError(null);
-
     if (!moveToLocation || moveToLocation.trim() === "") {
       setMoveError("Please enter the destination location (required).");
       return;
     }
-
     if (!moveMedication) {
       setMoveError("No medication selected.");
       return;
     }
-
     const available = moveMedication.quantity ?? 0;
     const amount = Number(moveAmount);
-
     if (!Number.isFinite(amount) || amount <= 0) {
       setMoveError("Please enter a valid quantity to move (must be > 0).");
       return;
     }
-
     if (amount > available) {
       setMoveError(`Cannot move more than available quantity (${available}).`);
       return;
     }
 
-    setIsSubmittingMove(true);
+    moveMedicationMutation.mutate({
+      medicationId: moveMedication.id,
+      fromLocation: moveMedication.location ?? "—",
+      toLocation: capitalizeWords(moveToLocation.trim()),
+      quantity: amount,
+      comment: moveComment.trim(),
+    });
 
-    const medicationId = moveMedication.id;
-    const fromLocation = moveMedication.location ?? "—";
-    const toLocation = capitalizeWords(moveToLocation.trim());
-    const comment = moveComment.trim();
-
-    try {
-      // Optimistic local update:
-      // 1) subtract from source medication
-      const sourceIndex = medications.findIndex((m) => m.id === medicationId);
-      if (sourceIndex !== -1) {
-        const src = medications[sourceIndex];
-        src.quantity = (src.quantity ?? 0) - amount;
-      }
-
-      // 2) find an existing batch at destination with same identifying properties (so UI remains tidy)
-      // match by medicalName, genericName, dose, expirationDate, type, administrativeForm
-      const matchIndex = medications.findIndex((m) => {
-        if (!m.location) return false;
-        return (
-          m.location.toLowerCase() === toLocation.toLowerCase() &&
-          (m.medicalName ?? "").toLowerCase() === (moveMedication.medicalName ?? "").toLowerCase() &&
-          (m.genericName ?? "").toLowerCase() === (moveMedication.genericName ?? "").toLowerCase() &&
-          String(m.dose) === String(moveMedication.dose) &&
-          (m.expirationDate ?? "") === (moveMedication.expirationDate ?? "") &&
-          (m.type ?? "") === (moveMedication.type ?? "") &&
-          ((m.administrativeForm ?? m.formType ?? "") === (moveMedication.administrativeForm ?? moveMedication.formType ?? ""))
-        );
-      });
-
-      if (matchIndex !== -1) {
-        // add to existing destination batch
-        medications[matchIndex].quantity = (medications[matchIndex].quantity ?? 0) + amount;
-      } else {
-        // create a new optimistic medication record for the destination
-        const newMed: Medication = {
-          ...moveMedication,
-          id: `${moveMedication.id}-moved-${Date.now()}`, // temporary id
-          location: toLocation,
-          quantity: amount,
-        } as Medication;
-        (medications as Medication[]).push(newMed);
-      }
-
-      // Build transaction payload
-      const transactionPayload = {
-        medicationId,
-        type: "move",
-        fromLocation,
-        toLocation,
-        quantity: amount,
-        comment,
-        timestamp: new Date().toISOString(),
-      };
-
-      // Attempt to persist move and transaction - endpoints are examples; adjust to match your backend
-      await Promise.all([
-        fetch(`/api/medications/${encodeURIComponent(String(medicationId))}/move`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ toLocation, quantity: amount, comment }),
-        }).catch(() => {
-          // swallow errors so UI remains optimistic
-        }),
-        fetch(`/api/transactions`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(transactionPayload),
-        }).catch(() => {
-          // swallow
-        }),
-      ]);
-
-      // Invalidate relevant queries so TransactionHistory and medications list refresh from backend (if available)
-      queryClient.invalidateQueries(["/api/transactions"]);
-      queryClient.invalidateQueries(["/api/medications"]);
-
-      // close modal and reset
+    if (!moveMedicationMutation.isLoading) {
+      // Close modal and reset only when mutation is not loading
       setIsMoveModalOpen(false);
       setMoveMedication(null);
       setMoveToLocation("");
       setMoveComment("");
       setMoveAmount(1);
-    } catch (err) {
-      console.error("Failed to move medication:", err);
-      setMoveError("Something went wrong while moving the medication. Please try again.");
-    } finally {
-      setIsSubmittingMove(false);
     }
   };
 
@@ -319,7 +339,6 @@ export default function Inventory() {
           </div>
         </div>
       </header>
-
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Card className="mb-8">
           <CardContent className="p-6">
@@ -340,7 +359,6 @@ export default function Inventory() {
                   />
                 </div>
               </div>
-
               <div className="flex gap-3 flex-shrink-0">
                 <Button
                   onClick={() => {
@@ -360,9 +378,7 @@ export default function Inventory() {
                   <List className="h-4 w-4 mr-2" />
                   Low / Out of Stock
                 </Button>
-
                 <TransactionHistory />
-
                 <Button
                   onClick={() => setIsAddModalOpen(true)}
                   className="bg-rose-600 hover:bg-rose-700 text-white"
@@ -373,7 +389,6 @@ export default function Inventory() {
                 </Button>
               </div>
             </div>
-
             <div className="mt-6">
               <Label className="block text-sm font-medium text-gray-700 mb-3">Filter by insulin type</Label>
               <div className="flex flex-wrap gap-2">
@@ -385,18 +400,16 @@ export default function Inventory() {
                 >
                   <List className="h-4 w-4 mr-2" /> All types
                 </Button>
-
                 {Object.entries(typeLabels).map(([type, label]) => {
                   const Icon = typeIcons[type as keyof typeof typeIcons];
                   const selectedCls = (filterSelectedClasses as any)[type];
                   const hoverCls = (filterHoverClasses as any)[type];
-
                   return (
                     <Button
                       key={type}
                       variant={selectedType === type ? "default" : "outline"}
                       onClick={() => setSelectedType(type)}
-                      className={`text-sm ${selectedType === type ? selectedCls : `border-gray-200 ${hoverCls}`} `}
+                      className={`text-sm ${selectedType === type ? selectedCls : `border-gray-200 ${hoverCls}`}`}
                       data-testid={`filter-${type}`}
                     >
                       <Icon className="h-4 w-4 mr-2" />
@@ -408,7 +421,6 @@ export default function Inventory() {
             </div>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader>
             <CardTitle className="text-lg font-medium text-gray-900">Current insulin inventory</CardTitle>
@@ -420,10 +432,8 @@ export default function Inventory() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Medication</th>
-
                     {/* Administrative Form column */}
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Administrative form</th>
-
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Insulin type</th>
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Dose</th>
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Quantity</th>
@@ -445,17 +455,18 @@ export default function Inventory() {
                     filteredMedications.map((medication) => {
                       const daysUntilExpiration = calculateDaysUntilExpiration(medication.expirationDate);
                       const Icon = typeIcons[medication.type as keyof typeof typeIcons];
-
                       // administrative form display logic:
                       const adminFormValue =
                         (medication.administrativeForm as string | undefined) ||
                         (medication.formType as string | undefined) ||
                         "";
                       const adminFormDisplay =
-                        adminFormValue.toLowerCase() === "pen" ? "Pen" : adminFormValue.toLowerCase() === "injection" ? "Injection" : "—";
-
+                        adminFormValue.toLowerCase() === "pen"
+                          ? "Pen"
+                          : adminFormValue.toLowerCase() === "injection"
+                          ? "Injection"
+                          : "—";
                       const rowTint = getRowClassName(medication.type);
-
                       return (
                         <tr
                           key={medication.id}
@@ -472,23 +483,19 @@ export default function Inventory() {
                               </div>
                             </div>
                           </td>
-
                           {/* Administrative Form */}
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-administrative-form">
                             {adminFormDisplay}
                           </td>
-
                           <td className="px-6 py-4 whitespace-nowrap">
                             <Badge className={(badgeColors as any)[medication.type]}>
                               <Icon className="h-3 w-3 mr-1" />
                               {(typeLabels as any)[medication.type]}
                             </Badge>
                           </td>
-
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-dose">
                             {medication.dose}
                           </td>
-
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span
                               className={`text-sm font-medium ${
@@ -500,17 +507,14 @@ export default function Inventory() {
                             </span>
                             {(medication.quantity ?? 0) <= 5 && <div className="text-xs text-red-600">Low stock</div>}
                           </td>
-
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className="text-sm text-gray-900" data-testid="text-expiration-date">
                               {medication.expirationDate ? new Date(medication.expirationDate).toLocaleDateString() : "—"}
                             </span>
                           </td>
-
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" data-testid="text-location">
                             {medication.location ?? "—"}
                           </td>
-
                           <td className="px-6 py-4 whitespace-nowrap space-x-2">
                             <Button
                               onClick={() => handleDispense(medication)}
@@ -522,7 +526,6 @@ export default function Inventory() {
                               <HandHeart className="h-4 w-4 mr-1" />
                               Dispense
                             </Button>
-
                             {/* Move button - opens modal to require destination location, optional comment, and quantity to move */}
                             <Button
                               onClick={() => openMoveModal(medication)}
@@ -544,34 +547,28 @@ export default function Inventory() {
             </div>
           </CardContent>
         </Card>
-
         {/* Give the LowStockTicker a stable id so the button can scroll to it */}
         <div id="low-stock-ticker" className="mt-8">
           <LowStockTicker />
         </div>
-
         <OutOfStockTracker />
       </main>
-
       <AddMedicationModal
         open={isAddModalOpen}
         onOpenChange={setIsAddModalOpen}
         onSave={(newMed: any) => {
-          // Note: replace with your backend mutation; this is only local client push
-          medications.push(newMed);
+          // For adding new medication, directly refetch or update queryData appropriately outside this snippet
+          queryClient.invalidateQueries(["/api/medications"]);
           setIsAddModalOpen(false);
         }}
       />
-
       <DispenseModal open={isDispenseModalOpen} onOpenChange={setIsDispenseModalOpen} medication={selectedMedication} />
-
       {/* Move Modal */}
       <Dialog open={isMoveModalOpen} onOpenChange={setIsMoveModalOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Move medication</DialogTitle>
           </DialogHeader>
-
           <div className="space-y-4">
             <div>
               <Label className="text-sm font-medium">Medication</Label>
@@ -579,7 +576,6 @@ export default function Inventory() {
                 {moveMedication ? `${moveMedication.medicalName ?? moveMedication.genericName ?? "—"}` : "—"}
               </div>
             </div>
-
             <div>
               <Label htmlFor="move-to-location" className="text-sm font-medium">
                 Destination location (required)
@@ -599,7 +595,6 @@ export default function Inventory() {
                 ))}
               </datalist>
             </div>
-
             <div>
               <Label htmlFor="move-amount" className="text-sm font-medium">
                 Quantity to move (required)
@@ -622,7 +617,6 @@ export default function Inventory() {
                 {moveMedication ? `Available: ${moveMedication.quantity ?? 0}` : ""}
               </div>
             </div>
-
             <div>
               <Label htmlFor="move-comment" className="text-sm font-medium">
                 Comment (optional)
@@ -637,22 +631,20 @@ export default function Inventory() {
                 data-testid="input-move-comment"
               />
             </div>
-
             {moveError && <div className="text-sm text-red-600">{moveError}</div>}
           </div>
-
           <DialogFooter className="mt-4 flex justify-end space-x-2">
-            <Button size="sm" variant="outline" onClick={() => setIsMoveModalOpen(false)} disabled={isSubmittingMove}>
+            <Button size="sm" variant="outline" onClick={() => setIsMoveModalOpen(false)} disabled={moveMedicationMutation.isLoading}>
               Cancel
             </Button>
             <Button
               size="sm"
               onClick={handleMoveSubmit}
               className="bg-amber-600 hover:bg-amber-700 text-white"
-              disabled={isSubmittingMove}
+              disabled={moveMedicationMutation.isLoading}
               data-testid="button-submit-move"
             >
-              {isSubmittingMove ? "Moving…" : "Move medication"}
+              {moveMedicationMutation.isLoading ? "Moving…" : "Move medication"}
             </Button>
           </DialogFooter>
         </DialogContent>
