@@ -5,16 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type Medication } from "@shared/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-// The original import for apiRequest could not be resolved.
-// This is a placeholder function to allow the component to compile and function.
-// In a real application, this would be a function that sends a request to your backend.
-const apiRequest = async (method: string, url: string, data: any) => {
-  console.log(`Simulating API call: ${method} to ${url} with data:`, data);
-  return {
-    json: () => Promise.resolve({ success: true }),
-  };
-};
-
+import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { HandHeart, Minus, Plus, Check } from "lucide-react";
 
@@ -29,8 +20,6 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const administrationLabel = medication?.administrationForm === "pens" ? "pens" : "injections";
-
   const dispenseMutation = useMutation({
     mutationFn: async (data: { medicationId: string; quantity: number }) => {
       const response = await apiRequest("POST", "/api/medications/dispense", data);
@@ -40,14 +29,9 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
       queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
       queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"] });
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
-      
-      const unit = medication?.administrationForm === "pens"
-        ? dispenseQuantity === 1 ? "pen" : "pens"
-        : dispenseQuantity === 1 ? "injection" : "injections";
-        
       toast({
         title: "Success",
-        description: `Successfully dispensed ${dispenseQuantity} ${unit}`,
+        description: `Successfully dispensed ${dispenseQuantity} injection(s)`,
         duration: 3000, // 3 seconds
       });
       setDispenseQuantity(1);
@@ -69,7 +53,7 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
     if (dispenseQuantity > medication.quantity) {
       toast({
         title: "Error",
-        description: `Cannot dispense more than available stock`,
+        description: "Cannot dispense more than available stock",
         variant: "destructive",
       });
       return;
@@ -108,10 +92,10 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
         <div className="space-y-4">
           <div>
             <p className="text-sm text-gray-900" data-testid="text-medication-name">
-              {medication.medicalName} ({medication.genericName})
+              {medication.genericName} ({medication.medicalName})
             </p>
             <p className="text-xs text-gray-500 mt-1" data-testid="text-available-stock">
-              Available: {medication.quantity}
+              Available: {medication.quantity} injections
             </p>
           </div>
 
