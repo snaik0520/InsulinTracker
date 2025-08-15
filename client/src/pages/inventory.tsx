@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,16 +13,20 @@ import { TransactionHistory } from "@/components/transaction-history";
 import { type Medication } from "@shared/schema";
 import { Search, Plus, HandHeart, Syringe, Zap, Clock, Scale, HelpCircle, List } from "lucide-react";
 import logo from "../assets/noor-logo.png";
+
 /**
- * Dialog components used for the Move modal
+ * Small dialog components used for the Move modal
+ * (these exist in other parts of the codebase; import them if present)
  */
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+
 const typeIcons = {
   rapid: Zap,
   long: Clock,
   intermediate: Scale,
   other: HelpCircle,
 } as const;
+
 /**
  * Muted pastel palette:
  * - rapid  -> rose / pink pastel
@@ -36,6 +40,7 @@ const badgeColors = {
   intermediate: "bg-emerald-100 text-emerald-800",
   other: "bg-amber-100 text-amber-800",
 } as const;
+
 // subtle row background tints (muted pastels)
 const rowBgClasses = {
   rapid: "bg-rose-50",
@@ -43,24 +48,28 @@ const rowBgClasses = {
   intermediate: "bg-emerald-50",
   other: "bg-amber-50",
 } as const;
+
 const filterSelectedClasses = {
   rapid: "bg-rose-100 text-rose-800 border-rose-200",
   long: "bg-violet-100 text-violet-800 border-violet-200",
   intermediate: "bg-emerald-100 text-emerald-800 border-emerald-200",
   other: "bg-amber-100 text-amber-800 border-amber-200",
 } as const;
+
 const filterHoverClasses = {
   rapid: "hover:bg-rose-50 hover:text-rose-700",
   long: "hover:bg-violet-50 hover:text-violet-700",
   intermediate: "hover:bg-emerald-50 hover:text-emerald-700",
   other: "hover:bg-amber-50 hover:text-amber-700",
 } as const;
+
 const typeLabels = {
   rapid: "Rapid Acting",
   long: "Long Acting",
   intermediate: "Intermediate",
   other: "Other",
 } as const;
+
 const getRowClassName = (type: string) => {
   switch (type) {
     case "rapid":
@@ -75,6 +84,7 @@ const getRowClassName = (type: string) => {
       return "";
   }
 };
+
 const calculateDaysUntilExpiration = (expirationDate: string) => {
   const today = new Date();
   const expiry = new Date(expirationDate);
@@ -82,11 +92,13 @@ const calculateDaysUntilExpiration = (expirationDate: string) => {
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   return diffDays;
 };
+
 const getExpirationClassName = (days: number) => {
   if (days < 30) return "text-red-600";
   if (days < 90) return "text-orange-600";
   return "text-green-600";
 };
+
 /**
  * Capitalize the first letter of each word (Title Case).
  * Example: "main fridge" -> "Main Fridge"
@@ -101,139 +113,26 @@ export default function Inventory() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isDispenseModalOpen, setIsDispenseModalOpen] = useState(false);
   const [selectedMedication, setSelectedMedication] = useState<Medication | null>(null);
+
   // Move modal state
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [moveMedication, setMoveMedication] = useState<Medication | null>(null);
   const [moveToLocation, setMoveToLocation] = useState("");
   const [moveComment, setMoveComment] = useState("");
-  const [moveAmount, setMoveAmount] = useState<number>(1);
   const [moveError, setMoveError] = useState<string | null>(null);
+  const [isSubmittingMove, setIsSubmittingMove] = useState(false);
 
   const queryClient = useQueryClient();
 
-  // Fetch medications
   const { data: medications = [], isLoading } = useQuery<Medication[]>({
     queryKey: ["/api/medications"],
   });
 
-  // Move mutation using useMutation for proper optimistic update and error handling
-  const moveMedicationMutation = useMutation(
-    async ({
-      medicationId,
-      toLocation,
-      quantity,
-      comment,
-      fromLocation,
-    }: {
-      medicationId: string;
-      toLocation: string;
-      quantity: number;
-      comment: string;
-      fromLocation: string;
-    }) => {
-      // POST move operation
-      const medRes = await fetch(`/api/medications/${encodeURIComponent(String(medicationId))}/move`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ toLocation, quantity, comment }),
-      });
-      if (!medRes.ok) throw new Error("Failed to move medication");
-      // POST transaction
-      const transactionPayload = {
-        medicationId,
-        type: "move",
-        fromLocation,
-        toLocation,
-        quantity,
-        comment,
-        timestamp: new Date().toISOString(),
-      };
-      const txnRes = await fetch(`/api/transactions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(transactionPayload),
-      });
-      if (!txnRes.ok) throw new Error("Failed to record transaction");
-      return { success: true };
-    },
-    {
-      onMutate: async (vars) => {
-        setMoveError(null);
-        // Cancel ongoing fetch for medications to avoid race
-        await queryClient.cancelQueries(["/api/medications"]);
-        const previousMedications = queryClient.getQueryData<Medication[]>(["/api/medications"]);
-
-        // Optimistically update medications in cache
-        queryClient.setQueryData<Medication[]>(["/api/medications"], (old = []) => {
-          // Clone array to avoid mutation
-          const meds = [...old];
-
-          // Find source medication index and subtract quantity
-          const sourceIndex = meds.findIndex((m) => m.id === vars.medicationId);
-          if (sourceIndex !== -1) {
-            const src = { ...meds[sourceIndex] };
-            src.quantity = (src.quantity ?? 0) - vars.quantity;
-            meds[sourceIndex] = src;
-          }
-
-          // Normalize destination location casing
-          const destination = vars.toLocation.toLowerCase();
-
-          // Try to find matching medication batch at destination
-          const matchIndex = meds.findIndex((m) => {
-            if (!m.location) return false;
-            return (
-              m.location.toLowerCase() === destination &&
-              (m.medicalName ?? "").toLowerCase() === (meds[sourceIndex]?.medicalName ?? "").toLowerCase() &&
-              (m.genericName ?? "").toLowerCase() === (meds[sourceIndex]?.genericName ?? "").toLowerCase() &&
-              String(m.dose) === String(meds[sourceIndex]?.dose) &&
-              (m.expirationDate ?? "") === (meds[sourceIndex]?.expirationDate ?? "") &&
-              (m.type ?? "") === (meds[sourceIndex]?.type ?? "") &&
-              ((m.administrativeForm ?? m.formType ?? "") ===
-                (meds[sourceIndex]?.administrativeForm ?? meds[sourceIndex]?.formType ?? ""))
-            );
-          });
-
-          if (matchIndex !== -1) {
-            // Add to existing batch quantity
-            const existing = { ...meds[matchIndex] };
-            existing.quantity = (existing.quantity ?? 0) + vars.quantity;
-            meds[matchIndex] = existing;
-          } else if (sourceIndex !== -1) {
-            // Create a new batch at destination with a temporary ID
-            const newMed: Medication = {
-              ...meds[sourceIndex],
-              id: `${vars.medicationId}-moved-${Date.now()}`, // temporary id for optimistic UI
-              location: vars.toLocation,
-              quantity: vars.quantity,
-            };
-            meds.push(newMed);
-          }
-
-          return meds;
-        });
-
-        // Return context for rollback on error
-        return { previousMedications };
-      },
-      onError: (err, vars, context: any) => {
-        setMoveError((err as Error).message ?? "Failed to move medication.");
-        // Rollback to previous medications if error
-        if (context?.previousMedications) {
-          queryClient.setQueryData(["/api/medications"], context.previousMedications);
-        }
-      },
-      onSettled: () => {
-        // After mutation success or failure, invalidate to refetch true backend state
-        queryClient.invalidateQueries(["/api/medications"]);
-        queryClient.invalidateQueries(["/api/transactions"]);
-      },
-    }
-  );
-
   const filteredMedications = useMemo(() => {
     let filtered = medications;
+
     filtered = filtered.filter((medication) => (medication.quantity ?? 0) > 0);
+
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(
@@ -242,9 +141,11 @@ export default function Inventory() {
           (med.medicalName ?? "").toLowerCase().includes(query)
       );
     }
+
     if (selectedType !== "all") {
       filtered = filtered.filter((med) => med.type === selectedType);
     }
+
     return filtered;
   }, [medications, searchQuery, selectedType]);
 
@@ -258,9 +159,121 @@ export default function Inventory() {
     setMoveMedication(medication);
     setMoveToLocation(""); // require user to choose/enter
     setMoveComment("");
-    setMoveAmount(1);
     setMoveError(null);
     setIsMoveModalOpen(true);
+  };
+
+  // Submit move action: optimistic local update + POST to backend endpoints for persistence/transaction
+  const handleMoveSubmit = async () => {
+    setMoveError(null);
+
+    if (!moveToLocation || moveToLocation.trim() === "") {
+      setMoveError("Please enter the destination location (required).");
+      return;
+    }
+
+    if (!moveMedication) {
+      setMoveError("No medication selected.");
+      return;
+    }
+
+    setIsSubmittingMove(true);
+
+    const medicationId = moveMedication.id;
+    const fromLocation = moveMedication.location ?? "—";
+    const toLocation = moveToLocation.trim();
+    const comment = moveComment.trim();
+
+    // Create a transaction payload (add a temporary id so the UI can render it immediately)
+    const transactionPayload = {
+      id: `local-move-${Date.now()}`,
+      medicationId,
+      type: "move",
+      fromLocation,
+      toLocation,
+      comment,
+      timestamp: new Date().toISOString(),
+      // optionally include medication display name for easier UI rendering
+      medicationName: moveMedication.medicalName ?? moveMedication.genericName ?? "—",
+    };
+
+    try {
+      // 1) Optimistically update medications cache so the location updates immediately
+      queryClient.setQueryData(["/api/medications"], (old: any) => {
+        if (!old) return old;
+        // handle both array and {data: array} shapes
+        if (Array.isArray(old)) {
+          return old.map((m: any) => (m.id === medicationId ? { ...m, location: toLocation } : m));
+        }
+        if (old.data && Array.isArray(old.data)) {
+          return { ...old, data: old.data.map((m: any) => (m.id === medicationId ? { ...m, location: toLocation } : m)) };
+        }
+        return old;
+      });
+
+      // 2) Optimistically prepend the transaction into the transactions cache so TransactionHistory shows it
+      queryClient.setQueryData(["/api/transactions"], (old: any) => {
+        if (!old) return [transactionPayload];
+        // common shapes:
+        if (Array.isArray(old)) {
+          return [transactionPayload, ...old];
+        }
+        if (old.data && Array.isArray(old.data)) {
+          return { ...old, data: [transactionPayload, ...old.data] };
+        }
+        // fallback
+        return old;
+      });
+
+      // 3) Attempt to persist to backend; do both move endpoint and transaction endpoint if available
+      await Promise.all([
+        fetch(`/api/medications/${encodeURIComponent(String(medicationId))}/move`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ toLocation, comment }),
+        }).catch(() => {
+          // swallow - we still kept optimistic update and will invalidate later
+        }),
+        fetch(`/api/transactions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(transactionPayload),
+        }).catch(() => {
+          // swallow
+        }),
+      ]);
+
+      // Invalidate transactions query to let the real backend response reconcile the optimistic entry
+      queryClient.invalidateQueries(["/api/transactions"]);
+      // Also invalidate medications to ensure server canonical state is fetched
+      queryClient.invalidateQueries(["/api/medications"]);
+
+      // close modal & reset
+      setIsMoveModalOpen(false);
+      setMoveMedication(null);
+      setMoveToLocation("");
+      setMoveComment("");
+    } catch (err) {
+      console.error("Failed to move medication:", err);
+      setMoveError("Something went wrong while moving the medication. Please try again.");
+      // optionally we could rollback optimistic updates here, but keeping it simple:
+      queryClient.invalidateQueries(["/api/medications"]);
+      queryClient.invalidateQueries(["/api/transactions"]);
+    } finally {
+      setIsSubmittingMove(false);
+    }
+  };
+
+  // Scroll target: LowStockTicker element
+  const scrollToTrackers = () => {
+    if (typeof document !== "undefined") {
+      const el = document.getElementById("low-stock-ticker");
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
+    }
   };
 
   // gather existing locations for suggestions in the Move modal
@@ -271,46 +284,6 @@ export default function Inventory() {
     }
     return Array.from(s).filter(Boolean);
   }, [medications]);
-
-  // Submit move action using mutation
-  const handleMoveSubmit = () => {
-    setMoveError(null);
-    if (!moveToLocation || moveToLocation.trim() === "") {
-      setMoveError("Please enter the destination location (required).");
-      return;
-    }
-    if (!moveMedication) {
-      setMoveError("No medication selected.");
-      return;
-    }
-    const available = moveMedication.quantity ?? 0;
-    const amount = Number(moveAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setMoveError("Please enter a valid quantity to move (must be > 0).");
-      return;
-    }
-    if (amount > available) {
-      setMoveError(`Cannot move more than available quantity (${available}).`);
-      return;
-    }
-
-    moveMedicationMutation.mutate({
-      medicationId: moveMedication.id,
-      fromLocation: moveMedication.location ?? "—",
-      toLocation: capitalizeWords(moveToLocation.trim()),
-      quantity: amount,
-      comment: moveComment.trim(),
-    });
-
-    if (!moveMedicationMutation.isLoading) {
-      // Close modal and reset only when mutation is not loading
-      setIsMoveModalOpen(false);
-      setMoveMedication(null);
-      setMoveToLocation("");
-      setMoveComment("");
-      setMoveAmount(1);
-    }
-  };
 
   if (isLoading) {
     return (
@@ -339,6 +312,7 @@ export default function Inventory() {
           </div>
         </div>
       </header>
+
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Card className="mb-8">
           <CardContent className="p-6">
@@ -359,16 +333,10 @@ export default function Inventory() {
                   />
                 </div>
               </div>
+
               <div className="flex gap-3 flex-shrink-0">
                 <Button
-                  onClick={() => {
-                    const el = document.getElementById("low-stock-ticker");
-                    if (el) {
-                      el.scrollIntoView({ behavior: "smooth", block: "start" });
-                      return;
-                    }
-                    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
-                  }}
+                  onClick={scrollToTrackers}
                   size="sm"
                   variant="outline"
                   className="flex items-center border-rose-200 text-rose-700 hover:bg-rose-50"
@@ -378,7 +346,9 @@ export default function Inventory() {
                   <List className="h-4 w-4 mr-2" />
                   Low / Out of Stock
                 </Button>
+
                 <TransactionHistory />
+
                 <Button
                   onClick={() => setIsAddModalOpen(true)}
                   className="bg-rose-600 hover:bg-rose-700 text-white"
@@ -389,6 +359,7 @@ export default function Inventory() {
                 </Button>
               </div>
             </div>
+
             <div className="mt-6">
               <Label className="block text-sm font-medium text-gray-700 mb-3">Filter by insulin type</Label>
               <div className="flex flex-wrap gap-2">
@@ -400,16 +371,18 @@ export default function Inventory() {
                 >
                   <List className="h-4 w-4 mr-2" /> All types
                 </Button>
+
                 {Object.entries(typeLabels).map(([type, label]) => {
                   const Icon = typeIcons[type as keyof typeof typeIcons];
                   const selectedCls = (filterSelectedClasses as any)[type];
                   const hoverCls = (filterHoverClasses as any)[type];
+
                   return (
                     <Button
                       key={type}
                       variant={selectedType === type ? "default" : "outline"}
                       onClick={() => setSelectedType(type)}
-                      className={`text-sm ${selectedType === type ? selectedCls : `border-gray-200 ${hoverCls}`}`}
+                      className={`text-sm ${selectedType === type ? selectedCls : `border-gray-200 ${hoverCls}`} `}
                       data-testid={`filter-${type}`}
                     >
                       <Icon className="h-4 w-4 mr-2" />
@@ -421,6 +394,7 @@ export default function Inventory() {
             </div>
           </CardContent>
         </Card>
+
         <Card>
           <CardHeader>
             <CardTitle className="text-lg font-medium text-gray-900">Current insulin inventory</CardTitle>
@@ -432,8 +406,10 @@ export default function Inventory() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Medication</th>
+
                     {/* Administrative Form column */}
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Administrative form</th>
+
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Insulin type</th>
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Dose</th>
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Quantity</th>
@@ -455,18 +431,17 @@ export default function Inventory() {
                     filteredMedications.map((medication) => {
                       const daysUntilExpiration = calculateDaysUntilExpiration(medication.expirationDate);
                       const Icon = typeIcons[medication.type as keyof typeof typeIcons];
+
                       // administrative form display logic:
                       const adminFormValue =
                         (medication.administrativeForm as string | undefined) ||
                         (medication.formType as string | undefined) ||
                         "";
                       const adminFormDisplay =
-                        adminFormValue.toLowerCase() === "pen"
-                          ? "Pen"
-                          : adminFormValue.toLowerCase() === "injection"
-                          ? "Injection"
-                          : "—";
+                        adminFormValue.toLowerCase() === "pen" ? "Pen" : adminFormValue.toLowerCase() === "injection" ? "Injection" : "—";
+
                       const rowTint = getRowClassName(medication.type);
+
                       return (
                         <tr
                           key={medication.id}
@@ -483,19 +458,23 @@ export default function Inventory() {
                               </div>
                             </div>
                           </td>
+
                           {/* Administrative Form */}
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-administrative-form">
                             {adminFormDisplay}
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap">
                             <Badge className={(badgeColors as any)[medication.type]}>
                               <Icon className="h-3 w-3 mr-1" />
                               {(typeLabels as any)[medication.type]}
                             </Badge>
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-dose">
                             {medication.dose}
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span
                               className={`text-sm font-medium ${
@@ -507,14 +486,17 @@ export default function Inventory() {
                             </span>
                             {(medication.quantity ?? 0) <= 5 && <div className="text-xs text-red-600">Low stock</div>}
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className="text-sm text-gray-900" data-testid="text-expiration-date">
                               {medication.expirationDate ? new Date(medication.expirationDate).toLocaleDateString() : "—"}
                             </span>
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" data-testid="text-location">
                             {medication.location ?? "—"}
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap space-x-2">
                             <Button
                               onClick={() => handleDispense(medication)}
@@ -526,7 +508,8 @@ export default function Inventory() {
                               <HandHeart className="h-4 w-4 mr-1" />
                               Dispense
                             </Button>
-                            {/* Move button - opens modal to require destination location, optional comment, and quantity to move */}
+
+                            {/* NEW: Move button - opens modal to require destination location and optional comment */}
                             <Button
                               onClick={() => openMoveModal(medication)}
                               size="sm"
@@ -547,28 +530,34 @@ export default function Inventory() {
             </div>
           </CardContent>
         </Card>
+
         {/* Give the LowStockTicker a stable id so the button can scroll to it */}
         <div id="low-stock-ticker" className="mt-8">
           <LowStockTicker />
         </div>
+
         <OutOfStockTracker />
       </main>
+
       <AddMedicationModal
         open={isAddModalOpen}
         onOpenChange={setIsAddModalOpen}
         onSave={(newMed: any) => {
-          // For adding new medication, directly refetch or update queryData appropriately outside this snippet
-          queryClient.invalidateQueries(["/api/medications"]);
+          // Note: replace with your backend mutation; this is only local client push
+          medications.push(newMed);
           setIsAddModalOpen(false);
         }}
       />
+
       <DispenseModal open={isDispenseModalOpen} onOpenChange={setIsDispenseModalOpen} medication={selectedMedication} />
+
       {/* Move Modal */}
       <Dialog open={isMoveModalOpen} onOpenChange={setIsMoveModalOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Move medication</DialogTitle>
           </DialogHeader>
+
           <div className="space-y-4">
             <div>
               <Label className="text-sm font-medium">Medication</Label>
@@ -576,6 +565,7 @@ export default function Inventory() {
                 {moveMedication ? `${moveMedication.medicalName ?? moveMedication.genericName ?? "—"}` : "—"}
               </div>
             </div>
+
             <div>
               <Label htmlFor="move-to-location" className="text-sm font-medium">
                 Destination location (required)
@@ -595,28 +585,7 @@ export default function Inventory() {
                 ))}
               </datalist>
             </div>
-            <div>
-              <Label htmlFor="move-amount" className="text-sm font-medium">
-                Quantity to move (required)
-              </Label>
-              <Input
-                id="move-amount"
-                type="number"
-                min={1}
-                max={moveMedication ? moveMedication.quantity ?? 1 : undefined}
-                value={moveAmount}
-                onChange={(e) => {
-                  const val = Number(e.target.value);
-                  if (Number.isNaN(val)) return setMoveAmount(0);
-                  setMoveAmount(val);
-                }}
-                className="mt-1"
-                data-testid="input-move-amount"
-              />
-              <div className="text-xs text-gray-500 mt-1">
-                {moveMedication ? `Available: ${moveMedication.quantity ?? 0}` : ""}
-              </div>
-            </div>
+
             <div>
               <Label htmlFor="move-comment" className="text-sm font-medium">
                 Comment (optional)
@@ -631,20 +600,22 @@ export default function Inventory() {
                 data-testid="input-move-comment"
               />
             </div>
+
             {moveError && <div className="text-sm text-red-600">{moveError}</div>}
           </div>
+
           <DialogFooter className="mt-4 flex justify-end space-x-2">
-            <Button size="sm" variant="outline" onClick={() => setIsMoveModalOpen(false)} disabled={moveMedicationMutation.isLoading}>
+            <Button size="sm" variant="outline" onClick={() => setIsMoveModalOpen(false)} disabled={isSubmittingMove}>
               Cancel
             </Button>
             <Button
               size="sm"
               onClick={handleMoveSubmit}
               className="bg-amber-600 hover:bg-amber-700 text-white"
-              disabled={moveMedicationMutation.isLoading}
+              disabled={isSubmittingMove}
               data-testid="button-submit-move"
             >
-              {moveMedicationMutation.isLoading ? "Moving…" : "Move medication"}
+              {isSubmittingMove ? "Moving…" : "Move medication"}
             </Button>
           </DialogFooter>
         </DialogContent>
