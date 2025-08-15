@@ -53,13 +53,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const medication = await storage.createMedication(medicationData);
       
       // Log the addition transaction
-      await storage.createTransaction({
-        medicationId: medication.id,
-        medicationName: `${medication.genericName} (${medication.medicalName})`,
-        type: "addition",
-        quantity: medication.quantity,
-        notes: "New medication added to inventory"
-      });
+await storage.createTransaction({
+  medicationId: medication.id,
+  medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
+  type: "addition",
+  quantity: medication.quantity,
+  notes: "New medication added to inventory"
+});
       
       res.status(201).json(medication);
     } catch (error) {
@@ -91,13 +91,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
 
       // Log the dispensing transaction
-      await storage.createTransaction({
-        medicationId: medication.id,
-        medicationName: `${medication.genericName} (${medication.medicalName})`,
-        type: "dispensed",
-        quantity: quantity,
-        notes: `Dispensed to patient`
-      });
+await storage.createTransaction({
+  medicationId: medication.id,
+  medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
+  type: "dispensed",
+  quantity: quantity,
+  notes: `Dispensed to patient`
+});
+
 
       res.json(updatedMedication);
     } catch (error) {
