@@ -5,18 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type Medication } from "@shared/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { HandHeart, Minus, Plus, Check } from "lucide-react";
-
-// The original import for apiRequest could not be resolved.
-// This is a placeholder function to allow the component to compile and function.
-// In a real application, this would be a function that sends a request to your backend.
-const apiRequest = async (method: string, url: string, data: any) => {
-  console.log(`Simulating API call: ${method} to ${url} with data:`, data);
-  return {
-    json: () => Promise.resolve({ success: true }),
-  };
-};
 
 interface DispenseModalProps {
   open: boolean;
@@ -29,9 +20,6 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Determine if the medication is a pen based on its name
-  const isPen = medication?.medicationName.toLowerCase().includes("pen") ?? false;
-  
   const dispenseMutation = useMutation({
     mutationFn: async (data: { medicationId: string; quantity: number }) => {
       const response = await apiRequest("POST", "/api/medications/dispense", data);
@@ -41,14 +29,9 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
       queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
       queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"] });
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
-      
-      const unit = isPen
-        ? dispenseQuantity === 1 ? "pen" : "pens"
-        : dispenseQuantity === 1 ? "injection" : "injections";
-        
       toast({
         title: "Success",
-        description: `Successfully dispensed ${dispenseQuantity} ${unit}`,
+        description: `Successfully dispensed ${dispenseQuantity} injection(s)`,
         duration: 3000, // 3 seconds
       });
       setDispenseQuantity(1);
@@ -109,10 +92,10 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
         <div className="space-y-4">
           <div>
             <p className="text-sm text-gray-900" data-testid="text-medication-name">
-              {medication.medicalName} ({medication.genericName})
+              {medication.genericName} ({medication.medicalName})
             </p>
             <p className="text-xs text-gray-500 mt-1" data-testid="text-available-stock">
-              Available: {medication.quantity} {isPen ? (medication.quantity === 1 ? 'pen' : 'pens') : (medication.quantity === 1 ? 'injection' : 'injections')}
+              Available: {medication.quantity} injections
             </p>
           </div>
 
