@@ -11,22 +11,34 @@ import { LowStockTicker } from "@/components/low-stock-ticker";
 import { OutOfStockTracker } from "@/components/out-of-stock-tracker";
 import { TransactionHistory } from "@/components/transaction-history";
 import { type Medication } from "@shared/schema";
-import { Search, Plus, HandHeart, Syringe, Zap, Clock, Scale, HelpCircle, List, CornerRightDown } from "lucide-react";
+import {
+  Search,
+  Plus,
+  HandHeart,
+  Syringe,
+  Zap,
+  Clock,
+  Scale,
+  HelpCircle,
+  List,
+  CornerRightDown,
+} from "lucide-react";
 import logo from "../assets/noor-logo.png";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Check, Minus, Plus as PlusIcon } from "lucide-react";
 
-// Placeholder for the MoveModal component
-// This modal handles the logic for moving medications to a new or existing location.
-interface MoveModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  medication: Medication | null;
-}
-
+/**
+ * Simulated API call (replace with real API)
+ */
 const apiRequest = async (method: string, url: string, data: any) => {
   console.log(`Simulating API call: ${method} to ${url} with data:`, data);
   return {
@@ -34,45 +46,102 @@ const apiRequest = async (method: string, url: string, data: any) => {
   };
 };
 
+/**
+ * MoveModal - move a quantity of a medication to a saved or new location.
+ * - Shows current count and admin label (pens/injections).
+ * - Pre-saved locations are derived from existing medication.location fields.
+ * - On success it updates the /api/medications cache so the inventory list reflects changes immediately.
+ */
+interface MoveModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  medication: Medication | null;
+}
 export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
-  const [moveQuantity, setMoveQuantity] = useState("");
+  const [moveQuantity, setMoveQuantity] = useState(1);
   const [newLocation, setNewLocation] = useState("");
   const [selectedLocation, setSelectedLocation] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Fetch previously used locations from user input history
-  const { data: locationHistory = [] } = useQuery<string[]>({
-    queryKey: ["/api/locations/history"],
-    queryFn: async () => {
-      // This would fetch locations that users have previously entered
-      // Replace with actual API call
-      return ["Main Pharmacy", "Storage Room 1", "Refrigerated Unit 2", "Lab Area"];
-    },
+  // derive pre-saved locations from current medications in cache / query
+  const { data: allMeds = [] } = useQuery<Medication[]>({
+    queryKey: ["/api/medications"],
   });
+
+  const predefinedLocations = useMemo(() => {
+    const set = new Set<string>();
+    (allMeds || []).forEach((m) => {
+      const loc = (m.location || "").trim();
+      if (loc) set.add(loc);
+    });
+    return Array.from(set);
+  }, [allMeds]);
 
   const moveMutation = useMutation({
     mutationFn: async (data: { medicationId: string; quantity: number; newLocation: string }) => {
       const response = await apiRequest("POST", "/api/medications/move", data);
       return response.json();
     },
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
+    onSuccess: () => {
+      // --- optimistic UI update: update the /api/medications cache to reflect movement ---
+      queryClient.setQueryData<Medication[] | undefined>(["/api/medications"], (old) => {
+        if (!old || !medication) return old;
+
+        const destLocation = selectedLocation || newLocation;
+        const qty = moveQuantity;
+
+        // subtract from source medication
+        const updated = old.map((m) =>
+          m.id === medication.id ? { ...m, quantity: (m.quantity ?? 0) - qty } : { ...m }
+        );
+
+        // try to find an existing record for the same medication at the destination
+        const existingIndex = updated.findIndex(
+          (m) =>
+            (m.medicalName || "").trim() === (medication.medicalName || "").trim() &&
+            ((m.location || "").trim() === destLocation.trim())
+        );
+
+        if (existingIndex >= 0) {
+          // increment existing destination record
+          const dest = { ...updated[existingIndex] };
+          dest.quantity = (dest.quantity ?? 0) + qty;
+          updated[existingIndex] = dest;
+        } else {
+          // create a new record representing the moved quantity at the destination
+          const newRecord: Medication = {
+            ...medication,
+            id: `${medication.id}-moved-${Date.now()}`, // temporary unique id for UI
+            quantity: qty,
+            location: destLocation,
+            // keep other fields same (you may want to adjust expiration/dose/etc in real backend logic)
+          };
+          updated.push(newRecord);
+        }
+
+        // filter out any meds with quantity <= 0? We'll keep zero-quantity rows for now,
+        // but you can remove them if you prefer:
+        // return updated.filter(m => (m.quantity ?? 0) > 0);
+        return updated;
+      });
+
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/locations/history"] });
-      
-      const qty = variables.quantity;
-      const isPens = medication?.administrationForm?.toLowerCase() === "pens";
-      const unit = isPens
-        ? (qty === 1 ? "pen" : "pens")
-        : (qty === 1 ? "injection" : "injections");
-        
+      queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"] });
+
+      const unit =
+        (medication?.administrationForm?.toLowerCase() === "pen" ||
+          medication?.administrationForm?.toLowerCase() === "pens")
+          ? (moveQuantity === 1 ? "pen" : "pens")
+          : (moveQuantity === 1 ? "injection" : "injections");
+
       toast({
         title: "Success",
-        description: `Successfully moved ${qty} ${unit} to ${selectedLocation || newLocation}`,
+        description: `Successfully moved ${moveQuantity} ${unit} to ${selectedLocation || newLocation}`,
         duration: 3000,
       });
-      setMoveQuantity("");
+
+      setMoveQuantity(1);
       setNewLocation("");
       setSelectedLocation("");
       onOpenChange(false);
@@ -88,19 +157,8 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
   });
 
   const handleMove = () => {
-    const qty = parseInt(moveQuantity, 10);
     if (!medication) return;
-    
-    if (isNaN(qty) || qty < 1) {
-      toast({
-        title: "Error",
-        description: "Please enter a quantity of at least 1",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    if (qty > medication.quantity) {
+    if (moveQuantity > (medication.quantity ?? 0)) {
       toast({
         title: "Error",
         description: "Cannot move more than available stock",
@@ -108,7 +166,6 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
       });
       return;
     }
-    
     if (!selectedLocation && !newLocation) {
       toast({
         title: "Error",
@@ -117,32 +174,33 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
       });
       return;
     }
-    
     moveMutation.mutate({
       medicationId: medication.id,
-      quantity: qty,
+      quantity: moveQuantity,
       newLocation: selectedLocation || newLocation,
     });
   };
 
   const incrementQuantity = () => {
-    const current = parseInt(moveQuantity || "0", 10);
-    if (medication && current < medication.quantity) {
-      setMoveQuantity(String(current + 1));
+    if (medication && moveQuantity < (medication.quantity ?? 0)) {
+      setMoveQuantity(moveQuantity + 1);
     }
   };
-
   const decrementQuantity = () => {
-    const current = parseInt(moveQuantity || "0", 10);
-    if (current > 1) {
-      setMoveQuantity(String(current - 1));
+    if (moveQuantity > 1) {
+      setMoveQuantity(moveQuantity - 1);
     }
   };
 
   if (!medication) return null;
 
-  const isPens = medication.administrationForm?.toLowerCase() === "pens";
-  const administrationLabel = isPens ? "pens" : "injections";
+  const isPenForm =
+    (medication.administrationForm || medication.administrativeForm || medication.formType || "")
+      .toString()
+      .toLowerCase()
+      .includes("pen");
+
+  const adminUnitCurrent = (medication.quantity ?? 0) === 1 ? (isPenForm ? "pen" : "injection") : (isPenForm ? "pens" : "injections");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -153,19 +211,20 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
             Move Medication
           </DialogTitle>
         </DialogHeader>
+
         <div className="space-y-4">
           <div>
             <p className="text-sm text-gray-900" data-testid="text-medication-name">
               {medication.medicalName} ({medication.genericName})
             </p>
-            <p className="text-xs text-gray-500 mt-1" data-testid="text-current-location">
+            <p className="text-xs text-gray-500 mt-1" data-testid="text-available-stock">
               Current Location: {medication.location ?? "—"}
             </p>
-            <p className="text-xs text-gray-500 mt-1" data-testid="text-current-stock">
-              Current Stock: {medication.quantity} {administrationLabel}
+            <p className="text-xs text-gray-500 mt-1" data-testid="text-current-count">
+              Current Count: {medication.quantity ?? 0} {adminUnitCurrent}
             </p>
           </div>
-          
+
           <div>
             <Label htmlFor="moveQuantity">Quantity to Move</Label>
             <div className="flex items-center space-x-2 mt-1">
@@ -174,7 +233,7 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
                 variant="outline"
                 size="sm"
                 onClick={decrementQuantity}
-                disabled={parseInt(moveQuantity || "0", 10) <= 1}
+                disabled={moveQuantity <= 1}
                 data-testid="button-decrement"
               >
                 <Minus className="h-4 w-4" />
@@ -182,11 +241,10 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
               <Input
                 id="moveQuantity"
                 type="number"
-                placeholder=" "
                 min="1"
                 max={medication.quantity}
                 value={moveQuantity}
-                onChange={(e) => setMoveQuantity(e.target.value)}
+                onChange={(e) => setMoveQuantity(Math.max(1, parseInt(e.target.value) || 1))}
                 className="w-20 text-center"
                 data-testid="input-move-quantity"
               />
@@ -195,7 +253,7 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
                 variant="outline"
                 size="sm"
                 onClick={incrementQuantity}
-                disabled={parseInt(moveQuantity || "0", 10) >= medication.quantity}
+                disabled={moveQuantity >= (medication.quantity ?? 0)}
                 data-testid="button-increment"
               >
                 <PlusIcon className="h-4 w-4" />
@@ -207,18 +265,20 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
             <Label htmlFor="location-select">Select a Destination</Label>
             <Select onValueChange={setSelectedLocation} value={selectedLocation}>
               <SelectTrigger id="location-select" className="mt-1">
-                <SelectValue placeholder="Select from previously used locations" />
+                <SelectValue placeholder="Select a pre-saved location" />
               </SelectTrigger>
               <SelectContent>
-                {locationHistory.map((loc, index) => (
-                  <SelectItem key={index} value={loc}>
-                    {loc}
+                {predefinedLocations.length === 0 ? (
+                  <SelectItem value="">
+                    No saved locations — enter a new one below
                   </SelectItem>
-                ))}
+                ) : (
+                  predefinedLocations.map((loc, index) => <SelectItem key={index} value={loc}>{loc}</SelectItem>)
+                )}
               </SelectContent>
             </Select>
           </div>
-          
+
           <div className="flex items-center space-x-2">
             <div className="flex-grow border-t border-gray-200"></div>
             <span className="flex-shrink text-xs text-gray-500">OR</span>
@@ -271,7 +331,7 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
   );
 }
 
-// ... existing code ...
+// ---------- Inventory component and helpers (updated) ----------
 const typeIcons = {
   rapid: Zap,
   long: Clock,
@@ -293,7 +353,6 @@ const badgeColors = {
   other: "bg-amber-100 text-amber-800",
 } as const;
 
-// subtle row background tints (muted pastels)
 const rowBgClasses = {
   rapid: "bg-rose-50",
   long: "bg-violet-50",
@@ -366,7 +425,6 @@ export default function Inventory() {
   const filteredMedications = useMemo(() => {
     let filtered = medications;
     filtered = filtered.filter((medication) => (medication.quantity ?? 0) > 0);
-
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(
@@ -375,11 +433,9 @@ export default function Inventory() {
           (med.medicalName ?? "").toLowerCase().includes(query)
       );
     }
-
     if (selectedType !== "all") {
       filtered = filtered.filter((med) => med.type === selectedType);
     }
-
     return filtered;
   }, [medications, searchQuery, selectedType]);
 
@@ -460,201 +516,3 @@ export default function Inventory() {
                   onClick={scrollToTrackers}
                   size="sm"
                   variant="outline"
-                  className="flex items-center border-rose-200 text-rose-700 hover:bg-rose-50"
-                  data-testid="button-jump-low-outstock"
-                  title="Jump to low / out of stock trackers"
-                >
-                  <List className="h-4 w-4 mr-2" />
-                  Low / Out of Stock
-                </Button>
-                <TransactionHistory />
-                <Button
-                  onClick={() => setIsAddModalOpen(true)}
-                  className="bg-rose-600 hover:bg-rose-700 text-white"
-                  data-testid="button-add-medication"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Medication
-                </Button>
-              </div>
-            </div>
-
-            <div className="mt-6">
-              <Label className="block text-sm font-medium text-gray-700 mb-3">Filter by insulin type</Label>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant={selectedType === "all" ? "default" : "outline"}
-                  onClick={() => setSelectedType("all")}
-                  className={`text-sm ${selectedType === "all" ? "bg-white text-gray-700" : "text-gray-700"}`}
-                  data-testid="filter-all"
-                >
-                  <List className="h-4 w-4 mr-2" /> All types
-                </Button>
-                {Object.entries(typeLabels).map(([type, label]) => {
-                  const Icon = typeIcons[type as keyof typeof typeIcons];
-                  const selectedCls = (filterSelectedClasses as any)[type];
-                  const hoverCls = (filterHoverClasses as any)[type];
-                  return (
-                    <Button
-                      key={type}
-                      variant={selectedType === type ? "default" : "outline"}
-                      onClick={() => setSelectedType(type)}
-                      className={`text-sm ${selectedType === type ? selectedCls : `border-gray-200 ${hoverCls}`}`}
-                      data-testid={`filter-${type}`}
-                    >
-                      <Icon className="h-4 w-4 mr-2" />
-                      {label}
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg font-medium text-gray-900">Current insulin inventory</CardTitle>
-            <p className="text-sm text-gray-600">Manage and track all insulin medications in your clinic</p>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Medication</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Administrative form</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Insulin type</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Dose</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Quantity</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Expiration</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Location</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredMedications.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
-                        {searchQuery || selectedType !== "all"
-                          ? "No medications found matching your criteria."
-                          : "No medications in inventory. Add your first medication to get started."}
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredMedications.map((medication) => {
-                      const daysUntilExpiration = calculateDaysUntilExpiration(medication.expirationDate);
-                      const Icon = typeIcons[medication.type as keyof typeof typeIcons];
-                      
-                      // administrative form display logic:
-                      const adminFormValue =
-                        (medication.administrativeForm as string | undefined) ||
-                        (medication.formType as string | undefined) ||
-                        "";
-                      const adminFormDisplay =
-                        adminFormValue.toLowerCase() === "pen" ? "Pen" : 
-                        adminFormValue.toLowerCase() === "injection" ? "Injection" : "—";
-                      
-                      const rowTint = getRowClassName(medication.type);
-                      return (
-                        <tr
-                          key={medication.id}
-                          className={`${rowTint} hover:bg-gray-50`}
-                          data-testid={`row-medication-${medication.id}`}
-                        >
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div>
-                              <div className="text-sm font-medium text-gray-900" data-testid="text-medical-name">
-                                {medication.medicalName ?? medication.genericName ?? "—"}
-                              </div>
-                              <div className="text-sm text-gray-500" data-testid="text-generic-name">
-                                {medication.genericName ? `(${medication.genericName})` : ""}
-                              </div>
-                            </div>
-                          </td>
-                          {/* Administrative Form */}
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-administrative-form">
-                            {adminFormDisplay}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <Badge className={(badgeColors as any)[medication.type]}>
-                              <Icon className="h-3 w-3 mr-1" />
-                              {(typeLabels as any)[medication.type]}
-                            </Badge>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-dose">
-                            {medication.dose}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span
-                              className={`text-sm font-medium ${
-                                (medication.quantity ?? 0) <= 5 ? "text-red-600" : "text-gray-900"
-                              }`}
-                              data-testid="text-quantity"
-                            >
-                              {medication.quantity ?? 0}
-                            </span>
-                            {(medication.quantity ?? 0) <= 5 && <div className="text-xs text-red-600">Low stock</div>}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className="text-sm text-gray-900" data-testid="text-expiration-date">
-                              {medication.expirationDate ? new Date(medication.expirationDate).toLocaleDateString() : "—"}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" data-testid="text-location">
-                            {medication.location ?? "—"}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap space-x-2">
-                            <Button
-                              onClick={() => handleDispense(medication)}
-                              size="sm"
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                              disabled={(medication.quantity ?? 0) === 0}
-                              data-testid={`button-dispense-${medication.id}`}
-                            >
-                              <HandHeart className="h-4 w-4 mr-1" />
-                              Dispense
-                            </Button>
-                            <Button
-                              onClick={() => handleMove(medication)}
-                              size="sm"
-                              variant="outline"
-                              className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
-                              disabled={(medication.quantity ?? 0) === 0}
-                              data-testid={`button-move-${medication.id}`}
-                            >
-                              <CornerRightDown className="h-4 w-4 mr-1" />
-                              Move
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Give the LowStockTicker a stable id so the button can scroll to it */}
-        <div id="low-stock-ticker" className="mt-8">
-          <LowStockTicker />
-        </div>
-        <OutOfStockTracker />
-      </main>
-
-      <AddMedicationModal
-        open={isAddModalOpen}
-        onOpenChange={setIsAddModalOpen}
-        onSave={(newMed: any) => {
-          // Note: replace with your backend mutation; this is only local client push
-          medications.push(newMed);
-          setIsAddModalOpen(false);
-        }}
-      />
-      <DispenseModal open={isDispenseModalOpen} onOpenChange={setIsDispenseModalOpen} medication={selectedMedication} />
-      <MoveModal open={isMoveModalOpen} onOpenChange={setIsMoveModalOpen} medication={selectedMedication} />
-    </div>
-  );
-}
