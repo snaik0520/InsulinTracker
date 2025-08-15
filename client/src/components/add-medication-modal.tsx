@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
 
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -13,7 +14,29 @@ import { insertMedicationSchema, type InsertMedication, type Medication } from "
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pill, MapPin, Calendar, Hash } from "lucide-react";
+import { Plus, Pill, MapPin, Calendar, Hash, Zap, Clock, Scale, HelpCircle } from "lucide-react";
+
+// Enhanced color scheme consistent with inventory.tsx
+const typeColors = {
+  rapid: "bg-red-100 text-red-800 border-red-200",
+  long: "bg-blue-100 text-blue-800 border-blue-200",
+  intermediate: "bg-amber-100 text-amber-800 border-amber-200",
+  other: "bg-gray-100 text-gray-800 border-gray-200",
+};
+
+const typeIcons = {
+  rapid: Zap,
+  long: Clock,
+  intermediate: Scale,
+  other: HelpCircle,
+};
+
+const typeLabels = {
+  rapid: "Rapid Acting",
+  long: "Long Acting",
+  intermediate: "Intermediate",
+  other: "Other",
+};
 
 interface AddMedicationModalProps {
   open: boolean;
@@ -45,7 +68,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
     for (const med of allMedications) {
       const key = `${med.genericName || ""}||${med.medicalName || ""}`;
       if (!map.has(key)) {
-        const locationCounts = new Map();
+        const locationCounts = new Map<string, number>();
         if (med.location?.trim()) locationCounts.set(med.location.trim(), med.quantity ?? 0);
         map.set(key, { ...med, quantity: med.quantity ?? 0, locationCounts });
       } else {
@@ -211,32 +234,30 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-0">
-        <DialogHeader className="p-6 pb-2">
-          <DialogTitle className="flex items-center gap-2 text-xl font-semibold">
-            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-              <Plus className="w-4 h-4 text-blue-600" />
-            </div>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto enhanced-card">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-xl">
+            <Plus className="h-5 w-5 text-blue-600" />
             Add New Medication
           </DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={form.handleSubmit(onSubmit)} className="px-6 pb-6 space-y-6">
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
           
           {/* Quick Select Section */}
           {existingMedications.length > 0 && (
             <Card className="border-blue-100 bg-blue-50/30">
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-blue-700 flex items-center gap-2">
-                  <Pill className="w-4 h-4" />
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Pill className="h-4 w-4 text-blue-600" />
                   Quick Select (Optional)
                 </CardTitle>
               </CardHeader>
-              <CardContent className="pt-0">
+              <CardContent>
                 {medsLoading ? (
-                  <div className="text-sm text-gray-500">Loading existing medications...</div>
+                  <div className="loading-shimmer h-10 rounded"></div>
                 ) : medsError ? (
-                  <div className="text-sm text-red-600">Failed to load medications.</div>
+                  <p className="text-red-600">Failed to load medications.</p>
                 ) : (
                   <Select
                     value={
@@ -248,13 +269,22 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                     }
                     onValueChange={handleExistingMedicationSelect}
                   >
-                    <SelectTrigger className="bg-white">
-                      <SelectValue placeholder="Select existing medication to auto-fill..." />
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select existing medication to pre-fill form" />
                     </SelectTrigger>
                     <SelectContent>
                       {existingMedications.map((medication) => (
                         <SelectItem key={medication.id} value={medication.id}>
-                          {medication.medicalName} {medication.genericName && `(${medication.genericName})`}
+                          <div className="flex items-center gap-2">
+                            <Badge 
+                              className={`${typeColors[medication.type as keyof typeof typeColors]} text-xs`}
+                            >
+                              {typeLabels[medication.type as keyof typeof typeLabels]}
+                            </Badge>
+                            <span>
+                              {medication.medicalName} {medication.genericName && `(${medication.genericName})`}
+                            </span>
+                          </div>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -266,180 +296,202 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
 
           {/* Basic Information */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-700">Basic Information</CardTitle>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Hash className="h-4 w-4" />
+                Basic Information
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="medicalName" className="text-sm font-medium text-gray-700">
-                    Medical Name *
-                  </Label>
-                  <Input
-                    id="medicalName"
-                    {...form.register("medicalName", {
-                      onChange: (e) => form.setValue("medicalName", capitalizeWords(e.target.value)),
-                    })}
-                    placeholder="e.g., Humalog"
-                    className="mt-1"
-                  />
-                  {formErrors.medicalName && (
-                    <p className="text-red-600 text-xs mt-1">{formErrors.medicalName.message}</p>
-                  )}
-                </div>
-
-                <div>
-                  <Label htmlFor="genericName" className="text-sm font-medium text-gray-700">
-                    Generic Name *
-                  </Label>
-                  <Input
-                    id="genericName"
-                    {...form.register("genericName", {
-                      onChange: (e) => form.setValue("genericName", capitalizeWords(e.target.value)),
-                    })}
-                    placeholder="e.g., Insulin Lispro"
-                    className="mt-1"
-                  />
-                  {formErrors.genericName && (
-                    <p className="text-red-600 text-xs mt-1">{formErrors.genericName.message}</p>
-                  )}
-                </div>
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              
+              <div className="space-y-2">
+                <Label htmlFor="medicalName" className="text-sm font-medium">
+                  Medical Name *
+                </Label>
+                <Input
+                  id="medicalName"
+                  {...form.register("medicalName", {
+                    onChange: (e) => form.setValue("medicalName", capitalizeWords(e.target.value)),
+                  })}
+                  placeholder="e.g., Humalog"
+                  className="mt-1"
+                />
+                {formErrors.medicalName && (
+                  <p className="text-red-600 text-sm">{formErrors.medicalName.message}</p>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <Label htmlFor="type" className="text-sm font-medium text-gray-700">
-                    Insulin Type *
-                  </Label>
-                  <Select onValueChange={(value) => form.setValue("type", value)} value={form.watch("type")}>
-                    <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="rapid">Rapid Acting</SelectItem>
-                      <SelectItem value="long">Long Acting</SelectItem>
-                      <SelectItem value="intermediate">Intermediate</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {formErrors.type && (
-                    <p className="text-red-600 text-xs mt-1">{formErrors.type.message}</p>
-                  )}
-                </div>
-
-                <div>
-                  <Label htmlFor="administrativeForm" className="text-sm font-medium text-gray-700">
-                    Form *
-                  </Label>
-                  <Select
-                    onValueChange={(value) => form.setValue("administrativeForm" as any, value)}
-                    value={form.watch("administrativeForm" as any)}
-                  >
-                    <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="Select form" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="pen">Pen</SelectItem>
-                      <SelectItem value="injection">Injection</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {formErrors.administrativeForm && (
-                    <p className="text-red-600 text-xs mt-1">{formErrors.administrativeForm.message}</p>
-                  )}
-                </div>
-
-                <div>
-                  <Label htmlFor="dose" className="text-sm font-medium text-gray-700">
-                    Dose *
-                  </Label>
-                  <Input
-                    id="dose"
-                    {...form.register("dose", {
-                      onChange: handleDoseChange,
-                    })}
-                    placeholder="e.g., 100 units/mL"
-                    className="mt-1"
-                  />
-                  {formErrors.dose && (
-                    <p className="text-red-600 text-xs mt-1">{formErrors.dose.message}</p>
-                  )}
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="genericName" className="text-sm font-medium">
+                  Generic Name *
+                </Label>
+                <Input
+                  id="genericName"
+                  {...form.register("genericName", {
+                    onChange: (e) => form.setValue("genericName", capitalizeWords(e.target.value)),
+                  })}
+                  placeholder="e.g., Insulin Lispro"
+                  className="mt-1"
+                />
+                {formErrors.genericName && (
+                  <p className="text-red-600 text-sm">{formErrors.genericName.message}</p>
+                )}
               </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">
+                  Insulin Type *
+                </Label>
+                <Select onValueChange={(value) => form.setValue("type", value)} value={form.watch("type")}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select insulin type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(typeLabels).map(([type, label]) => {
+                      const Icon = typeIcons[type as keyof typeof typeIcons];
+                      return (
+                        <SelectItem key={type} value={type}>
+                          <div className="flex items-center gap-2">
+                            <Icon className="h-4 w-4" />
+                            <Badge className={`${typeColors[type as keyof typeof typeColors]} text-xs`}>
+                              {label}
+                            </Badge>
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+                {formErrors.type && (
+                  <p className="text-red-600 text-sm">{formErrors.type.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">
+                  Administrative Form *
+                </Label>
+                <Select
+                  onValueChange={(value) => form.setValue("administrativeForm" as any, value)}
+                  value={form.watch("administrativeForm" as any)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select form" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pen">
+                      <div className="flex items-center gap-2">
+                        <Pill className="h-4 w-4" />
+                        Pen
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="injection">
+                      <div className="flex items-center gap-2">
+                        <Pill className="h-4 w-4" />
+                        Injection
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                {formErrors.administrativeForm && (
+                  <p className="text-red-600 text-sm">{formErrors.administrativeForm.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="dose" className="text-sm font-medium">
+                  Dose *
+                </Label>
+                <Input
+                  id="dose"
+                  {...form.register("dose")}
+                  onChange={handleDoseChange}
+                  placeholder="e.g., 100 units/mL, 0.25mL"
+                  className="mt-1"
+                />
+                {formErrors.dose && (
+                  <p className="text-red-600 text-sm">{formErrors.dose.message}</p>
+                )}
+              </div>
+              
             </CardContent>
           </Card>
 
           {/* Inventory Details */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                <Hash className="w-4 h-4" />
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Hash className="h-4 w-4" />
                 Inventory Details
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="quantity" className="text-sm font-medium text-gray-700">
-                    Quantity *
-                  </Label>
-                  <Input
-                    id="quantity"
-                    type="number"
-                    min="1"
-                    {...form.register("quantity", {
-                      valueAsNumber: true,
-                      validate: (value) => value > 0 || "Quantity must be greater than 0",
-                    })}
-                    placeholder="Enter quantity"
-                    className="mt-1"
-                  />
-                  {formErrors.quantity && (
-                    <p className="text-red-600 text-xs mt-1">{formErrors.quantity.message}</p>
-                  )}
-                </div>
-
-                <div>
-                  <Label htmlFor="expirationDate" className="text-sm font-medium text-gray-700">
-                    <Calendar className="w-4 h-4 inline mr-1" />
-                    Expiration Date *
-                  </Label>
-                  <Input
-                    id="expirationDate"
-                    type="date"
-                    {...form.register("expirationDate")}
-                    className="mt-1"
-                  />
-                  {formErrors.expirationDate && (
-                    <p className="text-red-600 text-xs mt-1">{formErrors.expirationDate.message}</p>
-                  )}
-                </div>
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              
+              <div className="space-y-2">
+                <Label htmlFor="quantity" className="text-sm font-medium">
+                  Quantity *
+                </Label>
+                <Input
+                  id="quantity"
+                  type="number"
+                  {...form.register("quantity", {
+                    valueAsNumber: true,
+                    validate: (value) => value > 0 || "Quantity must be greater than 0",
+                  })}
+                  placeholder="Enter quantity"
+                  className="mt-1"
+                />
+                {formErrors.quantity && (
+                  <p className="text-red-600 text-sm">{formErrors.quantity.message}</p>
+                )}
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="expirationDate" className="text-sm font-medium flex items-center gap-1">
+                  <Calendar className="h-4 w-4" />
+                  Expiration Date *
+                </Label>
+                <Input
+                  id="expirationDate"
+                  type="date"
+                  {...form.register("expirationDate")}
+                  className="mt-1"
+                />
+                {formErrors.expirationDate && (
+                  <p className="text-red-600 text-sm">{formErrors.expirationDate.message}</p>
+                )}
+              </div>
+              
             </CardContent>
           </Card>
 
           {/* Storage Location */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                <MapPin className="w-4 h-4" />
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MapPin className="h-4 w-4" />
                 Storage Location
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              
               {existingLocations.length > 0 && (
-                <div>
-                  <Label className="text-sm text-gray-600">Quick Select Location</Label>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Quick Select Location</Label>
                   <Select
                     value={locationDropdownValue}
                     onValueChange={handleExistingLocationSelect}
                   >
-                    <SelectTrigger className="mt-1 bg-gray-50">
-                      <SelectValue placeholder="Choose existing location..." />
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select existing location" />
                     </SelectTrigger>
                     <SelectContent>
                       {existingLocations.map((loc) => (
                         <SelectItem key={loc} value={loc}>
-                          {loc}
+                          <div className="flex items-center gap-2">
+                            <MapPin className="h-4 w-4" />
+                            {loc}
+                          </div>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -447,43 +499,51 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                 </div>
               )}
 
-              <div>
-                <Label htmlFor="location" className="text-sm font-medium text-gray-700">
+              <div className="space-y-2">
+                <Label htmlFor="location" className="text-sm font-medium">
                   {existingLocations.length > 0 ? "Or Enter New Location *" : "Storage Location *"}
                 </Label>
                 <Input
                   id="location"
-                  {...form.register("location", {
-                    onChange: handleLocationInputChange,
-                  })}
+                  {...form.register("location")}
+                  onChange={handleLocationInputChange}
                   placeholder="e.g., Refrigerator A, Shelf 2"
                   className="mt-1"
                 />
                 {formErrors.location && (
-                  <p className="text-red-600 text-xs mt-1">{formErrors.location.message}</p>
+                  <p className="text-red-600 text-sm">{formErrors.location.message}</p>
                 )}
               </div>
+              
             </CardContent>
           </Card>
 
           {/* Action Buttons */}
-          <div className="flex gap-3 pt-2">
+          <div className="flex justify-end gap-3 pt-4 border-t">
             <Button
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
-              className="flex-1"
-              size="default"
+              className="px-6"
             >
               Cancel
             </Button>
             <Button
               type="submit"
-              className="flex-1 bg-blue-600 hover:bg-blue-700"
               disabled={addMedicationMutation.isPending}
-              size="default"
+              className="bg-blue-600 hover:bg-blue-700 text-white px-6 dispense-button-enhanced"
             >
-              {addMedicationMutation.isPending ? "Adding..." : "Add Medication"}
+              {addMedicationMutation.isPending ? (
+                <div className="flex items-center gap-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  Adding...
+                </div>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Medication
+                </>
+              )}
             </Button>
           </div>
         </form>
