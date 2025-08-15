@@ -20,6 +20,9 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  // Determine if the medication is a pen based on its name
+  const isPen = medication?.medicationName.toLowerCase().includes("pen") ?? false;
+  
   const dispenseMutation = useMutation({
     mutationFn: async (data: { medicationId: string; quantity: number }) => {
       const response = await apiRequest("POST", "/api/medications/dispense", data);
@@ -29,9 +32,14 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
       queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
       queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"] });
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
+      
+      const unit = isPen
+        ? dispenseQuantity === 1 ? "pen" : "pens"
+        : dispenseQuantity === 1 ? "injection" : "injections";
+        
       toast({
         title: "Success",
-        description: `Successfully dispensed ${dispenseQuantity} injection(s)`,
+        description: `Successfully dispensed ${dispenseQuantity} ${unit}`,
         duration: 3000, // 3 seconds
       });
       setDispenseQuantity(1);
@@ -92,10 +100,10 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
         <div className="space-y-4">
           <div>
             <p className="text-sm text-gray-900" data-testid="text-medication-name">
-              {medication.genericName} ({medication.medicalName})
+              {medication.medicalName} ({medication.genericName})
             </p>
             <p className="text-xs text-gray-500 mt-1" data-testid="text-available-stock">
-              Available: {medication.quantity} injections
+              Available: {medication.quantity} {isPen ? (medication.quantity === 1 ? 'pen' : 'pens') : (medication.quantity === 1 ? 'injection' : 'injections')}
             </p>
           </div>
 
