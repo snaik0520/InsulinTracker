@@ -1,9 +1,11 @@
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -11,12 +13,11 @@ import { insertMedicationSchema, type InsertMedication, type Medication } from "
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Plus } from "lucide-react";
+import { Plus, Pill, MapPin, Calendar, Hash } from "lucide-react";
 
 interface AddMedicationModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  // keep optional onSave for backward compatibility (Inventory uses onSave in some earlier versions)
   onSave?: (med: Medication) => void;
 }
 
@@ -26,7 +27,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
 
   const capitalizeWords = (str: string) => str.replace(/\b\w/g, (c) => c.toUpperCase());
 
-  const { data: allMedications = [], isLoading: medsLoading, isError: medsError } = useQuery<Medication[]>({
+  const { data: allMedications = [], isLoading: medsLoading, isError: medsError } = useQuery({
     queryKey: ["/api/medications"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/medications");
@@ -44,7 +45,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
     for (const med of allMedications) {
       const key = `${med.genericName || ""}||${med.medicalName || ""}`;
       if (!map.has(key)) {
-        const locationCounts = new Map<string, number>();
+        const locationCounts = new Map();
         if (med.location?.trim()) locationCounts.set(med.location.trim(), med.quantity ?? 0);
         map.set(key, { ...med, quantity: med.quantity ?? 0, locationCounts });
       } else {
@@ -65,7 +66,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
     return Array.from(set);
   }, [allMedications]);
 
-  const form = useForm<InsertMedication>({
+  const form = useForm({
     resolver: zodResolver(insertMedicationSchema),
     defaultValues: {
       medicalName: "",
@@ -75,7 +76,6 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
       quantity: 0,
       expirationDate: "",
       location: "",
-      // add administrativeForm default
       administrativeForm: "",
     } as any,
   });
@@ -98,12 +98,11 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
       form.setValue("dose", medication.dose || "");
       form.setValue("quantity", 0);
       form.setValue("expirationDate", "");
-      // set administrative form from either administrativeForm or formType (backwards compat)
+      
       const adminFrom =
         (medication as any).administrativeForm ||
         (medication as any).formType ||
         "";
-      // normalize to lowercase token 'pen' or 'injection'
       const normalized =
         typeof adminFrom === "string"
           ? adminFrom.toLowerCase() === "pen"
@@ -141,7 +140,6 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
     form.setValue("location", capitalizeWords(e.target.value));
   };
 
-  const watchDose = form.watch("dose");
   const handleDoseChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let val = e.target.value;
     if (/^\.\d*$/.test(val)) val = "0" + val;
@@ -163,7 +161,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
       form.setError("quantity", { type: "manual", message: "Quantity must be greater than 0" });
       return;
     }
-    // validate administrativeForm
+    
     const admin = (form.getValues() as any).administrativeForm;
     if (!admin || (admin !== "pen" && admin !== "injection")) {
       form.setError("administrativeForm" as any, { type: "manual", message: "Administrative Form is required" });
@@ -172,7 +170,6 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
 
     const effectiveLocation = watchLocationInput.trim() !== "" ? watchLocationInput.trim() : locationDropdownValue;
 
-    // Build payload (include administrativeForm explicitly for safety)
     const payload = {
       ...data,
       location: effectiveLocation,
@@ -188,21 +185,18 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
       return response.json();
     },
     onSuccess: async (res: any) => {
-  // Invalidate and refetch queries to ensure UI updates
-  await Promise.all([
-    queryClient.invalidateQueries({ queryKey: ["/api/medications"], refetchType: 'active' }),
-    queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"], refetchType: 'active' }),
-    queryClient.invalidateQueries({ queryKey: ["/api/transactions"], refetchType: 'active' })
-  ]);
-  
-  toast({ title: "Success", description: "Medication added successfully", duration: 3000 });
-  form.reset();
-  setLocationDropdownValue("");
-  onOpenChange(false);
-  // optional callback for callers
-  onSave?.(res);
-}
-,
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/medications"], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ["/api/transactions"], refetchType: 'active' })
+      ]);
+      
+      toast({ title: "Success", description: "Medication added successfully", duration: 3000 });
+      form.reset();
+      setLocationDropdownValue("");
+      onOpenChange(false);
+      onSave?.(res);
+    },
     onError: (error: any) => {
       toast({
         title: "Error",
@@ -213,203 +207,284 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
     },
   });
 
-  const medicalNameError = (form.formState.errors as any).medicalName;
-  const genericNameError = (form.formState.errors as any).genericName;
-  const typeError = (form.formState.errors as any).type;
-  const doseError = (form.formState.errors as any).dose;
-  const quantityError = (form.formState.errors as any).quantity;
-  const expirationDateError = (form.formState.errors as any).expirationDate;
-  const locationError = (form.formState.errors as any).location;
-  const administrativeFormError = (form.formState.errors as any).administrativeForm;
+  const formErrors = form.formState.errors as any;
 
   return (
-  <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-      <DialogHeader>
-        <DialogTitle className="text-lg">
-          <Plus className="w-4 h-4 inline mr-2" />
-          Add Insulin Medication
-        </DialogTitle>
-      </DialogHeader>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-0">
+        <DialogHeader className="p-6 pb-2">
+          <DialogTitle className="flex items-center gap-2 text-xl font-semibold">
+            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+              <Plus className="w-4 h-4 text-blue-600" />
+            </div>
+            Add New Medication
+          </DialogTitle>
+        </DialogHeader>
 
-
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          {medsLoading ? (
-            <div className="p-3">Loading medications...</div>
-          ) : medsError ? (
-            <div className="p-3 text-destructive">Failed to load existing medications.</div>
-          ) : existingMedications.length > 0 ? (
-            <div className="space-y-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
-              <Label className="text-sm font-medium text-blue-800">Select Existing Medication (Optional)</Label>
-              <Select
-                onValueChange={handleExistingMedicationSelect}
-                value={
-                  form.watch("medicalName")
-                    ? existingMedications.find(
+        <form onSubmit={form.handleSubmit(onSubmit)} className="px-6 pb-6 space-y-6">
+          
+          {/* Quick Select Section */}
+          {existingMedications.length > 0 && (
+            <Card className="border-blue-100 bg-blue-50/30">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium text-blue-700 flex items-center gap-2">
+                  <Pill className="w-4 h-4" />
+                  Quick Select (Optional)
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                {medsLoading ? (
+                  <div className="text-sm text-gray-500">Loading existing medications...</div>
+                ) : medsError ? (
+                  <div className="text-sm text-red-600">Failed to load medications.</div>
+                ) : (
+                  <Select
+                    value={
+                      existingMedications.find(
                         (med) =>
                           med.medicalName === form.watch("medicalName") &&
                           med.genericName === form.watch("genericName")
                       )?.id ?? ""
-                    : ""
-                }
-              >
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                <SelectContent>
-                  {existingMedications.map((medication) => (
-                    <SelectItem key={medication.id} value={medication.id}>
-                      {medication.medicalName} {medication.genericName && `(${medication.genericName})`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          ) : (
-            <div className="p-3 text-sm text-muted-foreground">No existing medications in inventory.</div>
+                    }
+                    onValueChange={handleExistingMedicationSelect}
+                  >
+                    <SelectTrigger className="bg-white">
+                      <SelectValue placeholder="Select existing medication to auto-fill..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {existingMedications.map((medication) => (
+                        <SelectItem key={medication.id} value={medication.id}>
+                          {medication.medicalName} {medication.genericName && `(${medication.genericName})`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </CardContent>
+            </Card>
           )}
 
-          {/* Medical Name then Generic Name */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>
-                Medical Name <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                placeholder="e.g., Humalog"
-                value={form.watch("medicalName")}
-                onChange={(e) => form.setValue("medicalName", capitalizeWords(e.target.value))}
-                required
-              />
-              {medicalNameError && <p className="text-sm text-destructive">{medicalNameError.message}</p>}
-            </div>
-            <div>
-              <Label>
-                Generic Name <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                placeholder="e.g., Insulin Lispro"
-                value={form.watch("genericName")}
-                onChange={(e) => form.setValue("genericName", capitalizeWords(e.target.value))}
-                required
-              />
-              {genericNameError && <p className="text-sm text-destructive">{genericNameError.message}</p>}
-            </div>
-          </div>
+          {/* Basic Information */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-gray-700">Basic Information</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="medicalName" className="text-sm font-medium text-gray-700">
+                    Medical Name *
+                  </Label>
+                  <Input
+                    id="medicalName"
+                    {...form.register("medicalName", {
+                      onChange: (e) => form.setValue("medicalName", capitalizeWords(e.target.value)),
+                    })}
+                    placeholder="e.g., Humalog"
+                    className="mt-1"
+                  />
+                  {formErrors.medicalName && (
+                    <p className="text-red-600 text-xs mt-1">{formErrors.medicalName.message}</p>
+                  )}
+                </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>
-                Insulin Type <span className="text-destructive">*</span>
-              </Label>
-              <Select value={form.watch("type")} onValueChange={(value) => form.setValue("type", value)} required>
-                <SelectTrigger><SelectValue placeholder="Select type..." /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="rapid">Rapid Acting</SelectItem>
-                  <SelectItem value="long">Long Acting</SelectItem>
-                  <SelectItem value="intermediate">Intermediate</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-              {typeError && <p className="text-sm text-destructive">{typeError.message}</p>}
-            </div>
-            <div>
-              <Label>
-                Dose <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                placeholder="e.g., 100 units/mL"
-                value={watchDose}
-                onChange={handleDoseChange}
-                required
-              />
-              {doseError && <p className="text-sm text-destructive">{doseError.message}</p>}
-            </div>
-          </div>
+                <div>
+                  <Label htmlFor="genericName" className="text-sm font-medium text-gray-700">
+                    Generic Name *
+                  </Label>
+                  <Input
+                    id="genericName"
+                    {...form.register("genericName", {
+                      onChange: (e) => form.setValue("genericName", capitalizeWords(e.target.value)),
+                    })}
+                    placeholder="e.g., Insulin Lispro"
+                    className="mt-1"
+                  />
+                  {formErrors.genericName && (
+                    <p className="text-red-600 text-xs mt-1">{formErrors.genericName.message}</p>
+                  )}
+                </div>
+              </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>
-                Quantity <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                type="number"
-                min="1"
-                {...form.register("quantity", {
-                  required: "Quantity is required",
-                  valueAsNumber: true,
-                  validate: (value) => value > 0 || "Quantity must be greater than 0",
-                })}
-                required
-              />
-              {quantityError && <p className="text-sm text-destructive">{quantityError.message}</p>}
-            </div>
-            <div>
-              <Label>
-                Expiration Date <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                type="date"
-                {...form.register("expirationDate", { required: "Expiration date is required" })}
-                required
-              />
-              {expirationDateError && <p className="text-sm text-destructive">{expirationDateError.message}</p>}
-            </div>
-          </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="type" className="text-sm font-medium text-gray-700">
+                    Insulin Type *
+                  </Label>
+                  <Select onValueChange={(value) => form.setValue("type", value)} value={form.watch("type")}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="rapid">Rapid Acting</SelectItem>
+                      <SelectItem value="long">Long Acting</SelectItem>
+                      <SelectItem value="intermediate">Intermediate</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {formErrors.type && (
+                    <p className="text-red-600 text-xs mt-1">{formErrors.type.message}</p>
+                  )}
+                </div>
 
-          {/* Administrative Form */}
-          <div>
-            <Label>
-              Administrative Form <span className="text-destructive">*</span>
-            </Label>
-            <Select
-              value={(form.watch("administrativeForm") as any) ?? ""}
-              onValueChange={(value) => form.setValue("administrativeForm" as any, value)}
-              required
+                <div>
+                  <Label htmlFor="administrativeForm" className="text-sm font-medium text-gray-700">
+                    Form *
+                  </Label>
+                  <Select
+                    onValueChange={(value) => form.setValue("administrativeForm" as any, value)}
+                    value={form.watch("administrativeForm" as any)}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Select form" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pen">Pen</SelectItem>
+                      <SelectItem value="injection">Injection</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {formErrors.administrativeForm && (
+                    <p className="text-red-600 text-xs mt-1">{formErrors.administrativeForm.message}</p>
+                  )}
+                </div>
+
+                <div>
+                  <Label htmlFor="dose" className="text-sm font-medium text-gray-700">
+                    Dose *
+                  </Label>
+                  <Input
+                    id="dose"
+                    {...form.register("dose", {
+                      onChange: handleDoseChange,
+                    })}
+                    placeholder="e.g., 100 units/mL"
+                    className="mt-1"
+                  />
+                  {formErrors.dose && (
+                    <p className="text-red-600 text-xs mt-1">{formErrors.dose.message}</p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Inventory Details */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                <Hash className="w-4 h-4" />
+                Inventory Details
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="quantity" className="text-sm font-medium text-gray-700">
+                    Quantity *
+                  </Label>
+                  <Input
+                    id="quantity"
+                    type="number"
+                    min="1"
+                    {...form.register("quantity", {
+                      valueAsNumber: true,
+                      validate: (value) => value > 0 || "Quantity must be greater than 0",
+                    })}
+                    placeholder="Enter quantity"
+                    className="mt-1"
+                  />
+                  {formErrors.quantity && (
+                    <p className="text-red-600 text-xs mt-1">{formErrors.quantity.message}</p>
+                  )}
+                </div>
+
+                <div>
+                  <Label htmlFor="expirationDate" className="text-sm font-medium text-gray-700">
+                    <Calendar className="w-4 h-4 inline mr-1" />
+                    Expiration Date *
+                  </Label>
+                  <Input
+                    id="expirationDate"
+                    type="date"
+                    {...form.register("expirationDate")}
+                    className="mt-1"
+                  />
+                  {formErrors.expirationDate && (
+                    <p className="text-red-600 text-xs mt-1">{formErrors.expirationDate.message}</p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Storage Location */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                <MapPin className="w-4 h-4" />
+                Storage Location
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {existingLocations.length > 0 && (
+                <div>
+                  <Label className="text-sm text-gray-600">Quick Select Location</Label>
+                  <Select
+                    value={locationDropdownValue}
+                    onValueChange={handleExistingLocationSelect}
+                  >
+                    <SelectTrigger className="mt-1 bg-gray-50">
+                      <SelectValue placeholder="Choose existing location..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {existingLocations.map((loc) => (
+                        <SelectItem key={loc} value={loc}>
+                          {loc}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              <div>
+                <Label htmlFor="location" className="text-sm font-medium text-gray-700">
+                  {existingLocations.length > 0 ? "Or Enter New Location *" : "Storage Location *"}
+                </Label>
+                <Input
+                  id="location"
+                  {...form.register("location", {
+                    onChange: handleLocationInputChange,
+                  })}
+                  placeholder="e.g., Refrigerator A, Shelf 2"
+                  className="mt-1"
+                />
+                {formErrors.location && (
+                  <p className="text-red-600 text-xs mt-1">{formErrors.location.message}</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Action Buttons */}
+          <div className="flex gap-3 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              className="flex-1"
+              size="default"
             >
-              <SelectTrigger>
-                <SelectValue placeholder="Select administrative form..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="injection">Injection</SelectItem>
-                <SelectItem value="pen">Pen</SelectItem>
-              </SelectContent>
-            </Select>
-            {administrativeFormError && <p className="text-sm text-destructive">{administrativeFormError.message}</p>}
-          </div>
-
-          {/* Location selector */}
-          <div className="space-y-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
-            <Label className="text-sm font-medium text-blue-800">Select Existing Storage Location (Optional)</Label>
-            {existingLocations.length > 0 ? (
-              <Select onValueChange={handleExistingLocationSelect} value={locationDropdownValue}>
-                <SelectTrigger><SelectValue placeholder="Select a location..." /></SelectTrigger>
-                <SelectContent>
-                  {existingLocations.map((loc) => (
-                    <SelectItem key={loc} value={loc}>{loc}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <div className="p-3 text-sm text-muted-foreground">No existing storage locations found.</div>
-            )}
-          </div>
-
-          <div>
-            <Label>
-              Or Type New Storage Location <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              placeholder="e.g., Fridge A - Shelf 2"
-              value={watchLocationInput}
-              onChange={handleLocationInputChange}
-            />
-            {locationError && <p className="text-sm text-destructive">{locationError.message}</p>}
-          </div>
-
-          <div className="flex gap-3 pt-4">
-            <Button type="submit" className="flex-1" disabled={addMedicationMutation.isLoading}>
-              {addMedicationMutation.isLoading ? "Adding..." : <><Plus className="h-4 w-4 mr-2" />Add Medication</>}
+              Cancel
             </Button>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button
+              type="submit"
+              className="flex-1 bg-blue-600 hover:bg-blue-700"
+              disabled={addMedicationMutation.isPending}
+              size="default"
+            >
+              {addMedicationMutation.isPending ? "Adding..." : "Add Medication"}
+            </Button>
           </div>
         </form>
       </DialogContent>
