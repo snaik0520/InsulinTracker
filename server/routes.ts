@@ -9,6 +9,12 @@ const dispenseSchema = z.object({
   quantity: z.number().min(1),
 });
 
+const moveSchema = z.object({
+  medicationId: z.string(),
+  newLocation: z.string().min(1),
+  comment: z.string().optional(),
+});
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Get all medications
   app.get("/api/medications", async (req, res) => {
@@ -27,7 +33,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!query) {
         return res.status(400).json({ error: "Search query is required" });
       }
-      
+
       const medications = await storage.searchMedications(query);
       res.json(medications);
     } catch (error) {
@@ -51,16 +57,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const medicationData = insertMedicationSchema.parse(req.body);
       const medication = await storage.createMedication(medicationData);
-      
+
       // Log the addition transaction
-await storage.createTransaction({
-  medicationId: medication.id,
-  medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
-  type: "addition",
-  quantity: medication.quantity,
-  notes: "New medication added to inventory"
-});
-      
+      await storage.createTransaction({
+        medicationId: medication.id,
+        medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
+        type: "addition",
+        quantity: medication.quantity,
+        notes: "New medication added to inventory"
+      });
+
       res.status(201).json(medication);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -75,7 +81,7 @@ await storage.createTransaction({
   app.post("/api/medications/dispense", async (req, res) => {
     try {
       const { medicationId, quantity } = dispenseSchema.parse(req.body);
-      
+
       const medication = await storage.getMedicationById(medicationId);
       if (!medication) {
         return res.status(404).json({ error: "Medication not found" });
@@ -91,14 +97,13 @@ await storage.createTransaction({
       );
 
       // Log the dispensing transaction
-await storage.createTransaction({
-  medicationId: medication.id,
-  medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
-  type: "dispensed",
-  quantity: quantity,
-  notes: `Dispensed to patient`
-});
-
+      await storage.createTransaction({
+        medicationId: medication.id,
+        medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
+        type: "dispensed",
+        quantity: quantity,
+        notes: `Dispensed to patient`
+      });
 
       res.json(updatedMedication);
     } catch (error) {
@@ -106,6 +111,46 @@ await storage.createTransaction({
         res.status(400).json({ error: "Invalid dispense data", details: error.errors });
       } else {
         res.status(500).json({ error: "Failed to dispense medication" });
+      }
+    }
+  });
+
+  // Move medication to new location
+  app.post("/api/medications/move", async (req, res) => {
+    try {
+      const { medicationId, newLocation, comment } = moveSchema.parse(req.body);
+
+      const medication = await storage.getMedicationById(medicationId);
+      if (!medication) {
+        return res.status(404).json({ error: "Medication not found" });
+      }
+
+      const oldLocation = medication.location;
+
+      if (oldLocation === newLocation) {
+        return res.status(400).json({ error: "New location cannot be the same as current location" });
+      }
+
+      const updatedMedication = await storage.updateMedicationLocation(
+        medicationId,
+        newLocation
+      );
+
+      // Log the move transaction
+      await storage.createTransaction({
+        medicationId: medication.id,
+        medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
+        type: "move",
+        quantity: medication.quantity, // Track current quantity at time of move
+        notes: comment ? `Moved from ${oldLocation} to ${newLocation}. ${comment}` : `Moved from ${oldLocation} to ${newLocation}`,
+      });
+
+      res.json(updatedMedication);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: "Invalid move data", details: error.errors });
+      } else {
+        res.status(500).json({ error: "Failed to move medication" });
       }
     }
   });
