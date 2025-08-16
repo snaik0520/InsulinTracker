@@ -1,4 +1,3 @@
-
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
@@ -107,7 +106,6 @@ export default function Inventory() {
 
   const filteredMedications = useMemo(() => {
     let filtered = medications;
-
     filtered = filtered.filter((medication) => (medication.quantity ?? 0) > 0);
 
     if (searchQuery) {
@@ -192,24 +190,25 @@ export default function Inventory() {
                 </div>
               </div>
 
-              <div className="flex gap-3 flex-shrink-0">
+              <div className="flex gap-3 flex-shrink-0 items-center">
                 <Button
                   onClick={scrollToTrackers}
-                  size="sm"
+                  size="default"
                   variant="outline"
-                  className="flex items-center border-rose-200 text-rose-700 hover:bg-rose-50"
+                  className="flex items-center border-rose-200 text-rose-700 hover:bg-rose-50 h-10 px-4"
                   data-testid="button-jump-low-outstock"
                   title="Jump to low / out of stock trackers"
                 >
                   <List className="h-4 w-4 mr-2" />
                   Low / Out of Stock
                 </Button>
-
-                <TransactionHistory />
-
+                <div className="h-10 flex items-center">
+                  <TransactionHistory />
+                </div>
                 <Button
                   onClick={() => setIsAddModalOpen(true)}
-                  className="bg-rose-600 hover:bg-rose-700 text-white"
+                  size="default"
+                  className="bg-rose-600 hover:bg-rose-700 text-white h-10 px-4"
                   data-testid="button-add-medication"
                 >
                   <Plus className="h-4 w-4 mr-2" />
@@ -229,18 +228,16 @@ export default function Inventory() {
                 >
                   <List className="h-4 w-4 mr-2" /> All types
                 </Button>
-
                 {Object.entries(typeLabels).map(([type, label]) => {
                   const Icon = typeIcons[type as keyof typeof typeIcons];
                   const selectedCls = (filterSelectedClasses as any)[type];
                   const hoverCls = (filterHoverClasses as any)[type];
-
                   return (
                     <Button
                       key={type}
                       variant={selectedType === type ? "default" : "outline"}
                       onClick={() => setSelectedType(type)}
-                      className={`text-sm ${selectedType === type ? selectedCls : `border-gray-200 ${hoverCls}`} `}
+                      className={`text-sm ${selectedType === type ? selectedCls : `border-gray-200 ${hoverCls}`}`}
                       data-testid={`filter-${type}`}
                     >
                       <Icon className="h-4 w-4 mr-2" />
@@ -263,17 +260,14 @@ export default function Inventory() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Medication</th>
-
-                    {/* Administrative Form column */}
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Administrative form</th>
-
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Insulin type</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Dose</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Quantity</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Expiration</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Location</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Actions</th>
+                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Medication</th>
+                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Administrative form</th>
+                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Insulin type</th>
+                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Dose</th>
+                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Quantity</th>
+                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Expiration</th>
+                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Location</th>
+                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -289,7 +283,6 @@ export default function Inventory() {
                     filteredMedications.map((medication) => {
                       const daysUntilExpiration = calculateDaysUntilExpiration(medication.expirationDate);
                       const Icon = typeIcons[medication.type as keyof typeof typeIcons];
-
                       // administrative form display logic:
                       const adminFormValue =
                         (medication.administrativeForm as string | undefined) ||
@@ -297,16 +290,15 @@ export default function Inventory() {
                         "";
                       const adminFormDisplay =
                         adminFormValue.toLowerCase() === "pen" ? "Pen" : adminFormValue.toLowerCase() === "injection" ? "Injection" : "—";
-
+                      
                       const rowTint = getRowClassName(medication.type);
-
                       return (
                         <tr
                           key={medication.id}
                           className={`${rowTint} hover:bg-gray-50`}
                           data-testid={`row-medication-${medication.id}`}
                         >
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
                             <div>
                               <div className="text-sm font-medium text-gray-900" data-testid="text-medical-name">
                                 {medication.medicalName ?? medication.genericName ?? "—"}
@@ -316,24 +308,21 @@ export default function Inventory() {
                               </div>
                             </div>
                           </td>
-
-                          {/* Administrative Form */}
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-administrative-form">
+                          <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900" data-testid="text-administrative-form">
                             {adminFormDisplay}
                           </td>
-
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <Badge className={(badgeColors as any)[medication.type]}>
-                              <Icon className="h-3 w-3 mr-1" />
-                              {(typeLabels as any)[medication.type]}
-                            </Badge>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <div className="flex justify-center">
+                              <Badge className={(badgeColors as any)[medication.type]}>
+                                <Icon className="h-3 w-3 mr-1" />
+                                {(typeLabels as any)[medication.type]}
+                              </Badge>
+                            </div>
                           </td>
-
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-dose">
+                          <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900" data-testid="text-dose">
                             {medication.dose}
                           </td>
-
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
                             <span
                               className={`text-sm font-medium ${
                                 (medication.quantity ?? 0) <= 5 ? "text-red-600" : "text-gray-900"
@@ -344,18 +333,15 @@ export default function Inventory() {
                             </span>
                             {(medication.quantity ?? 0) <= 5 && <div className="text-xs text-red-600">Low stock</div>}
                           </td>
-
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
                             <span className="text-sm text-gray-900" data-testid="text-expiration-date">
                               {medication.expirationDate ? new Date(medication.expirationDate).toLocaleDateString() : "—"}
                             </span>
                           </td>
-
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" data-testid="text-location">
+                          <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500" data-testid="text-location">
                             {medication.location ?? "—"}
                           </td>
-
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
                             <Button
                               onClick={() => handleDispense(medication)}
                               size="sm"
@@ -381,7 +367,6 @@ export default function Inventory() {
         <div id="low-stock-ticker" className="mt-8">
           <LowStockTicker />
         </div>
-
         <OutOfStockTracker />
       </main>
 
@@ -394,7 +379,6 @@ export default function Inventory() {
           setIsAddModalOpen(false);
         }}
       />
-
       <DispenseModal open={isDispenseModalOpen} onOpenChange={setIsDispenseModalOpen} medication={selectedMedication} />
     </div>
   );
