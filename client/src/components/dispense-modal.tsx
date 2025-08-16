@@ -1,207 +1,180 @@
 import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useQuery } from "@tanstack/react-query";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { type Medication } from "@shared/schema";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
-import { HandHeart, Minus, Plus, Check } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { History, Plus, Minus, Clock } from "lucide-react";
 
-interface DispenseModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  medication: Medication | null;
-}
+// Type Definitions
+type Transaction = {
+  id: string;
+  medicationName: string;
+  quantity: number;
+  type: "dispense" | "add";
+  timestamp: string;
+  comment?: string;
+};
 
-export function DispenseModal({ open, onOpenChange, medication }: DispenseModalProps) {
-  // allow empty string initially so box is blank; otherwise a number
-  const [dispenseQuantity, setDispenseQuantity] = useState<number | "">("");
-  const [comment, setComment] = useState<string>(""); // New: comment field
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
+export function TransactionHistory() {
+  const [isOpen, setIsOpen] = useState(false);
 
-  const dispenseMutation = useMutation({
-    mutationFn: async (data: { medicationId: string; quantity: number; comment?: string }) => {
-      const response = await apiRequest("POST", "/api/medications/dispense", data);
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
-      toast({
-        title: "Success",
-        description: `Successfully dispensed medication`,
-        duration: 3000,
-      });
-      setDispenseQuantity("");
-      setComment("");
-      onOpenChange(false);
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-        duration: 3000,
-      });
-    },
+  const { data: transactions = [], isLoading } = useQuery<Transaction[]>({
+    queryKey: ["/api/transactions"],
+    enabled: isOpen, // Only fetch when modal is open
+    refetchOnMount: true,
   });
 
-  const handleDispense = () => {
-    if (!medication) return;
-    if (dispenseQuantity === "" || typeof dispenseQuantity !== "number" || dispenseQuantity < 1) {
-      toast({
-        title: "Error",
-        description: "Please enter a quantity of at least 1",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (dispenseQuantity > medication.quantity) {
-      toast({
-        title: "Error",
-        description: "Cannot dispense more than available stock",
-        variant: "destructive",
-      });
-      return;
-    }
-    dispenseMutation.mutate({
-      medicationId: medication.id,
-      quantity: dispenseQuantity,
-      comment: comment || undefined, // pass comment
-    });
+  const formatTimestamp = (timestamp: string | Date) => {
+    const date = new Date(timestamp);
+    return {
+      date: date.toLocaleDateString(),
+      time: date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    };
   };
 
-  const incrementQuantity = () => {
-    if (!medication) return;
-    if (dispenseQuantity === "") {
-      setDispenseQuantity(1);
-      return;
-    }
-    if (typeof dispenseQuantity === "number" && dispenseQuantity < medication.quantity) {
-      setDispenseQuantity(dispenseQuantity + 1);
+  const getTransactionIcon = (type: string) => {
+    switch (type) {
+      case "add":
+        return Plus;
+      case "dispense":
+        return Minus;
+      default:
+        return Clock;
     }
   };
 
-  const decrementQuantity = () => {
-    if (dispenseQuantity === "" || typeof dispenseQuantity !== "number") return;
-    if (dispenseQuantity > 1) {
-      setDispenseQuantity(dispenseQuantity - 1);
+  const getTransactionColor = (type: string) => {
+    switch (type) {
+      case "add":
+        return "bg-green-100 text-green-800 border-green-200";
+      case "dispense":
+        return "bg-red-100 text-red-800 border-red-200";
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-200";
     }
   };
 
-  if (!medication) return null;
-  const qtyNumber = typeof dispenseQuantity === "number" ? dispenseQuantity : 0;
-  const decrementDisabled = qtyNumber <= 1;
-  const incrementDisabled = qtyNumber >= medication.quantity;
+  const getTransactionTitle = (type: string) => {
+    switch (type) {
+      case "add":
+        return "Added";
+      case "dispense":
+        return "Dispensed";
+      default:
+        return "Updated";
+    }
+  };
+
+  const getTransactionDescription = (tx: Transaction) => {
+    if (tx.type === "add") {
+      const isPen = tx.medicationName.toLowerCase().includes("pen");
+      const unit = isPen
+        ? tx.quantity === 1
+          ? "pen"
+          : "pens"
+        : tx.quantity === 1
+        ? "injection"
+        : "injections";
+      return `${tx.quantity} ${unit} added to inventory`;
+    } else if (tx.type === "dispense") {
+      const isPen = tx.medicationName.toLowerCase().includes("pen");
+      const unit = isPen
+        ? tx.quantity === 1
+          ? "pen"
+          : "pens"
+        : tx.quantity === 1
+        ? "injection"
+        : "injections";
+      return `${tx.quantity} ${unit} dispensed to patient`;
+    }
+    return `${tx.quantity} units updated`;
+  };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md" data-testid="modal-dispense-medication">
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50">
+          <History className="h-4 w-4 mr-2" />
+          Transaction History
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[600px] max-h-[80vh]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <HandHeart className="h-5 w-5 text-green-600" />
-            Dispense Medication
+          <DialogTitle className="flex items-center gap-2 text-blue-700">
+            <History className="h-5 w-5" />
+            Medication Transaction History
           </DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <p className="text-sm text-gray-900" data-testid="text-medication-name">
-              {medication.medicalName} ({medication.genericName})
-            </p>
-            <p className="text-xs text-gray-500 mt-1" data-testid="text-available-stock">
-              Available: {medication.quantity}
-            </p>
-          </div>
-          <div>
-            <Label htmlFor="dispenseQuantity">Quantity to Dispense</Label>
-            <div className="flex items-center space-x-2 mt-1">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={decrementQuantity}
-                disabled={decrementDisabled}
-                data-testid="button-decrement"
-              >
-                <Minus className="h-4 w-4" />
-              </Button>
-              <Input
-                id="dispenseQuantity"
-                type="number"
-                min={1}
-                max={medication.quantity}
-                value={dispenseQuantity === "" ? "" : dispenseQuantity}
-                onChange={(e) => {
-                  const raw = e.target.value;
-                  if (raw === "") {
-                    setDispenseQuantity("");
-                    return;
-                  }
-                  const parsed = parseInt(raw, 10);
-                  if (isNaN(parsed)) {
-                    setDispenseQuantity("");
-                    return;
-                  }
-                  const clamped = Math.max(1, Math.min(parsed, medication.quantity));
-                  setDispenseQuantity(clamped);
-                }}
-                className="w-20 text-center"
-                data-testid="input-dispense-quantity"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={incrementQuantity}
-                disabled={incrementDisabled}
-                data-testid="button-increment"
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
+        <ScrollArea className="h-full max-h-[60vh] pr-4">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <span className="ml-2 text-blue-600">Loading transactions...</span>
             </div>
-          </div>
-          {/* NEW: Optional Comment Input */}
-          <div>
-            <Label htmlFor="dispenseComment">Optional Comment</Label>
-            <Input
-              id="dispenseComment"
-              type="text"
-              placeholder="Add a comment (optional)"
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              className="mt-1"
-              data-testid="input-dispense-comment"
-            />
-          </div>
-          <div className="flex gap-3 pt-4">
-            <Button
-              onClick={handleDispense}
-              className="flex-1 bg-green-600 hover:bg-green-700"
-              disabled={dispenseMutation.isPending}
-              data-testid="button-confirm-dispense"
-            >
-              {dispenseMutation.isPending ? (
-                "Dispensing..."
-              ) : (
-                <>
-                  <Check className="h-4 w-4 mr-2" />
-                  Confirm Dispense
-                </>
-              )}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              data-testid="button-cancel-dispense"
-            >
-              Cancel
-            </Button>
-          </div>
-        </div>
+          ) : transactions.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">
+              <History className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+              <h3 className="text-lg font-medium mb-2">No transactions recorded yet.</h3>
+              <p className="text-sm">
+                Add or dispense medications to see transaction history.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {transactions.map((tx) => {
+                const { date, time } = formatTimestamp(tx.timestamp);
+                const Icon = getTransactionIcon(tx.type);
+                const nameOnly = tx.medicationName.split(" - ")[0];
+                const [generic, withParen] = nameOnly.split(" (");
+                const medical = withParen?.replace(")", "") ?? "";
+                
+                return (
+                  <div
+                    key={tx.id}
+                    className="border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start gap-3 flex-1 min-w-0">
+                        <div className={`p-2 rounded-full ${getTransactionColor(tx.type)}`}>
+                          <Icon className="h-4 w-4" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-medium text-gray-900 truncate">
+                            {generic} {medical && `(${medical})`}
+                          </h4>
+                          <p className="text-sm text-gray-600 mt-2">
+                            {getTransactionDescription(tx)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="ml-4 flex flex-col items-end text-right">
+                        <Badge
+                          variant="outline"
+                          className={`${getTransactionColor(tx.type)} px-2 py-1`}
+                        >
+                          {getTransactionTitle(tx.type)}
+                        </Badge>
+                        <div className="flex items-center gap-1 text-xs text-gray-500 mt-2">
+                          <Clock className="h-3 w-3" />
+                          <span>
+                            {date} at {time}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </ScrollArea>
       </DialogContent>
     </Dialog>
   );
