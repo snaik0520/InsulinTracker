@@ -18,11 +18,12 @@ interface DispenseModalProps {
 export function DispenseModal({ open, onOpenChange, medication }: DispenseModalProps) {
   // allow empty string initially so box is blank; otherwise a number
   const [dispenseQuantity, setDispenseQuantity] = useState<number | "">("");
+  const [comment, setComment] = useState<string>(""); // New: comment field
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const dispenseMutation = useMutation({
-    mutationFn: async (data: { medicationId: string; quantity: number }) => {
+    mutationFn: async (data: { medicationId: string; quantity: number; comment?: string }) => {
       const response = await apiRequest("POST", "/api/medications/dispense", data);
       return response.json();
     },
@@ -30,16 +31,13 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
       queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
       queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"] });
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
-
-      
       toast({
         title: "Success",
         description: `Successfully dispensed medication`,
-        duration: 3000, // 3 seconds
+        duration: 3000,
       });
-
-      // reset to empty so next time user must enter a value again
       setDispenseQuantity("");
+      setComment("");
       onOpenChange(false);
     },
     onError: (error: Error) => {
@@ -47,14 +45,13 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
         title: "Error",
         description: error.message,
         variant: "destructive",
-        duration: 3000, // 3 seconds
+        duration: 3000,
       });
     },
   });
 
   const handleDispense = () => {
     if (!medication) return;
-
     if (dispenseQuantity === "" || typeof dispenseQuantity !== "number" || dispenseQuantity < 1) {
       toast({
         title: "Error",
@@ -63,7 +60,6 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
       });
       return;
     }
-
     if (dispenseQuantity > medication.quantity) {
       toast({
         title: "Error",
@@ -72,21 +68,19 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
       });
       return;
     }
-
     dispenseMutation.mutate({
       medicationId: medication.id,
       quantity: dispenseQuantity,
+      comment: comment || undefined, // pass comment
     });
   };
 
   const incrementQuantity = () => {
     if (!medication) return;
-
     if (dispenseQuantity === "") {
       setDispenseQuantity(1);
       return;
     }
-
     if (typeof dispenseQuantity === "number" && dispenseQuantity < medication.quantity) {
       setDispenseQuantity(dispenseQuantity + 1);
     }
@@ -100,8 +94,6 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
   };
 
   if (!medication) return null;
-
-  // conveniences for UI disabling
   const qtyNumber = typeof dispenseQuantity === "number" ? dispenseQuantity : 0;
   const decrementDisabled = qtyNumber <= 1;
   const incrementDisabled = qtyNumber >= medication.quantity;
@@ -142,7 +134,6 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
                 type="number"
                 min={1}
                 max={medication.quantity}
-                // allow empty string for initial blank
                 value={dispenseQuantity === "" ? "" : dispenseQuantity}
                 onChange={(e) => {
                   const raw = e.target.value;
@@ -155,7 +146,6 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
                     setDispenseQuantity("");
                     return;
                   }
-                  // clamp to [1, medication.quantity]
                   const clamped = Math.max(1, Math.min(parsed, medication.quantity));
                   setDispenseQuantity(clamped);
                 }}
@@ -173,6 +163,19 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
+          </div>
+          {/* NEW: Optional Comment Input */}
+          <div>
+            <Label htmlFor="dispenseComment">Optional Comment</Label>
+            <Input
+              id="dispenseComment"
+              type="text"
+              placeholder="Add a comment (optional)"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              className="mt-1"
+              data-testid="input-dispense-comment"
+            />
           </div>
           <div className="flex gap-3 pt-4">
             <Button
