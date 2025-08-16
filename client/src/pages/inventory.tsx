@@ -52,7 +52,8 @@ interface MoveModalProps {
   medication: Medication | null;
 }
 export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
-  const [moveQuantity, setMoveQuantity] = useState(1);
+  // allow empty string initially so the box is blank; otherwise a number
+  const [moveQuantity, setMoveQuantity] = useState<number | "">("");
   const [newLocation, setNewLocation] = useState("");
   const [selectedLocation, setSelectedLocation] = useState("");
   const { toast } = useToast();
@@ -78,12 +79,15 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
       return response.json();
     },
     onSuccess: () => {
+      if (!medication) return;
+
+      // coerce moveQuantity to a number (safe because we validate before calling)
+      const qty = typeof moveQuantity === "number" ? moveQuantity : parseInt(String(moveQuantity), 10) || 0;
+      const destLocation = (selectedLocation || newLocation).trim();
+
       // Optimistically update the /api/medications cache so UI shows moved quantities immediately
       queryClient.setQueryData<Medication[] | undefined>(["/api/medications"], (old) => {
-        if (!old || !medication) return old;
-
-        const destLocation = (selectedLocation || newLocation).trim();
-        const qty = moveQuantity;
+        if (!old) return old;
 
         // subtract from the source medication
         const updated = old.map((m) =>
@@ -120,20 +124,21 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
       queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"] });
 
       const isPen =
-        (medication.administrationForm || medication.administrativeForm || medication.formType || "")
+        (medication.administrationForm || (medication as any).administrativeForm || (medication as any).formType || "")
           .toString()
           .toLowerCase()
           .includes("pen");
 
-      const unit = isPen ? (moveQuantity === 1 ? "pen" : "pens") : moveQuantity === 1 ? "injection" : "injections";
+      const unit = isPen ? (qty === 1 ? "pen" : "pens") : qty === 1 ? "injection" : "injections";
 
       toast({
         title: "Success",
-        description: `Successfully moved ${moveQuantity} ${unit} to ${selectedLocation || newLocation}`,
+        description: `Successfully moved ${qty} ${unit} to ${selectedLocation || newLocation}`,
         duration: 3000,
       });
 
-      setMoveQuantity(1);
+      // reset to empty so next time user must enter a value again
+      setMoveQuantity("");
       setNewLocation("");
       setSelectedLocation("");
       onOpenChange(false);
@@ -150,6 +155,17 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
 
   const handleMove = () => {
     if (!medication) return;
+
+    // validate moveQuantity
+    if (moveQuantity === "" || typeof moveQuantity !== "number" || moveQuantity < 1) {
+      toast({
+        title: "Error",
+        description: "Please enter a quantity of at least 1",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (moveQuantity > (medication.quantity ?? 0)) {
       toast({
         title: "Error",
@@ -174,13 +190,21 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
   };
 
   const incrementQuantity = () => {
-    if (medication && moveQuantity < (medication.quantity ?? 0)) {
-      setMoveQuantity((q) => q + 1);
+    if (!medication) return;
+
+    if (moveQuantity === "") {
+      setMoveQuantity(1);
+      return;
+    }
+
+    if (typeof moveQuantity === "number" && moveQuantity < (medication.quantity ?? 0)) {
+      setMoveQuantity((q) => (typeof q === "number" ? q + 1 : 1));
     }
   };
   const decrementQuantity = () => {
+    if (moveQuantity === "" || typeof moveQuantity !== "number") return;
     if (moveQuantity > 1) {
-      setMoveQuantity((q) => q - 1);
+      setMoveQuantity((q) => (typeof q === "number" ? q - 1 : 1));
     }
   };
 
@@ -196,6 +220,11 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
   const isPenForm = adminFormNormalized.toLowerCase().includes("pen");
   const adminUnitCurrent =
     (medication.quantity ?? 0) === 1 ? (isPenForm ? "pen" : "injection") : isPenForm ? "pens" : "injections";
+
+  // derived values for UI disabling
+  const qtyNumber = typeof moveQuantity === "number" ? moveQuantity : 0;
+  const decrementDisabled = qtyNumber <= 1;
+  const incrementDisabled = medication ? qtyNumber >= (medication.quantity ?? 0) : true;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -228,7 +257,7 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
                 variant="outline"
                 size="sm"
                 onClick={decrementQuantity}
-                disabled={moveQuantity <= 1}
+                disabled={decrementDisabled}
                 data-testid="button-decrement"
               >
                 <Minus className="h-4 w-4" />
@@ -236,10 +265,25 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
               <Input
                 id="moveQuantity"
                 type="number"
-                min="1"
+                min={1}
                 max={medication.quantity}
-                value={moveQuantity}
-                onChange={(e) => setMoveQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                // allow empty string for initial blank
+                value={moveQuantity === "" ? "" : moveQuantity}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  if (raw === "") {
+                    setMoveQuantity("");
+                    return;
+                  }
+                  const parsed = parseInt(raw, 10);
+                  if (isNaN(parsed)) {
+                    setMoveQuantity("");
+                    return;
+                  }
+                  // clamp to [1, medication.quantity]
+                  const clamped = Math.max(1, Math.min(parsed, medication.quantity ?? parsed));
+                  setMoveQuantity(clamped);
+                }}
                 className="w-20 text-center"
                 data-testid="input-move-quantity"
               />
@@ -248,7 +292,7 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
                 variant="outline"
                 size="sm"
                 onClick={incrementQuantity}
-                disabled={moveQuantity >= (medication.quantity ?? 0)}
+                disabled={incrementDisabled}
                 data-testid="button-increment"
               >
                 <PlusIcon className="h-4 w-4" />
@@ -688,8 +732,7 @@ export default function Inventory() {
                             <Button
                               onClick={() => handleMove(medication)}
                               size="sm"
-                              variant="outline"
-                              className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white"
                               disabled={(medication.quantity ?? 0) === 0}
                               data-testid={`button-move-${medication.id}`}
                             >
