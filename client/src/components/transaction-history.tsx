@@ -68,30 +68,29 @@ export function TransactionHistory() {
     }
   };
 
-  const getTransactionDescription = (transaction: MedicationTransaction) => {
-    if (transaction.type === "move") {
+  const getTransactionDescription = (tx: MedicationTransaction) => {
+    if (tx.type === "move") {
       return "Location changed";
-    } else if (transaction.type === "addition") {
-      const isPen = transaction.medicationName.toLowerCase().includes("pen");
+    } else if (tx.type === "addition") {
+      const isPen = tx.medicationName.toLowerCase().includes("pen");
       const unit = isPen
-        ? transaction.quantity === 1
+        ? tx.quantity === 1
           ? "pen"
           : "pens"
-        : transaction.quantity === 1
+        : tx.quantity === 1
         ? "injection"
         : "injections";
-      return `${transaction.quantity} ${unit} added to inventory`;
+      return `${tx.quantity} ${unit} added to inventory`;
     } else {
-      // dispensed
-      const isPen = transaction.medicationName.toLowerCase().includes("pen");
+      const isPen = tx.medicationName.toLowerCase().includes("pen");
       const unit = isPen
-        ? transaction.quantity === 1
+        ? tx.quantity === 1
           ? "pen"
           : "pens"
-        : transaction.quantity === 1
+        : tx.quantity === 1
         ? "injection"
         : "injections";
-      return `${transaction.quantity} ${unit} dispensed to patient`;
+      return `${tx.quantity} ${unit} dispensed to patient`;
     }
   };
 
@@ -126,21 +125,20 @@ export function TransactionHistory() {
             </div>
           ) : (
             <div className="space-y-4">
-              {transactions.map((transaction) => {
-                const { date, time } = formatTimestamp(transaction.timestamp);
-                const Icon = getTransactionIcon(transaction.type);
-                const nameOnly = transaction.medicationName.split(" - ")[0];
+              {transactions.map((tx) => {
+                const { date, time } = formatTimestamp(tx.timestamp);
+                const Icon = getTransactionIcon(tx.type);
+                const nameOnly = tx.medicationName.split(" - ")[0];
                 const [generic, withParen] = nameOnly.split(" (");
                 const medical = withParen?.replace(")", "") ?? "";
                 return (
                   <div
-                    key={transaction.id}
+                    key={tx.id}
                     className="border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow"
                   >
                     <div className="flex items-start justify-between">
-                      {/* LEFT: icon + name + description */}
                       <div className="flex items-start gap-3 flex-1 min-w-0">
-                        <div className={`p-2 rounded-full ${getTransactionColor(transaction.type)}`}>
+                        <div className={`p-2 rounded-full ${getTransactionColor(tx.type)}`}>
                           <Icon className="h-4 w-4" />
                         </div>
                         <div className="flex-1 min-w-0">
@@ -148,23 +146,22 @@ export function TransactionHistory() {
                             {generic} {medical && `(${medical})`}
                           </h4>
                           <p className="text-sm text-gray-600 mt-2">
-                            {getTransactionDescription(transaction)}
+                            {getTransactionDescription(tx)}
                           </p>
                           {/* Show comment if present */}
-                          {transaction.comment && (
+                          {tx.comment && (
                             <div className="text-xs text-gray-500 mt-1">
-                              <b>Comment:</b> {transaction.comment}
+                              <b>Comment:</b> {tx.comment}
                             </div>
                           )}
                         </div>
                       </div>
-                      {/* RIGHT: Badge (title) and timestamp */}
                       <div className="ml-4 flex flex-col items-end text-right">
                         <Badge
                           variant="outline"
-                          className={`${getTransactionColor(transaction.type)} px-2 py-1`}
+                          className={`${getTransactionColor(tx.type)} px-2 py-1`}
                         >
-                          {getTransactionTitle(transaction.type)}
+                          {getTransactionTitle(tx.type)}
                         </Badge>
                         <div className="flex items-center gap-1 text-xs text-gray-500 mt-2">
                           <Clock className="h-3 w-3" />
