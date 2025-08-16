@@ -40,6 +40,15 @@ const apiRequest = async (method: string, url: string, data: any) => {
   };
 };
 
+// Helper: convert a string to Title Case (first letter of each word capitalized)
+const titleCase = (s: string) =>
+  s
+    .toLowerCase()
+    .split(" ")
+    .filter(Boolean)
+    .map((w) => w[0].toUpperCase() + w.slice(1))
+    .join(" ");
+
 /**
  * MoveModal - move a quantity of a medication to a saved or new location.
  * - Shows current count and admin label (pens/injections).
@@ -334,7 +343,10 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
               placeholder="e.g., Shelf 3, Cabinet B"
               value={newLocation}
               onChange={(e) => {
-                setNewLocation(e.target.value);
+                // apply title case as user types
+                const raw = e.target.value;
+                const titled = raw === "" ? "" : titleCase(raw);
+                setNewLocation(titled);
                 setSelectedLocation("");
               }}
               disabled={!!selectedLocation}
