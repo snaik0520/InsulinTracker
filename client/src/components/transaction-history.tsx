@@ -15,7 +15,7 @@ import { History, Plus, Minus, Clock, MoveIcon } from "lucide-react";
 
 export function TransactionHistory() {
   const [isOpen, setIsOpen] = useState(false);
-  const { data: transactions = [], isLoading } = useQuery({
+  const { data: transactions = [], isLoading } = useQuery<MedicationTransaction[]>({
     queryKey: ["/api/transactions"],
     enabled: isOpen, // Only fetch when modal is open
     refetchOnMount: true,
@@ -151,14 +151,14 @@ export function TransactionHistory() {
                             {getTransactionDescription(transaction)}
                           </p>
                           {/* Show comment if present */}
-                          {"comment" in transaction && transaction.comment && (
+                          {transaction.comment && (
                             <div className="text-xs text-gray-500 mt-1">
                               <b>Comment:</b> {transaction.comment}
                             </div>
                           )}
                         </div>
                       </div>
-                      {/* RIGHT: Badge (title) and timestamp aligned to right */}
+                      {/* RIGHT: Badge (title) and timestamp */}
                       <div className="ml-4 flex flex-col items-end text-right">
                         <Badge
                           variant="outline"
