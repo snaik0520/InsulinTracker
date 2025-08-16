@@ -1,3 +1,4 @@
+
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
@@ -11,239 +12,9 @@ import { LowStockTicker } from "@/components/low-stock-ticker";
 import { OutOfStockTracker } from "@/components/out-of-stock-tracker";
 import { TransactionHistory } from "@/components/transaction-history";
 import { type Medication } from "@shared/schema";
-import { Search, Plus, HandHeart, Syringe, Zap, Clock, Scale, HelpCircle, List, CornerRightDown } from "lucide-react";
+import { Search, Plus, HandHeart, Syringe, Zap, Clock, Scale, HelpCircle, List } from "lucide-react";
 import logo from "../assets/noor-logo.png";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useToast } from "@/hooks/use-toast";
-import { Check, Minus, Plus as PlusIcon } from "lucide-react";
 
-// Placeholder for the MoveModal component
-// This modal handles the logic for moving medications to a new or existing location.
-interface MoveModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  medication: Medication | null;
-}
-
-const apiRequest = async (method: string, url: string, data: any) => {
-  console.log(`Simulating API call: ${method} to ${url} with data:`, data);
-  return {
-    json: () => Promise.resolve({ success: true }),
-  };
-};
-
-export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
-  const [moveQuantity, setMoveQuantity] = useState(1);
-  const [newLocation, setNewLocation] = useState("");
-  const [selectedLocation, setSelectedLocation] = useState("");
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-
-  // A list of predefined locations for the dropdown
-  const predefinedLocations = ["Main Pharmacy", "Storage Room 1", "Refrigerated Unit 2", "Lab Area"];
-
-  const moveMutation = useMutation({
-    mutationFn: async (data: { medicationId: string; quantity: number; newLocation: string }) => {
-      const response = await apiRequest("POST", "/api/medications/move", data);
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
-      
-      const unit = (medication?.administrationForm?.toLowerCase() === "pens")
-        ? (moveQuantity === 1 ? "pen" : "pens")
-        : (moveQuantity === 1 ? "injection" : "injections");
-        
-      toast({
-        title: "Success",
-        description: `Successfully moved ${moveQuantity} ${unit} to ${selectedLocation || newLocation}`,
-        duration: 3000,
-      });
-      setMoveQuantity(1);
-      setNewLocation("");
-      setSelectedLocation("");
-      onOpenChange(false);
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-        duration: 3000,
-      });
-    },
-  });
-
-  const handleMove = () => {
-    if (!medication) return;
-    if (moveQuantity > medication.quantity) {
-      toast({
-        title: "Error",
-        description: "Cannot move more than available stock",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (!selectedLocation && !newLocation) {
-        toast({
-            title: "Error",
-            description: "Please select a location or enter a new one",
-            variant: "destructive",
-        });
-        return;
-    }
-
-    moveMutation.mutate({
-      medicationId: medication.id,
-      quantity: moveQuantity,
-      newLocation: selectedLocation || newLocation,
-    });
-  };
-  
-  const incrementQuantity = () => {
-    if (medication && moveQuantity < medication.quantity) {
-      setMoveQuantity(moveQuantity + 1);
-    }
-  };
-
-  const decrementQuantity = () => {
-    if (moveQuantity > 1) {
-      setMoveQuantity(moveQuantity - 1);
-    }
-  };
-
-
-  if (!medication) return null;
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md" data-testid="modal-move-medication">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <CornerRightDown className="h-5 w-5 text-indigo-600" />
-            Move Medication
-          </DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-4">
-          <div>
-            <p className="text-sm text-gray-900" data-testid="text-medication-name">
-              {medication.medicalName} ({medication.genericName})
-            </p>
-            <p className="text-xs text-gray-500 mt-1" data-testid="text-available-stock">
-              Current Location: {medication.location ?? "—"}
-            </p>
-          </div>
-          
-          <div>
-            <Label htmlFor="moveQuantity">Quantity to Move</Label>
-            <div className="flex items-center space-x-2 mt-1">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={decrementQuantity}
-                disabled={moveQuantity <= 1}
-                data-testid="button-decrement"
-              >
-                <Minus className="h-4 w-4" />
-              </Button>
-              <Input
-                id="moveQuantity"
-                type="number"
-                min="1"
-                max={medication.quantity}
-                value={moveQuantity}
-                onChange={(e) => setMoveQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                className="w-20 text-center"
-                data-testid="input-move-quantity"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={incrementQuantity}
-                disabled={moveQuantity >= medication.quantity}
-                data-testid="button-increment"
-              >
-                <PlusIcon className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-
-          <div>
-            <Label htmlFor="location-select">Select a Destination</Label>
-            <Select onValueChange={setSelectedLocation} value={selectedLocation}>
-              <SelectTrigger id="location-select" className="mt-1">
-                <SelectValue placeholder="Select a pre-saved location" />
-              </SelectTrigger>
-              <SelectContent>
-                {predefinedLocations.map((loc, index) => (
-                  <SelectItem key={index} value={loc}>
-                    {loc}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          
-          <div className="flex items-center space-x-2">
-              <div className="flex-grow border-t border-gray-200"></div>
-              <span className="flex-shrink text-xs text-gray-500">OR</span>
-              <div className="flex-grow border-t border-gray-200"></div>
-          </div>
-
-          <div>
-            <Label htmlFor="new-location-input">Enter a New Location</Label>
-            <Input
-              id="new-location-input"
-              className="mt-1"
-              placeholder="e.g., Shelf 3, Cabinet B"
-              value={newLocation}
-              onChange={(e) => {
-                  setNewLocation(e.target.value);
-                  setSelectedLocation("");
-              }}
-              disabled={!!selectedLocation}
-            />
-          </div>
-        </div>
-
-        <DialogFooter className="flex flex-col gap-3 pt-4 sm:flex-row sm:justify-end">
-          <Button
-            onClick={handleMove}
-            className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white sm:flex-none"
-            disabled={moveMutation.isPending}
-            data-testid="button-confirm-move"
-          >
-            {moveMutation.isPending ? (
-              "Moving..."
-            ) : (
-              <>
-                <Check className="h-4 w-4 mr-2" />
-                Confirm Move
-              </>
-            )}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            data-testid="button-cancel-move"
-            className="sm:flex-none"
-          >
-            Cancel
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-
-// ... existing code ...
 const typeIcons = {
   rapid: Zap,
   long: Clock,
@@ -328,7 +99,6 @@ export default function Inventory() {
   const [selectedType, setSelectedType] = useState("all");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isDispenseModalOpen, setIsDispenseModalOpen] = useState(false);
-  const [isMoveModalOpen, setIsMoveModalOpen] = useState(false); // New state for Move modal
   const [selectedMedication, setSelectedMedication] = useState<Medication | null>(null);
 
   const { data: medications = [], isLoading } = useQuery<Medication[]>({
@@ -359,12 +129,6 @@ export default function Inventory() {
   const handleDispense = (medication: Medication) => {
     setSelectedMedication(medication);
     setIsDispenseModalOpen(true);
-  };
-  
-  // New handler for the Move button
-  const handleMove = (medication: Medication) => {
-    setSelectedMedication(medication);
-    setIsMoveModalOpen(true);
   };
 
   // Scroll target: LowStockTicker element
@@ -500,7 +264,10 @@ export default function Inventory() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Medication</th>
+
+                    {/* Administrative Form column */}
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Administrative form</th>
+
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Insulin type</th>
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Dose</th>
                     <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Quantity</th>
@@ -530,7 +297,7 @@ export default function Inventory() {
                         "";
                       const adminFormDisplay =
                         adminFormValue.toLowerCase() === "pen" ? "Pen" : adminFormValue.toLowerCase() === "injection" ? "Injection" : "—";
-                      
+
                       const rowTint = getRowClassName(medication.type);
 
                       return (
@@ -588,7 +355,7 @@ export default function Inventory() {
                             {medication.location ?? "—"}
                           </td>
 
-                          <td className="px-6 py-4 whitespace-nowrap space-x-2">
+                          <td className="px-6 py-4 whitespace-nowrap">
                             <Button
                               onClick={() => handleDispense(medication)}
                               size="sm"
@@ -598,17 +365,6 @@ export default function Inventory() {
                             >
                               <HandHeart className="h-4 w-4 mr-1" />
                               Dispense
-                            </Button>
-                            <Button
-                                onClick={() => handleMove(medication)}
-                                size="sm"
-                                variant="outline"
-                                className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
-                                disabled={(medication.quantity ?? 0) === 0}
-                                data-testid={`button-move-${medication.id}`}
-                            >
-                                <CornerRightDown className="h-4 w-4 mr-1" />
-                                Move
                             </Button>
                           </td>
                         </tr>
@@ -640,7 +396,6 @@ export default function Inventory() {
       />
 
       <DispenseModal open={isDispenseModalOpen} onOpenChange={setIsDispenseModalOpen} medication={selectedMedication} />
-      <MoveModal open={isMoveModalOpen} onOpenChange={setIsMoveModalOpen} medication={selectedMedication} />
     </div>
   );
 }
