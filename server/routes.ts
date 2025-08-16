@@ -173,3 +173,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
   return httpServer;
 }
+
+// Add this temporary debug route
+app.get("/api/debug", async (req, res) => {
+  res.json({
+    NODE_ENV: process.env.NODE_ENV,
+    GOOGLE_APPS_SCRIPT_URL: process.env.GOOGLE_APPS_SCRIPT_URL ? 'SET' : 'NOT SET',
+    GOOGLE_APPS_SCRIPT_URL_LENGTH: process.env.GOOGLE_APPS_SCRIPT_URL?.length || 0,
+    storageType: storage.constructor.name
+  });
+});
+
