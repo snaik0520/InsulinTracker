@@ -10,22 +10,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { History, Plus, Minus, Clock } from "lucide-react";
-
-// Type Definitions
-type Transaction = {
-  id: string;
-  medicationName: string;
-  quantity: number;
-  type: "dispense" | "add";
-  timestamp: string;
-  comment?: string;
-};
+import { type MedicationTransaction } from "@shared/schema";
+import { History, Plus, Minus, Clock, MoveIcon } from "lucide-react";
 
 export function TransactionHistory() {
   const [isOpen, setIsOpen] = useState(false);
-
-  const { data: transactions = [], isLoading } = useQuery<Transaction[]>({
+  const { data: transactions = [], isLoading } = useQuery({
     queryKey: ["/api/transactions"],
     enabled: isOpen, // Only fetch when modal is open
     refetchOnMount: true,
@@ -41,10 +31,12 @@ export function TransactionHistory() {
 
   const getTransactionIcon = (type: string) => {
     switch (type) {
-      case "add":
+      case "addition":
         return Plus;
-      case "dispense":
+      case "dispensed":
         return Minus;
+      case "move":
+        return MoveIcon;
       default:
         return Clock;
     }
@@ -52,10 +44,12 @@ export function TransactionHistory() {
 
   const getTransactionColor = (type: string) => {
     switch (type) {
-      case "add":
+      case "addition":
         return "bg-green-100 text-green-800 border-green-200";
-      case "dispense":
+      case "dispensed":
         return "bg-red-100 text-red-800 border-red-200";
+      case "move":
+        return "bg-purple-100 text-purple-800 border-purple-200";
       default:
         return "bg-gray-100 text-gray-800 border-gray-200";
     }
@@ -63,38 +57,43 @@ export function TransactionHistory() {
 
   const getTransactionTitle = (type: string) => {
     switch (type) {
-      case "add":
+      case "addition":
         return "Added";
-      case "dispense":
+      case "dispensed":
         return "Dispensed";
+      case "move":
+        return "Moved";
       default:
         return "Updated";
     }
   };
 
-  const getTransactionDescription = (tx: Transaction) => {
-    if (tx.type === "add") {
-      const isPen = tx.medicationName.toLowerCase().includes("pen");
+  const getTransactionDescription = (transaction: MedicationTransaction) => {
+    if (transaction.type === "move") {
+      return "Location changed";
+    } else if (transaction.type === "addition") {
+      // Determine unit based on "pen" presence
+      const isPen = transaction.medicationName.toLowerCase().includes("pen");
       const unit = isPen
-        ? tx.quantity === 1
+        ? transaction.quantity === 1
           ? "pen"
           : "pens"
-        : tx.quantity === 1
+        : transaction.quantity === 1
         ? "injection"
         : "injections";
-      return `${tx.quantity} ${unit} added to inventory`;
-    } else if (tx.type === "dispense") {
-      const isPen = tx.medicationName.toLowerCase().includes("pen");
+      return `${transaction.quantity} ${unit} added to inventory`;
+    } else {
+      // dispensed
+      const isPen = transaction.medicationName.toLowerCase().includes("pen");
       const unit = isPen
-        ? tx.quantity === 1
+        ? transaction.quantity === 1
           ? "pen"
           : "pens"
-        : tx.quantity === 1
+        : transaction.quantity === 1
         ? "injection"
         : "injections";
-      return `${tx.quantity} ${unit} dispensed to patient`;
+      return `${transaction.quantity} ${unit} dispensed to patient`;
     }
-    return `${tx.quantity} units updated`;
   };
 
   return (
@@ -112,6 +111,7 @@ export function TransactionHistory() {
             Medication Transaction History
           </DialogTitle>
         </DialogHeader>
+
         <ScrollArea className="h-full max-h-[60vh] pr-4">
           {isLoading ? (
             <div className="flex items-center justify-center py-8">
@@ -128,45 +128,46 @@ export function TransactionHistory() {
             </div>
           ) : (
             <div className="space-y-4">
-              {transactions.map((tx) => {
-                const { date, time } = formatTimestamp(tx.timestamp);
-                const Icon = getTransactionIcon(tx.type);
-                const nameOnly = tx.medicationName.split(" - ")[0];
+              {transactions.map((transaction) => {
+                const { date, time } = formatTimestamp(transaction.timestamp);
+                const Icon = getTransactionIcon(transaction.type);
+
+                // Remove any " - form" suffix, then split "generic (medical)"
+                const nameOnly = transaction.medicationName.split(" - ")[0];
                 const [generic, withParen] = nameOnly.split(" (");
                 const medical = withParen?.replace(")", "") ?? "";
-                
+
                 return (
                   <div
-                    key={tx.id}
+                    key={transaction.id}
                     className="border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow"
                   >
                     <div className="flex items-start justify-between">
+                      {/* LEFT: icon + name + description */}
                       <div className="flex items-start gap-3 flex-1 min-w-0">
-                        <div className={`p-2 rounded-full ${getTransactionColor(tx.type)}`}>
+                        <div className={`p-2 rounded-full ${getTransactionColor(transaction.type)}`}>
                           <Icon className="h-4 w-4" />
                         </div>
+
                         <div className="flex-1 min-w-0">
                           <h4 className="font-medium text-gray-900 truncate">
                             {generic} {medical && `(${medical})`}
                           </h4>
                           <p className="text-sm text-gray-600 mt-2">
-                            {getTransactionDescription(tx)}
+                            {getTransactionDescription(transaction)}
                           </p>
-                          {/* Display comment if it exists */}
-                          {tx.comment && tx.comment.trim() !== "" && (
-                            <div className="mt-2 text-sm text-gray-700 bg-blue-50 p-3 rounded-lg border border-blue-200">
-                              <span className="font-semibold text-blue-700">Comment:</span> {tx.comment}
-                            </div>
-                          )}
                         </div>
                       </div>
+
+                      {/* RIGHT: Badge (title) and timestamp aligned to right */}
                       <div className="ml-4 flex flex-col items-end text-right">
                         <Badge
                           variant="outline"
-                          className={`${getTransactionColor(tx.type)} px-2 py-1`}
+                          className={`${getTransactionColor(transaction.type)} px-2 py-1`}
                         >
-                          {getTransactionTitle(tx.type)}
+                          {getTransactionTitle(transaction.type)}
                         </Badge>
+
                         <div className="flex items-center gap-1 text-xs text-gray-500 mt-2">
                           <Clock className="h-3 w-3" />
                           <span>
