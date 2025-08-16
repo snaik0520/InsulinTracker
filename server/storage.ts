@@ -1,10 +1,134 @@
+import { type Medication, type InsertMedication, type MedicationTransaction, type InsertTransaction } from "@shared/schema";
+import { randomUUID } from "crypto";
+
+export interface IStorage {
+  getMedications(): Promise<Medication[]>;
+  getMedicationById(id: string): Promise<Medication | undefined>;
+  createMedication(medication: InsertMedication): Promise<Medication>;
+  updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined>;
+  searchMedications(query: string): Promise<Medication[]>;
+  filterMedicationsByType(type: string): Promise<Medication[]>;
+  getLowStockMedications(threshold?: number): Promise<Medication[]>;
+  getTransactions(): Promise<MedicationTransaction[]>;
+  createTransaction(transaction: InsertTransaction): Promise<MedicationTransaction>;
+}
+
+export class MemStorage implements IStorage {
+  private medications: Map<string, Medication>;
+  private transactions: Map<string, MedicationTransaction>;
+
+  constructor() {
+    this.medications = new Map();
+    this.transactions = new Map();
+  }
+
+  async getMedications(): Promise<Medication[]> {
+    return Array.from(this.medications.values());
+  }
+
+  async getMedicationById(id: string): Promise<Medication | undefined> {
+    return this.medications.get(id);
+  }
+
+  async createMedication(insertMedication: InsertMedication): Promise<Medication> {
+    // Check if medication with same name, dose, and expiration date already exists
+    const existingMedication = Array.from(this.medications.values()).find(med => 
+      med.genericName === insertMedication.genericName &&
+      med.medicalName === insertMedication.medicalName &&
+      med.dose === insertMedication.dose &&
+      med.expirationDate === insertMedication.expirationDate &&
+      med.location === insertMedication.location
+    );
+
+    if (existingMedication) {
+      // Update existing medication quantity instead of creating new one
+      existingMedication.quantity += insertMedication.quantity;
+      this.medications.set(existingMedication.id, existingMedication);
+      return existingMedication;
+    } else {
+      // Create new medication
+      const id = randomUUID();
+      const medication: Medication = { ...insertMedication, id };
+      this.medications.set(id, medication);
+      return medication;
+    }
+  }
+
+  async updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined> {
+    const medication = this.medications.get(id);
+    if (!medication) {
+      return undefined;
+    }
+    
+    const updatedMedication = { ...medication, quantity: newQuantity };
+    this.medications.set(id, updatedMedication);
+    return updatedMedication;
+  }
+
+  async searchMedications(query: string): Promise<Medication[]> {
+    const lowerQuery = query.toLowerCase();
+    return Array.from(this.medications.values()).filter(medication =>
+      medication.genericName.toLowerCase().includes(lowerQuery) ||
+      medication.medicalName.toLowerCase().includes(lowerQuery)
+    );
+  }
+
+  async filterMedicationsByType(type: string): Promise<Medication[]> {
+    if (type === "all") {
+      return this.getMedications();
+    }
+    return Array.from(this.medications.values()).filter(medication =>
+      medication.type === type
+    );
+  }
+
+  async getLowStockMedications(threshold: number = 5): Promise<Medication[]> {
+    return Array.from(this.medications.values()).filter(medication =>
+      medication.quantity > 0 && medication.quantity <= threshold
+    );
+  }
+
+  async getOutOfStockMedications(): Promise<Medication[]> {
+    return Array.from(this.medications.values()).filter(medication =>
+      medication.quantity === 0
+    );
+  }
+
+  async getTransactions(): Promise<MedicationTransaction[]> {
+    return Array.from(this.transactions.values()).sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+  }
+
+  async createTransaction(insertTransaction: InsertTransaction): Promise<MedicationTransaction> {
+    const id = randomUUID();
+    const transaction: MedicationTransaction = { 
+      ...insertTransaction, 
+      id, 
+      timestamp: new Date() as any,
+      notes: insertTransaction.notes || null
+    };
+    this.transactions.set(id, transaction);
+    return transaction;
+  }
+}
+
+// Import the GoogleSheetsStorage class
 import { GoogleSheetsStorage } from './googleSheetsStorage';
-import { MemStorage } from './storage'; // your existing MemStorage
 
-// Replace this URL with your actual Google Apps Script web app URL
-const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwF-ZeJtdQYdiWpZbkynZQE86XfR12qbzSXzxyyrViz_RnOpRRCsjpLYp5b-rqMsWk_/exec';
+// Configuration
+const GOOGLE_APPS_SCRIPT_URL = process.env.GOOGLE_APPS_SCRIPT_URL || '';
 
-// Choose storage type based on environment
-export const storage = process.env.NODE_ENV === 'development' 
-  ? new MemStorage() // Use in-memory for local development
-  : new GoogleSheetsStorage(GOOGLE_APPS_SCRIPT_URL); // Use Google Sheets for production
+// Create storage instance based on environment
+function createStorage(): IStorage {
+  // Use Google Sheets if URL is provided and not in development mode
+  if (GOOGLE_APPS_SCRIPT_URL && process.env.NODE_ENV !== 'development') {
+    console.log('Using Google Sheets storage');
+    return new GoogleSheetsStorage(GOOGLE_APPS_SCRIPT_URL);
+  } else {
+    console.log('Using in-memory storage (development mode)');
+    return new MemStorage();
+  }
+}
+
+export const storage = createStorage();
