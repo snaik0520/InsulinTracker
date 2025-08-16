@@ -1,277 +1,32 @@
-import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Label } from "@/components/ui/label";
-import { AddMedicationModal } from "@/components/add-medication-modal";
-import { DispenseModal } from "@/components/dispense-modal";
-import { LowStockTicker } from "@/components/low-stock-ticker";
-import { OutOfStockTracker } from "@/components/out-of-stock-tracker";
-import { TransactionHistory } from "@/components/transaction-history";
-import { type Medication } from "@shared/schema";
-import { Search, Plus, HandHeart, Syringe, Zap, Clock, Scale, HelpCircle, List, CornerRightDown } from "lucide-react";
-import logo from "../assets/noor-logo.png";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useToast } from "@/hooks/use-toast";
-import { Check, Minus, Plus as PlusIcon } from "lucide-react";
+import { useState, useMemo, useEffect, useRef, createContext, useContext } from "react";
 
-// Placeholder for the MoveModal component
-// This modal handles the logic for moving medications to a new or existing location.
-interface MoveModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  medication: Medication | null;
+// Firebase imports
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, setDoc, onSnapshot, collection, query, where, updateDoc } from 'firebase/firestore';
+
+// Lucide React Icons
+import { Search, Plus, HandHeart, Syringe, Zap, Clock, Scale, HelpCircle, List, CornerRightDown, Check, Minus, Plus as PlusIcon, X } from "lucide-react";
+
+// Placeholder for the logo since we don't have the image file
+const logo = "https://placehold.co/100x50/F8E5EE/8C5C85?text=NOOR+LOGO";
+
+// --------------------------------------------------
+// Type Definitions & Helpers
+// --------------------------------------------------
+
+type Medication = {
+  id: string;
+  genericName?: string;
+  medicalName: string;
+  location?: string;
+  quantity: number;
+  dose?: string;
+  type: string;
+  administrativeForm?: string;
+  expirationDate?: string;
 }
 
-const apiRequest = async (method: string, url: string, data: any) => {
-  console.log(`Simulating API call: ${method} to ${url} with data:`, data);
-  return {
-    json: () => Promise.resolve({ success: true }),
-  };
-};
-
-export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
-  const [moveQuantity, setMoveQuantity] = useState("");
-  const [newLocation, setNewLocation] = useState("");
-  const [selectedLocation, setSelectedLocation] = useState("");
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-
-  // Fetch previously used locations from user input history
-  const { data: locationHistory = [] } = useQuery<string[]>({
-    queryKey: ["/api/locations/history"],
-    queryFn: async () => {
-      // This would fetch locations that users have previously entered
-      // Replace with actual API call
-      return ["Main Pharmacy", "Storage Room 1", "Refrigerated Unit 2", "Lab Area"];
-    },
-  });
-
-  const moveMutation = useMutation({
-    mutationFn: async (data: { medicationId: string; quantity: number; newLocation: string }) => {
-      const response = await apiRequest("POST", "/api/medications/move", data);
-      return response.json();
-    },
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/locations/history"] });
-      
-      const qty = variables.quantity;
-      const isPens = medication?.administrationForm?.toLowerCase() === "pens";
-      const unit = isPens
-        ? (qty === 1 ? "pen" : "pens")
-        : (qty === 1 ? "injection" : "injections");
-        
-      toast({
-        title: "Success",
-        description: `Successfully moved ${qty} ${unit} to ${selectedLocation || newLocation}`,
-        duration: 3000,
-      });
-      setMoveQuantity("");
-      setNewLocation("");
-      setSelectedLocation("");
-      onOpenChange(false);
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-        duration: 3000,
-      });
-    },
-  });
-
-  const handleMove = () => {
-    const qty = parseInt(moveQuantity, 10);
-    if (!medication) return;
-    
-    if (isNaN(qty) || qty < 1) {
-      toast({
-        title: "Error",
-        description: "Please enter a quantity of at least 1",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    if (qty > medication.quantity) {
-      toast({
-        title: "Error",
-        description: "Cannot move more than available stock",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    if (!selectedLocation && !newLocation) {
-      toast({
-        title: "Error",
-        description: "Please select a location or enter a new one",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    moveMutation.mutate({
-      medicationId: medication.id,
-      quantity: qty,
-      newLocation: selectedLocation || newLocation,
-    });
-  };
-
-  const incrementQuantity = () => {
-    const current = parseInt(moveQuantity || "0", 10);
-    if (medication && current < medication.quantity) {
-      setMoveQuantity(String(current + 1));
-    }
-  };
-
-  const decrementQuantity = () => {
-    const current = parseInt(moveQuantity || "0", 10);
-    if (current > 1) {
-      setMoveQuantity(String(current - 1));
-    }
-  };
-
-  if (!medication) return null;
-
-  const isPens = medication.administrationForm?.toLowerCase() === "pens";
-  const administrationLabel = isPens ? "pens" : "injections";
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md" data-testid="modal-move-medication">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <CornerRightDown className="h-5 w-5 text-indigo-600" />
-            Move Medication
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <p className="text-sm text-gray-900" data-testid="text-medication-name">
-              {medication.medicalName} ({medication.genericName})
-            </p>
-            <p className="text-xs text-gray-500 mt-1" data-testid="text-current-location">
-              Current Location: {medication.location ?? "—"}
-            </p>
-            <p className="text-xs text-gray-500 mt-1" data-testid="text-current-stock">
-              Current Stock: {medication.quantity} {administrationLabel}
-            </p>
-          </div>
-          
-          <div>
-            <Label htmlFor="moveQuantity">Quantity to Move</Label>
-            <div className="flex items-center space-x-2 mt-1">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={decrementQuantity}
-                disabled={parseInt(moveQuantity || "0", 10) <= 1}
-                data-testid="button-decrement"
-              >
-                <Minus className="h-4 w-4" />
-              </Button>
-              <Input
-                id="moveQuantity"
-                type="number"
-                placeholder=" "
-                min="1"
-                max={medication.quantity}
-                value={moveQuantity}
-                onChange={(e) => setMoveQuantity(e.target.value)}
-                className="w-20 text-center"
-                data-testid="input-move-quantity"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={incrementQuantity}
-                disabled={parseInt(moveQuantity || "0", 10) >= medication.quantity}
-                data-testid="button-increment"
-              >
-                <PlusIcon className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-
-          <div>
-            <Label htmlFor="location-select">Select a Destination</Label>
-            <Select onValueChange={setSelectedLocation} value={selectedLocation}>
-              <SelectTrigger id="location-select" className="mt-1">
-                <SelectValue placeholder="Select from previously used locations" />
-              </SelectTrigger>
-              <SelectContent>
-                {locationHistory.map((loc, index) => (
-                  <SelectItem key={index} value={loc}>
-                    {loc}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          
-          <div className="flex items-center space-x-2">
-            <div className="flex-grow border-t border-gray-200"></div>
-            <span className="flex-shrink text-xs text-gray-500">OR</span>
-            <div className="flex-grow border-t border-gray-200"></div>
-          </div>
-
-          <div>
-            <Label htmlFor="new-location-input">Enter a New Location</Label>
-            <Input
-              id="new-location-input"
-              className="mt-1"
-              placeholder="e.g., Shelf 3, Cabinet B"
-              value={newLocation}
-              onChange={(e) => {
-                setNewLocation(e.target.value);
-                setSelectedLocation("");
-              }}
-              disabled={!!selectedLocation}
-            />
-          </div>
-        </div>
-
-        <DialogFooter className="flex flex-col gap-3 pt-4 sm:flex-row sm:justify-end">
-          <Button
-            onClick={handleMove}
-            className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white sm:flex-none"
-            disabled={moveMutation.isPending}
-            data-testid="button-confirm-move"
-          >
-            {moveMutation.isPending ? (
-              "Moving..."
-            ) : (
-              <>
-                <Check className="h-4 w-4 mr-2" />
-                Confirm Move
-              </>
-            )}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            data-testid="button-cancel-move"
-            className="sm:flex-none"
-          >
-            Cancel
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ... existing code ...
 const typeIcons = {
   rapid: Zap,
   long: Clock,
@@ -279,13 +34,6 @@ const typeIcons = {
   other: HelpCircle,
 } as const;
 
-/**
- * Muted pastel palette:
- * - rapid  -> rose / pink pastel
- * - long   -> violet pastel
- * - inter -> emerald pastel
- * - other  -> amber pastel
- */
 const badgeColors = {
   rapid: "bg-rose-100 text-rose-800",
   long: "bg-violet-100 text-violet-800",
@@ -293,7 +41,6 @@ const badgeColors = {
   other: "bg-amber-100 text-amber-800",
 } as const;
 
-// subtle row background tints (muted pastels)
 const rowBgClasses = {
   rapid: "bg-rose-50",
   long: "bg-violet-50",
@@ -337,7 +84,8 @@ const getRowClassName = (type: string) => {
   }
 };
 
-const calculateDaysUntilExpiration = (expirationDate: string) => {
+const calculateDaysUntilExpiration = (expirationDate?: string) => {
+  if (!expirationDate) return Infinity;
   const today = new Date();
   const expiry = new Date(expirationDate);
   const diffTime = expiry.getTime() - today.getTime();
@@ -345,11 +93,566 @@ const calculateDaysUntilExpiration = (expirationDate: string) => {
   return diffDays;
 };
 
-const getExpirationClassName = (days: number) => {
-  if (days < 30) return "text-red-600";
-  if (days < 90) return "text-orange-600";
-  return "text-green-600";
+// --------------------------------------------------
+// Custom UI Components (Replacements for shadcn/ui)
+// --------------------------------------------------
+
+const Button = ({ children, onClick, className = "", variant = "default", ...props }: any) => {
+  let baseClasses = "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none";
+  let variantClasses = "";
+  if (variant === "default") {
+    variantClasses = "bg-primary text-primary-foreground hover:bg-primary/90 h-10 py-2 px-4";
+  } else if (variant === "outline") {
+    variantClasses = "border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 py-2 px-4";
+  }
+  return <button onClick={onClick} className={`${baseClasses} ${variantClasses} ${className}`} {...props}>{children}</button>;
 };
+
+const Input = ({ className = "", ...props }: any) => {
+  return <input className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${className}`} {...props} />;
+};
+
+const Label = ({ children, className = "", ...props }: any) => {
+  return <label className={`text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${className}`} {...props}>{children}</label>;
+};
+
+const Card = ({ children, className = "", ...props }: any) => {
+  return <div className={`rounded-xl border bg-card text-card-foreground shadow ${className}`} {...props}>{children}</div>;
+};
+
+const CardHeader = ({ children, className = "", ...props }: any) => {
+  return <div className={`flex flex-col space-y-1.5 p-6 ${className}`} {...props}>{children}</div>;
+};
+
+const CardTitle = ({ children, className = "", ...props }: any) => {
+  return <h3 className={`font-semibold leading-none tracking-tight ${className}`} {...props}>{children}</h3>;
+};
+
+const CardContent = ({ children, className = "", ...props }: any) => {
+  return <div className={`p-6 pt-0 ${className}`} {...props}>{children}</div>;
+};
+
+const Badge = ({ children, className = "", ...props }: any) => {
+  return <div className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${className}`} {...props}>{children}</div>;
+};
+
+const Dialog = ({ open, onOpenChange, children }: any) => {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 overflow-auto bg-black/80 flex items-center justify-center p-4">
+      <div className="relative z-50 max-w-lg mx-auto my-auto p-6 rounded-lg shadow-lg bg-white" onClick={e => e.stopPropagation()}>
+        {children}
+        <Button onClick={() => onOpenChange(false)} className="absolute top-2 right-2 p-1" variant="ghost">
+          <X className="w-4 h-4" />
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+const DialogContent = ({ children, className = "" }: any) => <div className={`relative p-6 ${className}`}>{children}</div>;
+const DialogHeader = ({ children }: any) => <div className="flex flex-col space-y-1.5 text-center sm:text-left">{children}</div>;
+const DialogTitle = ({ children }: any) => <h2 className="text-lg font-semibold">{children}</h2>;
+const DialogFooter = ({ children, className = "" }: any) => <div className={`flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 ${className}`}>{children}</div>;
+
+const SelectContext = createContext<any>(null);
+
+const Select = ({ children, onValueChange, value }: any) => {
+  const [open, setOpen] = useState(false);
+  const toggleOpen = () => setOpen(!open);
+  return (
+    <SelectContext.Provider value={{ onValueChange, value, toggleOpen, open, setOpen }}>
+      {children}
+    </SelectContext.Provider>
+  );
+};
+
+const SelectTrigger = ({ children, className = "" }: any) => {
+  const { toggleOpen } = useContext(SelectContext);
+  return <Button onClick={toggleOpen} className={`w-full justify-between ${className}`} variant="outline">{children}</Button>;
+};
+
+const SelectContent = ({ children }: any) => {
+  const { open } = useContext(SelectContext);
+  if (!open) return null;
+  return (
+    <div className="absolute z-50 bg-white border border-gray-200 rounded-md shadow-lg py-1 mt-1 w-full max-h-48 overflow-auto">
+      {children}
+    </div>
+  );
+};
+
+const SelectItem = ({ children, value }: any) => {
+  const { onValueChange, setOpen } = useContext(SelectContext);
+  const handleClick = () => {
+    onValueChange(value);
+    setOpen(false);
+  };
+  return <div onClick={handleClick} className="px-4 py-2 cursor-pointer hover:bg-gray-100">{children}</div>;
+};
+
+const SelectValue = ({ placeholder }: any) => {
+  const { value } = useContext(SelectContext);
+  return value ? value : placeholder;
+};
+
+// --------------------------------------------------
+// Toast Notification System
+// --------------------------------------------------
+
+const ToastContext = createContext<any>(null);
+
+const ToastProvider = ({ children }: any) => {
+  const [toasts, setToasts] = useState<any[]>([]);
+
+  const toast = (newToast: any) => {
+    setToasts(prev => [...prev, { id: Date.now(), ...newToast }]);
+  };
+
+  useEffect(() => {
+    if (toasts.length > 0) {
+      const timer = setTimeout(() => {
+        setToasts(prev => prev.slice(1));
+      }, toasts[0].duration || 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [toasts]);
+
+  return (
+    <ToastContext.Provider value={{ toast }}>
+      {children}
+      <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 w-full max-w-xs">
+        {toasts.map(t => (
+          <div key={t.id} className={`rounded-md p-4 shadow-md text-white ${t.variant === 'destructive' ? 'bg-red-500' : 'bg-green-500'}`}>
+            <h3 className="font-bold">{t.title}</h3>
+            <p className="text-sm">{t.description}</p>
+          </div>
+        ))}
+      </div>
+    </ToastContext.Provider>
+  );
+};
+
+const useToast = () => useContext(ToastContext);
+
+// --------------------------------------------------
+// Placeholder Components
+// --------------------------------------------------
+
+const LowStockTicker = () => <div className="p-4 text-center bg-yellow-50 text-yellow-800 rounded-md">Low Stock Ticker Placeholder</div>;
+const OutOfStockTracker = () => <div className="mt-4 p-4 text-center bg-red-50 text-red-800 rounded-md">Out of Stock Tracker Placeholder</div>;
+const TransactionHistory = () => <div className="p-2 border rounded-md">Transaction History Placeholder</div>;
+const DispenseModal = ({ open, onOpenChange, medication }: any) => {
+  // Placeholder for dispense logic
+  const { toast } = useToast();
+  const dbRef = useRef<any>(null);
+  const authRef = useRef<any>(null);
+  const userIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    dbRef.current = db;
+    authRef.current = auth;
+
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        userIdRef.current = user.uid;
+      } else {
+        await signInAnonymously(auth);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const handleDispense = async () => {
+    if (!medication || !dbRef.current || !userIdRef.current) return;
+    try {
+      const medicationRef = doc(dbRef.current, `artifacts/${__app_id}/users/${userIdRef.current}/medications`, medication.id);
+      await updateDoc(medicationRef, {
+        quantity: medication.quantity - 1,
+      });
+      toast({
+        title: "Success",
+        description: `Successfully dispensed one unit of ${medication.medicalName}.`,
+      });
+      onOpenChange(false);
+    } catch (error) {
+      console.error("Error dispensing medication:", error);
+      toast({
+        title: "Error",
+        description: "Failed to dispense medication.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Dispense Medication</DialogTitle>
+        </DialogHeader>
+        <div className="py-4">
+          <p>Are you sure you want to dispense one unit of <strong>{medication?.medicalName}</strong>?</p>
+          <p className="text-xs text-gray-500 mt-2">Current stock: {medication?.quantity}</p>
+        </div>
+        <DialogFooter>
+          <Button onClick={handleDispense}>Confirm</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const AddMedicationModal = ({ open, onOpenChange, onSave }: any) => {
+  const [genericName, setGenericName] = useState("");
+  const [medicalName, setMedicalName] = useState("");
+  const [location, setLocation] = useState("");
+  const [quantity, setQuantity] = useState(1);
+  const [dose, setDose] = useState("");
+  const [type, setType] = useState("rapid");
+  const [administrativeForm, setAdministrativeForm] = useState("pen");
+  const [expirationDate, setExpirationDate] = useState("");
+
+  const handleSave = () => {
+    onSave({
+      genericName,
+      medicalName,
+      location,
+      quantity: Number(quantity),
+      dose,
+      type,
+      administrativeForm,
+      expirationDate,
+    });
+    setGenericName("");
+    setMedicalName("");
+    setLocation("");
+    setQuantity(1);
+    setDose("");
+    setType("rapid");
+    setAdministrativeForm("pen");
+    setExpirationDate("");
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>Add New Medication</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="medicalName" className="text-right">Medical Name</Label>
+            <Input id="medicalName" value={medicalName} onChange={e => setMedicalName(e.target.value)} className="col-span-3" />
+          </div>
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="genericName" className="text-right">Generic Name</Label>
+            <Input id="genericName" value={genericName} onChange={e => setGenericName(e.target.value)} className="col-span-3" />
+          </div>
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="dose" className="text-right">Dose</Label>
+            <Input id="dose" value={dose} onChange={e => setDose(e.target.value)} className="col-span-3" />
+          </div>
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="quantity" className="text-right">Quantity</Label>
+            <Input id="quantity" type="number" value={quantity} onChange={e => setQuantity(Number(e.target.value))} className="col-span-3" />
+          </div>
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="location" className="text-right">Location</Label>
+            <Input id="location" value={location} onChange={e => setLocation(e.target.value)} className="col-span-3" />
+          </div>
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="type" className="text-right">Type</Label>
+            <Select onValueChange={setType} value={type}>
+              <SelectTrigger className="col-span-3">
+                <SelectValue placeholder="Select type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="rapid">Rapid Acting</SelectItem>
+                <SelectItem value="long">Long Acting</SelectItem>
+                <SelectItem value="intermediate">Intermediate</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="administrativeForm" className="text-right">Form</Label>
+            <Select onValueChange={setAdministrativeForm} value={administrativeForm}>
+              <SelectTrigger className="col-span-3">
+                <SelectValue placeholder="Select form" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pen">Pen</SelectItem>
+                <SelectItem value="injection">Injection</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="expirationDate" className="text-right">Expiration</Label>
+            <Input id="expirationDate" type="date" value={expirationDate} onChange={e => setExpirationDate(e.target.value)} className="col-span-3" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button onClick={handleSave}>Save changes</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+// --------------------------------------------------
+// MoveModal Component
+// --------------------------------------------------
+
+interface MoveModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  medication: Medication | null;
+  predefinedLocations: string[];
+}
+
+export function MoveModal({ open, onOpenChange, medication, predefinedLocations }: MoveModalProps) {
+  const [moveQuantity, setMoveQuantity] = useState(1);
+  const [newLocation, setNewLocation] = useState("");
+  const [selectedLocation, setSelectedLocation] = useState("");
+  const { toast } = useToast();
+
+  // Firestore
+  const dbRef = useRef<any>(null);
+  const userIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    dbRef.current = db;
+
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        userIdRef.current = user.uid;
+      } else {
+        await signInAnonymously(auth);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleMove = async () => {
+    if (!medication) return;
+    if (moveQuantity > (medication.quantity ?? 0)) {
+      toast({
+        title: "Error",
+        description: "Cannot move more than available stock",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!selectedLocation && !newLocation) {
+        toast({
+            title: "Error",
+            description: "Please select a location or enter a new one",
+            variant: "destructive",
+        });
+        return;
+    }
+    
+    const db = dbRef.current;
+    const userId = userIdRef.current;
+    if (!db || !userId) {
+        toast({
+            title: "Error",
+            description: "App not ready. Please try again.",
+            variant: "destructive",
+        });
+        return;
+    }
+
+    try {
+        const newLocationToUse = selectedLocation || newLocation;
+        // Update the original medication's quantity and location
+        const medicationRef = doc(db, `artifacts/${__app_id}/users/${userId}/medications`, medication.id);
+        await updateDoc(medicationRef, { quantity: medication.quantity - moveQuantity });
+        
+        // Add a new medication entry with the moved quantity and new location
+        const movedMedicationRef = doc(collection(db, `artifacts/${__app_id}/users/${userId}/medications`));
+        await setDoc(movedMedicationRef, {
+            ...medication,
+            id: movedMedicationRef.id,
+            quantity: moveQuantity,
+            location: newLocationToUse,
+        });
+
+        const unit = (medication?.administrativeForm?.toLowerCase() === "pens")
+            ? (moveQuantity === 1 ? "pen" : "pens")
+            : (moveQuantity === 1 ? "injection" : "injections");
+
+        toast({
+            title: "Success",
+            description: `Successfully moved ${moveQuantity} ${unit} to ${newLocationToUse}`,
+            duration: 3000,
+        });
+        setMoveQuantity(1);
+        setNewLocation("");
+        setSelectedLocation("");
+        onOpenChange(false);
+    } catch (error) {
+        console.error("Error moving medication:", error);
+        toast({
+            title: "Error",
+            description: "Failed to move medication. Please try again.",
+            variant: "destructive",
+            duration: 3000,
+        });
+    }
+  };
+
+  const incrementQuantity = () => {
+    if (medication && moveQuantity < (medication.quantity ?? 0)) {
+      setMoveQuantity(moveQuantity + 1);
+    }
+  };
+
+  const decrementQuantity = () => {
+    if (moveQuantity > 1) {
+      setMoveQuantity(moveQuantity - 1);
+    }
+  };
+
+  if (!medication) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md" data-testid="modal-move-medication">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CornerRightDown className="h-5 w-5 text-indigo-600" />
+            Move Medication
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div>
+            <p className="text-sm text-gray-900" data-testid="text-medication-name">
+              {medication.medicalName} ({medication.genericName})
+            </p>
+            <p className="text-xs text-gray-500 mt-1" data-testid="text-available-stock">
+              Current Location: {medication.location ?? "—"} <br/>
+              Current Quantity: {medication.quantity ?? "—"}
+            </p>
+          </div>
+          
+          <div>
+            <Label htmlFor="moveQuantity">Quantity to Move</Label>
+            <div className="flex items-center space-x-2 mt-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={decrementQuantity}
+                disabled={moveQuantity <= 1}
+                data-testid="button-decrement"
+              >
+                <Minus className="h-4 w-4" />
+              </Button>
+              <Input
+                id="moveQuantity"
+                type="number"
+                min="1"
+                max={medication.quantity}
+                value={moveQuantity}
+                onChange={(e) => setMoveQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-20 text-center"
+                data-testid="input-move-quantity"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={incrementQuantity}
+                disabled={moveQuantity >= (medication.quantity || 0)}
+                data-testid="button-increment"
+              >
+                <PlusIcon className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="location-select">Select a Destination</Label>
+            <Select onValueChange={setSelectedLocation} value={selectedLocation}>
+              <SelectTrigger id="location-select" className="mt-1">
+                <SelectValue placeholder="Select a pre-saved location" />
+              </SelectTrigger>
+              <SelectContent>
+                {predefinedLocations.map((loc, index) => (
+                  <SelectItem key={index} value={loc}>
+                    {loc}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          
+          <div className="flex items-center space-x-2">
+              <div className="flex-grow border-t border-gray-200"></div>
+              <span className="flex-shrink text-xs text-gray-500">OR</span>
+              <div className="flex-grow border-t border-gray-200"></div>
+          </div>
+
+          <div>
+            <Label htmlFor="new-location-input">Enter a New Location</Label>
+            <Input
+              id="new-location-input"
+              className="mt-1"
+              placeholder="e.g., Shelf 3, Cabinet B"
+              value={newLocation}
+              onChange={(e) => {
+                  setNewLocation(e.target.value);
+                  setSelectedLocation("");
+              }}
+              disabled={!!selectedLocation}
+            />
+          </div>
+        </div>
+
+        <DialogFooter className="flex flex-col gap-3 pt-4 sm:flex-row sm:justify-end">
+          <Button
+            onClick={handleMove}
+            className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white sm:flex-none"
+            disabled={false} // Removed mutation.isPending since we're not using react-query
+            data-testid="button-confirm-move"
+          >
+            <Check className="h-4 w-4 mr-2" />
+            Confirm Move
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            data-testid="button-cancel-move"
+            className="sm:flex-none"
+          >
+            Cancel
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// --------------------------------------------------
+// Main Inventory Component
+// --------------------------------------------------
 
 export default function Inventory() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -358,10 +661,90 @@ export default function Inventory() {
   const [isDispenseModalOpen, setIsDispenseModalOpen] = useState(false);
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false); // New state for Move modal
   const [selectedMedication, setSelectedMedication] = useState<Medication | null>(null);
+  const [medications, setMedications] = useState<Medication[]>([]);
+  const [locations, setLocations] = useState<string[]>([]);
+  const dbRef = useRef<any>(null);
+  const authRef = useRef<any>(null);
+  const userIdRef = useRef<string | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const { toast } = useToast();
 
-  const { data: medications = [], isLoading } = useQuery<Medication[]>({
-    queryKey: ["/api/medications"],
-  });
+  useEffect(() => {
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    dbRef.current = db;
+    authRef.current = auth;
+
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        userIdRef.current = user.uid;
+        console.log("User authenticated:", user.uid);
+      } else {
+        await signInAnonymously(auth);
+        console.log("Signed in anonymously");
+      }
+      setIsAuthReady(true);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    let unsubscribe: () => void = () => {};
+    if (isAuthReady && dbRef.current && userIdRef.current) {
+      const db = dbRef.current;
+      const userId = userIdRef.current;
+      const medicationCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/medications`);
+      
+      unsubscribe = onSnapshot(medicationCollectionRef, (querySnapshot) => {
+        const meds: Medication[] = [];
+        const uniqueLocations: Set<string> = new Set();
+        querySnapshot.forEach((doc) => {
+          const data = doc.data() as Medication;
+          meds.push({ ...data, id: doc.id });
+          if (data.location) {
+            uniqueLocations.add(data.location);
+          }
+        });
+        setMedications(meds);
+        setLocations(Array.from(uniqueLocations));
+      }, (error) => {
+        console.error("Failed to fetch data:", error);
+      });
+    }
+    return () => unsubscribe();
+  }, [isAuthReady]);
+
+  const addMedication = async (newMed: any) => {
+    const db = dbRef.current;
+    const userId = userIdRef.current;
+    if (!db || !userId) {
+      toast({
+        title: "Error",
+        description: "App not ready. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+    try {
+      await setDoc(doc(collection(db, `artifacts/${__app_id}/users/${userId}/medications`)), newMed);
+      toast({
+        title: "Success",
+        description: "Medication added successfully!",
+      });
+    } catch (error) {
+      console.error("Error adding document:", error);
+      toast({
+        title: "Error",
+        description: "Failed to add medication. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const filteredMedications = useMemo(() => {
     let filtered = medications;
@@ -379,7 +762,6 @@ export default function Inventory() {
     if (selectedType !== "all") {
       filtered = filtered.filter((med) => med.type === selectedType);
     }
-
     return filtered;
   }, [medications, searchQuery, selectedType]);
 
@@ -387,14 +769,12 @@ export default function Inventory() {
     setSelectedMedication(medication);
     setIsDispenseModalOpen(true);
   };
-
-  // New handler for the Move button
+  
   const handleMove = (medication: Medication) => {
     setSelectedMedication(medication);
     setIsMoveModalOpen(true);
   };
 
-  // Scroll target: LowStockTicker element
   const scrollToTrackers = () => {
     if (typeof document !== "undefined") {
       const el = document.getElementById("low-stock-ticker");
@@ -406,7 +786,7 @@ export default function Inventory() {
     }
   };
 
-  if (isLoading) {
+  if (!isAuthReady) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -467,7 +847,9 @@ export default function Inventory() {
                   <List className="h-4 w-4 mr-2" />
                   Low / Out of Stock
                 </Button>
+
                 <TransactionHistory />
+
                 <Button
                   onClick={() => setIsAddModalOpen(true)}
                   className="bg-rose-600 hover:bg-rose-700 text-white"
@@ -490,16 +872,18 @@ export default function Inventory() {
                 >
                   <List className="h-4 w-4 mr-2" /> All types
                 </Button>
+
                 {Object.entries(typeLabels).map(([type, label]) => {
                   const Icon = typeIcons[type as keyof typeof typeIcons];
                   const selectedCls = (filterSelectedClasses as any)[type];
                   const hoverCls = (filterHoverClasses as any)[type];
+
                   return (
                     <Button
                       key={type}
                       variant={selectedType === type ? "default" : "outline"}
                       onClick={() => setSelectedType(type)}
-                      className={`text-sm ${selectedType === type ? selectedCls : `border-gray-200 ${hoverCls}`}`}
+                      className={`text-sm ${selectedType === type ? selectedCls : `border-gray-200 ${hoverCls}`} `}
                       data-testid={`filter-${type}`}
                     >
                       <Icon className="h-4 w-4 mr-2" />
@@ -545,17 +929,16 @@ export default function Inventory() {
                     filteredMedications.map((medication) => {
                       const daysUntilExpiration = calculateDaysUntilExpiration(medication.expirationDate);
                       const Icon = typeIcons[medication.type as keyof typeof typeIcons];
-                      
-                      // administrative form display logic:
+
                       const adminFormValue =
                         (medication.administrativeForm as string | undefined) ||
                         (medication.formType as string | undefined) ||
                         "";
                       const adminFormDisplay =
-                        adminFormValue.toLowerCase() === "pen" ? "Pen" : 
-                        adminFormValue.toLowerCase() === "injection" ? "Injection" : "—";
+                        adminFormValue.toLowerCase() === "pen" ? "Pen" : adminFormValue.toLowerCase() === "injection" ? "Injection" : "—";
                       
                       const rowTint = getRowClassName(medication.type);
+
                       return (
                         <tr
                           key={medication.id}
@@ -572,19 +955,22 @@ export default function Inventory() {
                               </div>
                             </div>
                           </td>
-                          {/* Administrative Form */}
+
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-administrative-form">
                             {adminFormDisplay}
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap">
                             <Badge className={(badgeColors as any)[medication.type]}>
                               <Icon className="h-3 w-3 mr-1" />
                               {(typeLabels as any)[medication.type]}
                             </Badge>
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-dose">
                             {medication.dose}
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span
                               className={`text-sm font-medium ${
@@ -596,14 +982,17 @@ export default function Inventory() {
                             </span>
                             {(medication.quantity ?? 0) <= 5 && <div className="text-xs text-red-600">Low stock</div>}
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className="text-sm text-gray-900" data-testid="text-expiration-date">
                               {medication.expirationDate ? new Date(medication.expirationDate).toLocaleDateString() : "—"}
                             </span>
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" data-testid="text-location">
                             {medication.location ?? "—"}
                           </td>
+
                           <td className="px-6 py-4 whitespace-nowrap space-x-2">
                             <Button
                               onClick={() => handleDispense(medication)}
@@ -616,15 +1005,15 @@ export default function Inventory() {
                               Dispense
                             </Button>
                             <Button
-                              onClick={() => handleMove(medication)}
-                              size="sm"
-                              variant="outline"
-                              className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
-                              disabled={(medication.quantity ?? 0) === 0}
-                              data-testid={`button-move-${medication.id}`}
+                                onClick={() => handleMove(medication)}
+                                size="sm"
+                                variant="outline"
+                                className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                                disabled={(medication.quantity ?? 0) === 0}
+                                data-testid={`button-move-${medication.id}`}
                             >
-                              <CornerRightDown className="h-4 w-4 mr-1" />
-                              Move
+                                <CornerRightDown className="h-4 w-4 mr-1" />
+                                Move
                             </Button>
                           </td>
                         </tr>
@@ -637,24 +1026,33 @@ export default function Inventory() {
           </CardContent>
         </Card>
 
-        {/* Give the LowStockTicker a stable id so the button can scroll to it */}
         <div id="low-stock-ticker" className="mt-8">
           <LowStockTicker />
         </div>
+
         <OutOfStockTracker />
       </main>
 
       <AddMedicationModal
         open={isAddModalOpen}
         onOpenChange={setIsAddModalOpen}
-        onSave={(newMed: any) => {
-          // Note: replace with your backend mutation; this is only local client push
-          medications.push(newMed);
-          setIsAddModalOpen(false);
-        }}
+        onSave={addMedication}
       />
+
       <DispenseModal open={isDispenseModalOpen} onOpenChange={setIsDispenseModalOpen} medication={selectedMedication} />
-      <MoveModal open={isMoveModalOpen} onOpenChange={setIsMoveModalOpen} medication={selectedMedication} />
+      <MoveModal open={isMoveModalOpen} onOpenChange={setIsMoveModalOpen} medication={selectedMedication} predefinedLocations={locations} />
     </div>
+  );
+}
+
+// --------------------------------------------------
+// App Wrapper
+// --------------------------------------------------
+
+export default function App() {
+  return (
+    <ToastProvider>
+      <Inventory />
+    </ToastProvider>
   );
 }
