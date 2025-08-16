@@ -59,7 +59,7 @@ type Transaction = {
   type: "dispense" | "move" | "add";
   timestamp: string;
   comment?: string;
-}
+};
 
 export const TransactionHistory = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -92,27 +92,28 @@ export const TransactionHistory = () => {
     if (dbRef.current && userIdRef.current) {
       const db = dbRef.current;
       const userId = userIdRef.current;
-      
       const transactionsCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/transactions`);
-      
-      unsubscribe = onSnapshot(transactionsCollectionRef, (querySnapshot) => {
-        const txs = [];
-        querySnapshot.forEach((doc) => {
-          const data = doc.data() as Transaction;
-          txs.push({ ...data, id: doc.id });
-        });
-        
-        txs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        setTransactions(txs);
-        
-      }, (error) => {
-        console.error("Failed to fetch transactions:", error);
-        toast({
-          title: "Error",
-          description: "Failed to load transaction history.",
-          variant: "destructive",
-        });
-      });
+
+      unsubscribe = onSnapshot(
+        transactionsCollectionRef,
+        (querySnapshot) => {
+          const txs: Transaction[] = [];
+          querySnapshot.forEach((doc) => {
+            const data = doc.data() as Transaction;
+            txs.push({ ...data, id: doc.id });
+          });
+          txs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          setTransactions(txs);
+        },
+        (error) => {
+          console.error("Failed to fetch transactions:", error);
+          toast({
+            title: "Error",
+            description: "Failed to load transaction history.",
+            variant: "destructive",
+          });
+        }
+      );
     }
     return () => unsubscribe();
   }, [toast]);
@@ -133,8 +134,7 @@ export const TransactionHistory = () => {
                   <span className="text-sm font-medium text-gray-900">
                     {tx.type === "dispense" && "Dispensed"}
                     {tx.type === "add" && "Added"}
-                    {tx.type === "move" && "Moved"}
-                    {" "}
+                    {tx.type === "move" && "Moved"}{" "}
                     <span className="font-bold">{tx.quantity}</span> units of {tx.medicationName}.
                   </span>
                   <span className="text-xs text-gray-500 mt-1">
@@ -155,7 +155,6 @@ export const TransactionHistory = () => {
     </div>
   );
 };
-
 
 export default function App() {
   return (
