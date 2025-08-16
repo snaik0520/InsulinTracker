@@ -1,171 +1,188 @@
-import { useState, useEffect, useRef, createContext, useContext } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { type MedicationTransaction } from "@shared/schema";
+import { History, Plus, Minus, Clock, MoveIcon } from "lucide-react";
 
-// Firebase imports
-import { initializeApp } from "firebase/app";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
-import { getFirestore, collection, onSnapshot } from "firebase/firestore";
+export function TransactionHistory() {
+  const [isOpen, setIsOpen] = useState(false);
+  const { data: transactions = [], isLoading } = useQuery({
+    queryKey: ["/api/transactions"],
+    enabled: isOpen, // Only fetch when modal is open
+    refetchOnMount: true,
+  });
 
-// Placeholder for a Toast system and basic UI components for a self-contained app
-const ToastContext = createContext(null);
-const useToast = () => useContext(ToastContext);
-const ToastProvider = ({ children }) => {
-  const [toasts, setToasts] = useState([]);
-
-  const toast = (newToast) => {
-    setToasts(prev => [...prev, { id: Date.now(), ...newToast }]);
+  const formatTimestamp = (timestamp: string | Date) => {
+    const date = new Date(timestamp);
+    return {
+      date: date.toLocaleDateString(),
+      time: date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    };
   };
 
-  useEffect(() => {
-    if (toasts.length > 0) {
-      const timer = setTimeout(() => {
-        setToasts(prev => prev.slice(1));
-      }, toasts[0].duration || 5000);
-      return () => clearTimeout(timer);
+  const getTransactionIcon = (type: string) => {
+    switch (type) {
+      case "addition":
+        return Plus;
+      case "dispensed":
+        return Minus;
+      case "move":
+        return MoveIcon;
+      default:
+        return Clock;
     }
-  }, [toasts]);
+  };
 
-  return (
-    <ToastContext.Provider value={{ toast }}>
-      {children}
-      <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 w-full max-w-xs">
-        {toasts.map(t => (
-          <div key={t.id} className={`rounded-md p-4 shadow-md text-white ${t.variant === 'destructive' ? 'bg-red-500' : 'bg-green-500'}`}>
-            <h3 className="font-bold">{t.title}</h3>
-            <p className="text-sm">{t.description}</p>
-          </div>
-        ))}
-      </div>
-    </ToastContext.Provider>
-  );
-};
-
-// Placeholder UI components
-const Button = ({ children, onClick, className = "", variant = "default", ...props }) => {
-  let baseClasses = "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none";
-  let variantClasses = "";
-  if (variant === "default") {
-    variantClasses = "bg-primary text-primary-foreground hover:bg-primary/90 h-10 py-2 px-4";
-  } else if (variant === "outline") {
-    variantClasses = "border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 py-2 px-4";
-  }
-  return <button onClick={onClick} className={`${baseClasses} ${variantClasses} ${className}`} {...props}>{children}</button>;
-};
-
-// Type Definitions
-type Transaction = {
-  id: string;
-  medicationName: string;
-  quantity: number;
-  type: "dispense" | "move" | "add";
-  timestamp: string;
-  comment?: string;
-};
-
-export const TransactionHistory = () => {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const dbRef = useRef(null);
-  const userIdRef = useRef(null);
-  const { toast } = useToast();
-
-  useEffect(() => {
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-    const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const db = getFirestore(app);
-    dbRef.current = db;
-
-    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        userIdRef.current = user.uid;
-      } else {
-        await signInAnonymously(auth);
-        userIdRef.current = auth.currentUser.uid;
-      }
-    });
-
-    return () => unsubscribeAuth();
-  }, []);
-
-  useEffect(() => {
-    let unsubscribe = () => {};
-    if (dbRef.current && userIdRef.current) {
-      const db = dbRef.current;
-      const userId = userIdRef.current;
-      const transactionsCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/transactions`);
-
-      unsubscribe = onSnapshot(
-        transactionsCollectionRef,
-        (querySnapshot) => {
-          const txs: Transaction[] = [];
-          querySnapshot.forEach((doc) => {
-            const data = doc.data() as Transaction;
-            txs.push({ ...data, id: doc.id });
-          });
-          txs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-          setTransactions(txs);
-        },
-        (error) => {
-          console.error("Failed to fetch transactions:", error);
-          toast({
-            title: "Error",
-            description: "Failed to load transaction history.",
-            variant: "destructive",
-          });
-        }
-      );
+  const getTransactionColor = (type: string) => {
+    switch (type) {
+      case "addition":
+        return "bg-green-100 text-green-800 border-green-200";
+      case "dispensed":
+        return "bg-red-100 text-red-800 border-red-200";
+      case "move":
+        return "bg-purple-100 text-purple-800 border-purple-200";
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-200";
     }
-    return () => unsubscribe();
-  }, [toast]);
+  };
+
+  const getTransactionTitle = (type: string) => {
+    switch (type) {
+      case "addition":
+        return "Added";
+      case "dispensed":
+        return "Dispensed";
+      case "move":
+        return "Moved";
+      default:
+        return "Updated";
+    }
+  };
+
+  const getTransactionDescription = (transaction: MedicationTransaction) => {
+    if (transaction.type === "move") {
+      return "Location changed";
+    } else if (transaction.type === "addition") {
+      // Determine unit based on "pen" presence
+      const isPen = transaction.medicationName.toLowerCase().includes("pen");
+      const unit = isPen
+        ? transaction.quantity === 1
+          ? "pen"
+          : "pens"
+        : transaction.quantity === 1
+        ? "injection"
+        : "injections";
+      return `${transaction.quantity} ${unit} added to inventory`;
+    } else {
+      // dispensed
+      const isPen = transaction.medicationName.toLowerCase().includes("pen");
+      const unit = isPen
+        ? transaction.quantity === 1
+          ? "pen"
+          : "pens"
+        : transaction.quantity === 1
+        ? "injection"
+        : "injections";
+      return `${transaction.quantity} ${unit} dispensed to patient`;
+    }
+  };
 
   return (
-    <div className="bg-white rounded-xl border shadow p-6 max-w-2xl mx-auto">
-      <h3 className="text-2xl font-semibold text-gray-900 mb-6">Transaction History</h3>
-      {transactions.length === 0 ? (
-        <p className="text-sm text-gray-500 text-center py-8">
-          No transactions have been recorded yet.
-        </p>
-      ) : (
-        <ul className="divide-y divide-gray-200 max-h-96 overflow-y-auto">
-          {transactions.map((tx) => (
-            <li key={tx.id} className="py-4">
-              <div className="flex items-start justify-between">
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium text-gray-900">
-                    {tx.type === "dispense" && "Dispensed"}
-                    {tx.type === "add" && "Added"}
-                    {tx.type === "move" && "Moved"}{" "}
-                    <span className="font-bold">{tx.quantity}</span> units of {tx.medicationName}.
-                  </span>
-                  <span className="text-xs text-gray-500 mt-1">
-                    {new Date(tx.timestamp).toLocaleString()}
-                  </span>
-                </div>
-              </div>
-              {/* Conditional render for the comment */}
-              {tx.comment && (
-                <div className="mt-2 text-sm text-gray-700 bg-gray-50 p-3 rounded-lg border border-gray-200">
-                  <span className="font-semibold text-gray-600">Comment:</span> {tx.comment}
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-};
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50">
+          <History className="h-4 w-4 mr-2" />
+          Transaction History
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[600px] max-h-[80vh]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-blue-700">
+            <History className="h-5 w-5" />
+            Medication Transaction History
+          </DialogTitle>
+        </DialogHeader>
 
-export default function App() {
-  return (
-    <ToastProvider>
-      <div className="p-4 sm:p-8 bg-gray-100 min-h-screen font-sans">
-        <header className="flex flex-col items-center justify-center p-4 bg-white rounded-lg shadow-md mb-8 max-w-2xl mx-auto">
-          <h1 className="text-3xl font-bold text-gray-800">Noor Insulin Inventory</h1>
-          <p className="text-sm text-gray-500">Your medication tracking made simple.</p>
-        </header>
-        <TransactionHistory />
-      </div>
-    </ToastProvider>
+        <ScrollArea className="h-full max-h-[60vh] pr-4">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <span className="ml-2 text-blue-600">Loading transactions...</span>
+            </div>
+          ) : transactions.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">
+              <History className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+              <h3 className="text-lg font-medium mb-2">No transactions recorded yet.</h3>
+              <p className="text-sm">
+                Add or dispense medications to see transaction history.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {transactions.map((transaction) => {
+                const { date, time } = formatTimestamp(transaction.timestamp);
+                const Icon = getTransactionIcon(transaction.type);
+
+                // Remove any " - form" suffix, then split "generic (medical)"
+                const nameOnly = transaction.medicationName.split(" - ")[0];
+                const [generic, withParen] = nameOnly.split(" (");
+                const medical = withParen?.replace(")", "") ?? "";
+
+                return (
+                  <div
+                    key={transaction.id}
+                    className="border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow"
+                  >
+                    <div className="flex items-start justify-between">
+                      {/* LEFT: icon + name + description */}
+                      <div className="flex items-start gap-3 flex-1 min-w-0">
+                        <div className={`p-2 rounded-full ${getTransactionColor(transaction.type)}`}>
+                          <Icon className="h-4 w-4" />
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-medium text-gray-900 truncate">
+                            {generic} {medical && `(${medical})`}
+                          </h4>
+                          <p className="text-sm text-gray-600 mt-2">
+                            {getTransactionDescription(transaction)}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* RIGHT: Badge (title) and timestamp aligned to right */}
+                      <div className="ml-4 flex flex-col items-end text-right">
+                        <Badge
+                          variant="outline"
+                          className={`${getTransactionColor(transaction.type)} px-2 py-1`}
+                        >
+                          {getTransactionTitle(transaction.type)}
+                        </Badge>
+
+                        <div className="flex items-center gap-1 text-xs text-gray-500 mt-2">
+                          <Clock className="h-3 w-3" />
+                          <span>
+                            {date} at {time}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
   );
 }
