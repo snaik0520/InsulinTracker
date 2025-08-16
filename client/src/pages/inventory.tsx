@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +13,7 @@ import { TransactionHistory } from "@/components/transaction-history";
 import { type Medication } from "@shared/schema";
 import {
   Search,
-  Plus as PlusIcon,
+  Plus,
   HandHeart,
   Syringe,
   Zap,
@@ -22,16 +22,22 @@ import {
   HelpCircle,
   List,
   CornerRightDown,
-  Check,
-  Minus,
 } from "lucide-react";
 import logo from "../assets/noor-logo.png";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { Check, Minus, Plus as PlusIcon } from "lucide-react";
 
 /**
- * Simulated API call (replace with your real API implementation)
+ * Simulated API call (replace with real API)
  */
 const apiRequest = async (method: string, url: string, data: any) => {
   console.log(`Simulating API call: ${method} to ${url} with data:`, data);
@@ -58,7 +64,7 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Read medications from cache to derive pre-saved locations
+  // derive pre-saved locations from current medications in cache / query
   const { data: allMeds = [] } = useQuery<Medication[]>({
     queryKey: ["/api/medications"],
   });
@@ -78,23 +84,23 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
       return response.json();
     },
     onSuccess: () => {
-      // Optimistically update the /api/medications cache so UI shows moved quantities immediately
+      // --- optimistic UI update: update the /api/medications cache to reflect movement ---
       queryClient.setQueryData<Medication[] | undefined>(["/api/medications"], (old) => {
         if (!old || !medication) return old;
 
-        const destLocation = (selectedLocation || newLocation).trim();
+        const destLocation = selectedLocation || newLocation;
         const qty = moveQuantity;
 
-        // subtract from the source medication
+        // subtract from source medication
         const updated = old.map((m) =>
-          m.id === medication.id ? { ...m, quantity: Math.max(0, (m.quantity ?? 0) - qty) } : { ...m }
+          m.id === medication.id ? { ...m, quantity: (m.quantity ?? 0) - qty } : { ...m }
         );
 
-        // find an existing record for same med & dest location (by medicalName + location)
+        // try to find an existing record for the same medication at the destination
         const existingIndex = updated.findIndex(
           (m) =>
-            (m.medicalName || "").trim().toLowerCase() === (medication.medicalName || "").trim().toLowerCase() &&
-            ((m.location || "").trim().toLowerCase() === destLocation.toLowerCase())
+            (m.medicalName || "").trim() === (medication.medicalName || "").trim() &&
+            ((m.location || "").trim() === destLocation.trim())
         );
 
         if (existingIndex >= 0) {
@@ -103,29 +109,31 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
           dest.quantity = (dest.quantity ?? 0) + qty;
           updated[existingIndex] = dest;
         } else {
-          // create a new temporary record for the moved quantity at destination
+          // create a new record representing the moved quantity at the destination
           const newRecord: Medication = {
             ...medication,
             id: `${medication.id}-moved-${Date.now()}`, // temporary unique id for UI
             quantity: qty,
             location: destLocation,
+            // keep other fields same (you may want to adjust expiration/dose/etc in real backend logic)
           };
           updated.push(newRecord);
         }
 
+        // filter out any meds with quantity <= 0? We'll keep zero-quantity rows for now,
+        // but you can remove them if you prefer:
+        // return updated.filter(m => (m.quantity ?? 0) > 0);
         return updated;
       });
 
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"] });
 
-      const isPen =
-        (medication.administrationForm || medication.administrativeForm || medication.formType || "")
-          .toString()
-          .toLowerCase()
-          .includes("pen");
-
-      const unit = isPen ? (moveQuantity === 1 ? "pen" : "pens") : moveQuantity === 1 ? "injection" : "injections";
+      const unit =
+        (medication?.administrationForm?.toLowerCase() === "pen" ||
+          medication?.administrationForm?.toLowerCase() === "pens")
+          ? (moveQuantity === 1 ? "pen" : "pens")
+          : (moveQuantity === 1 ? "injection" : "injections");
 
       toast({
         title: "Success",
@@ -175,27 +183,24 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
 
   const incrementQuantity = () => {
     if (medication && moveQuantity < (medication.quantity ?? 0)) {
-      setMoveQuantity((q) => q + 1);
+      setMoveQuantity(moveQuantity + 1);
     }
   };
   const decrementQuantity = () => {
     if (moveQuantity > 1) {
-      setMoveQuantity((q) => q - 1);
+      setMoveQuantity(moveQuantity - 1);
     }
   };
 
   if (!medication) return null;
 
-  const adminFormNormalized = (
-    medication.administrationForm ||
-    (medication as any).administrativeForm ||
-    (medication as any).formType ||
-    ""
-  ).toString();
+  const isPenForm =
+    (medication.administrationForm || medication.administrativeForm || medication.formType || "")
+      .toString()
+      .toLowerCase()
+      .includes("pen");
 
-  const isPenForm = adminFormNormalized.toLowerCase().includes("pen");
-  const adminUnitCurrent =
-    (medication.quantity ?? 0) === 1 ? (isPenForm ? "pen" : "injection") : isPenForm ? "pens" : "injections";
+  const adminUnitCurrent = (medication.quantity ?? 0) === 1 ? (isPenForm ? "pen" : "injection") : (isPenForm ? "pens" : "injections");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -264,22 +269,20 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
               </SelectTrigger>
               <SelectContent>
                 {predefinedLocations.length === 0 ? (
-                  <SelectItem value="">No saved locations — enter a new one below</SelectItem>
+                  <SelectItem value="">
+                    No saved locations — enter a new one below
+                  </SelectItem>
                 ) : (
-                  predefinedLocations.map((loc, index) => (
-                    <SelectItem key={index} value={loc}>
-                      {loc}
-                    </SelectItem>
-                  ))
+                  predefinedLocations.map((loc, index) => <SelectItem key={index} value={loc}>{loc}</SelectItem>)
                 )}
               </SelectContent>
             </Select>
           </div>
 
           <div className="flex items-center space-x-2">
-            <div className="flex-grow border-t border-gray-200" />
+            <div className="flex-grow border-t border-gray-200"></div>
             <span className="flex-shrink text-xs text-gray-500">OR</span>
-            <div className="flex-grow border-t border-gray-200" />
+            <div className="flex-grow border-t border-gray-200"></div>
           </div>
 
           <div>
@@ -393,8 +396,7 @@ const getRowClassName = (type: string) => {
   }
 };
 
-const calculateDaysUntilExpiration = (expirationDate?: string) => {
-  if (!expirationDate) return Infinity;
+const calculateDaysUntilExpiration = (expirationDate: string) => {
   const today = new Date();
   const expiry = new Date(expirationDate);
   const diffTime = expiry.getTime() - today.getTime();
@@ -464,7 +466,7 @@ export default function Inventory() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-rose-400 mx-auto mb-4" />
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-rose-400 mx-auto mb-4"></div>
           <p className="text-gray-600">Loading medications…</p>
         </div>
       </div>
@@ -514,218 +516,3 @@ export default function Inventory() {
                   onClick={scrollToTrackers}
                   size="sm"
                   variant="outline"
-                  className="flex items-center border-rose-200 text-rose-700 hover:bg-rose-50"
-                  data-testid="button-jump-low-outstock"
-                  title="Jump to low / out of stock trackers"
-                >
-                  <List className="h-4 w-4 mr-2" />
-                  Low / Out of Stock
-                </Button>
-
-                <TransactionHistory />
-
-                <Button onClick={() => setIsAddModalOpen(true)} className="bg-rose-600 hover:bg-rose-700 text-white" data-testid="button-add-medication">
-                  <PlusIcon className="h-4 w-4 mr-2" />
-                  Add Medication
-                </Button>
-              </div>
-            </div>
-
-            <div className="mt-6">
-              <Label className="block text-sm font-medium text-gray-700 mb-3">Filter by insulin type</Label>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant={selectedType === "all" ? "default" : "outline"}
-                  onClick={() => setSelectedType("all")}
-                  className={`text-sm ${selectedType === "all" ? "bg-white text-gray-700" : "text-gray-700"}`}
-                  data-testid="filter-all"
-                >
-                  <List className="h-4 w-4 mr-2" /> All types
-                </Button>
-                {Object.entries(typeLabels).map(([type, label]) => {
-                  const Icon = typeIcons[type as keyof typeof typeIcons];
-                  const selectedCls = (filterSelectedClasses as any)[type];
-                  const hoverCls = (filterHoverClasses as any)[type];
-                  return (
-                    <Button
-                      key={type}
-                      variant={selectedType === type ? "default" : "outline"}
-                      onClick={() => setSelectedType(type)}
-                      className={`text-sm ${selectedType === type ? selectedCls : "border-gray-200 " + hoverCls}`}
-                      data-testid={`filter-${type}`}
-                    >
-                      <Icon className="h-4 w-4 mr-2" />
-                      {label}
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg font-medium text-gray-900">Current insulin inventory</CardTitle>
-            <p className="text-sm text-gray-600">Manage and track all insulin medications in your clinic</p>
-          </CardHeader>
-
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Medication</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Administrative form</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Insulin type</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Dose</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Quantity</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Expiration</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Location</th>
-                    <th className="px-6 py-3 text-left text-sm font-medium text-gray-600">Actions</th>
-                  </tr>
-                </thead>
-
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredMedications.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
-                        {searchQuery || selectedType !== "all"
-                          ? "No medications found matching your criteria."
-                          : "No medications in inventory. Add your first medication to get started."}
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredMedications.map((medication) => {
-                      const daysUntilExpiration = calculateDaysUntilExpiration(medication.expirationDate);
-                      const Icon = typeIcons[medication.type as keyof typeof typeIcons];
-
-                      // administrative form detection (support several possible fields)
-                      const adminFormValue = (
-                        medication.administrationForm ||
-                        (medication as any).administrativeForm ||
-                        (medication as any).formType ||
-                        ""
-                      ).toString();
-
-                      const adminFormLower = adminFormValue.toLowerCase();
-                      const adminFormDisplay = adminFormLower.includes("pen")
-                        ? "Pen"
-                        : adminFormLower.includes("inject")
-                        ? "Injection"
-                        : "—";
-
-                      const rowTint = getRowClassName(medication.type);
-
-                      const isPen = adminFormLower.includes("pen");
-                      const qtyUnit =
-                        (medication.quantity ?? 0) === 1 ? (isPen ? "pen" : "injection") : isPen ? "pens" : "injections";
-
-                      return (
-                        <tr key={medication.id} className={`${rowTint} hover:bg-gray-50`} data-testid={`row-medication-${medication.id}`}>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div>
-                              <div className="text-sm font-medium text-gray-900" data-testid="text-medical-name">
-                                {medication.medicalName ?? medication.genericName ?? "—"}
-                              </div>
-                              <div className="text-sm text-gray-500" data-testid="text-generic-name">
-                                {medication.genericName ? `(${medication.genericName})` : ""}
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* Administrative Form */}
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-administrative-form">
-                            {adminFormDisplay}
-                          </td>
-
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <Badge className={(badgeColors as any)[medication.type]}>
-                              <Icon className="h-3 w-3 mr-1" />
-                              {(typeLabels as any)[medication.type]}
-                            </Badge>
-                          </td>
-
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-dose">
-                            {medication.dose}
-                          </td>
-
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span
-                              className={`text-sm font-medium ${
-                                (medication.quantity ?? 0) <= 5 ? "text-red-600" : "text-gray-900"
-                              }`}
-                              data-testid="text-quantity"
-                            >
-                              {medication.quantity ?? 0}
-                            </span>
-                            <div className="text-xs text-gray-500 mt-1">{qtyUnit}</div>
-                            {(medication.quantity ?? 0) <= 5 && <div className="text-xs text-red-600">Low stock</div>}
-                          </td>
-
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className="text-sm text-gray-900" data-testid="text-expiration-date">
-                              {medication.expirationDate ? new Date(medication.expirationDate).toLocaleDateString() : "—"}
-                            </span>
-                          </td>
-
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" data-testid="text-location">
-                            {medication.location ?? "—"}
-                          </td>
-
-                          <td className="px-6 py-4 whitespace-nowrap space-x-2">
-                            <Button
-                              onClick={() => handleDispense(medication)}
-                              size="sm"
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                              disabled={(medication.quantity ?? 0) === 0}
-                              data-testid={`button-dispense-${medication.id}`}
-                            >
-                              <HandHeart className="h-4 w-4 mr-1" />
-                              Dispense
-                            </Button>
-
-                            <Button
-                              onClick={() => handleMove(medication)}
-                              size="sm"
-                              variant="outline"
-                              className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
-                              disabled={(medication.quantity ?? 0) === 0}
-                              data-testid={`button-move-${medication.id}`}
-                            >
-                              <CornerRightDown className="h-4 w-4 mr-1" />
-                              Move
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Give the LowStockTicker a stable id so the button can scroll to it */}
-        <div id="low-stock-ticker" className="mt-8">
-          <LowStockTicker />
-        </div>
-
-        <OutOfStockTracker />
-      </main>
-
-      <AddMedicationModal
-        open={isAddModalOpen}
-        onOpenChange={setIsAddModalOpen}
-        onSave={() => {
-          // When hooking up real backend, you'll call a mutation and invalidate the meds query.
-          setIsAddModalOpen(false);
-        }}
-      />
-
-      <DispenseModal open={isDispenseModalOpen} onOpenChange={setIsDispenseModalOpen} medication={selectedMedication} />
-      <MoveModal open={isMoveModalOpen} onOpenChange={setIsMoveModalOpen} medication={selectedMedication} />
-    </div>
-  );
-}
