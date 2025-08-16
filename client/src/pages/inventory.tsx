@@ -103,28 +103,17 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
           m.id === medication.id ? { ...m, quantity: Math.max(0, (m.quantity ?? 0) - qty) } : { ...m }
         );
 
-        // find an existing record for same med & dest location (by medicalName + location)
-        const existingIndex = updated.findIndex(
-          (m) =>
-            (m.medicalName || "").trim().toLowerCase() === (medication.medicalName || "").trim().toLowerCase() &&
-            ((m.location || "").trim().toLowerCase() === destLocation.toLowerCase())
-        );
-
-        if (existingIndex >= 0) {
-          // increment existing destination record
-          const dest = { ...updated[existingIndex] };
-          dest.quantity = (dest.quantity ?? 0) + qty;
-          updated[existingIndex] = dest;
-        } else {
-          // create a new temporary record for the moved quantity at destination
-          const newRecord: Medication = {
-            ...medication,
-            id: `${medication.id}-moved-${Date.now()}`, // temporary unique id for UI
-            quantity: qty,
-            location: destLocation,
-          };
-          updated.push(newRecord);
-        }
+                // create a new temporary record for the moved quantity at destination
+        // IMPORTANT: always create a separate medication record for the moved amount so
+        // the source and destination remain independent. This allows removing/adding/moving
+        // from each location independently.
+        const newRecord: Medication = {
+          ...medication,
+          id: `${medication.id}-moved-${Date.now()}`, // temporary unique id for UI
+          quantity: qty,
+          location: destLocation,
+        };
+        updated.push(newRecord);
 
         return updated;
       });
