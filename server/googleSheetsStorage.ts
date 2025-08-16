@@ -1,5 +1,5 @@
 import { type Medication, type InsertMedication, type MedicationTransaction, type InsertTransaction } from "@shared/schema";
-import { IStorage } from './storage';
+import { type IStorage } from './storage';
 
 export class GoogleSheetsStorage implements IStorage {
   private baseUrl: string;
@@ -27,13 +27,23 @@ export class GoogleSheetsStorage implements IStorage {
       const response = await fetch(url.toString(), {
         method: 'POST',
         mode: 'cors',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
       });
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       
-      return await response.json();
+      const result = await response.json();
+      
+      // Check if the response contains an error
+      if (result.error) {
+        throw new Error(result.error);
+      }
+      
+      return result;
     } catch (error) {
       console.error('Google Sheets API Error:', error);
       throw error;
@@ -41,56 +51,118 @@ export class GoogleSheetsStorage implements IStorage {
   }
 
   async getMedications(): Promise<Medication[]> {
-    return await this.makeRequest('getMedications');
+    try {
+      const result = await this.makeRequest('getMedications');
+      return Array.isArray(result) ? result : [];
+    } catch (error) {
+      console.error('Error fetching medications:', error);
+      return [];
+    }
   }
 
   async getMedicationById(id: string): Promise<Medication | undefined> {
-    const medications = await this.getMedications();
-    return medications.find(med => med.id === id);
+    try {
+      const medications = await this.getMedications();
+      return medications.find(med => med.id === id);
+    } catch (error) {
+      console.error('Error fetching medication by ID:', error);
+      return undefined;
+    }
   }
 
   async createMedication(medication: InsertMedication): Promise<Medication> {
-    return await this.makeRequest('createMedication', { data: medication });
+    try {
+      const result = await this.makeRequest('createMedication', { data: medication });
+      return result;
+    } catch (error) {
+      console.error('Error creating medication:', error);
+      throw error;
+    }
   }
 
   async updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined> {
-    return await this.makeRequest('updateMedicationQuantity', { id, quantity: newQuantity });
+    try {
+      const result = await this.makeRequest('updateMedicationQuantity', { id, quantity: newQuantity });
+      return result;
+    } catch (error) {
+      console.error('Error updating medication quantity:', error);
+      return undefined;
+    }
   }
 
   async searchMedications(query: string): Promise<Medication[]> {
-    return await this.makeRequest('searchMedications', { query });
+    try {
+      const result = await this.makeRequest('searchMedications', { query });
+      return Array.isArray(result) ? result : [];
+    } catch (error) {
+      console.error('Error searching medications:', error);
+      return [];
+    }
   }
 
   async filterMedicationsByType(type: string): Promise<Medication[]> {
-    if (type === "all") {
-      return this.getMedications();
+    try {
+      const result = await this.makeRequest('filterMedicationsByType', { type });
+      return Array.isArray(result) ? result : [];
+    } catch (error) {
+      console.error('Error filtering medications by type:', error);
+      return [];
     }
-    const medications = await this.getMedications();
-    return medications.filter(medication => medication.type === type);
   }
 
   async getLowStockMedications(threshold: number = 5): Promise<Medication[]> {
-    const medications = await this.getMedications();
-    return medications.filter(medication =>
-      medication.quantity > 0 && medication.quantity <= threshold
-    );
+    try {
+      const result = await this.makeRequest('getLowStockMedications', { threshold });
+      return Array.isArray(result) ? result : [];
+    } catch (error) {
+      console.error('Error fetching low stock medications:', error);
+      return [];
+    }
   }
 
   async getOutOfStockMedications(): Promise<Medication[]> {
-    const medications = await this.getMedications();
-    return medications.filter(medication => medication.quantity === 0);
+    try {
+      const result = await this.makeRequest('getOutOfStockMedications');
+      return Array.isArray(result) ? result : [];
+    } catch (error) {
+      console.error('Error fetching out of stock medications:', error);
+      return [];
+    }
   }
 
   async getTransactions(): Promise<MedicationTransaction[]> {
-    return await this.makeRequest('getTransactions');
+    try {
+      const result = await this.makeRequest('getTransactions');
+      return Array.isArray(result) ? result : [];
+    } catch (error) {
+      console.error('Error fetching transactions:', error);
+      return [];
+    }
   }
 
   async createTransaction(transaction: InsertTransaction): Promise<MedicationTransaction> {
-    return await this.makeRequest('createTransaction', { data: transaction });
+    try {
+      const result = await this.makeRequest('createTransaction', { data: transaction });
+      return result;
+    } catch (error) {
+      console.error('Error creating transaction:', error);
+      throw error;
+    }
   }
 
   // New method for dispensing (combines quantity update + transaction)
   async dispenseMedication(medicationId: string, quantity: number): Promise<{medication: Medication, transaction: MedicationTransaction}> {
-    return await this.makeRequest('dispenseMedication', { medicationId, quantity });
+    try {
+      const result = await this.makeRequest('dispenseMedication', { medicationId, quantity });
+      
+      if (result.error) {
+        throw new Error(result.error);
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('Error dispensing medication:', error);
+      throw error;
+    }
   }
 }
