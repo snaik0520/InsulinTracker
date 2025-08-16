@@ -1,7 +1,99 @@
-// ...imports...
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { type MedicationTransaction } from "@shared/schema";
+import { History, Plus, Minus, Clock, MoveIcon } from "lucide-react";
+
 export function TransactionHistory() {
-  // ...existing state and query code...
-  // ...helpers...
+  const [isOpen, setIsOpen] = useState(false);
+  const { data: transactions = [], isLoading } = useQuery({
+    queryKey: ["/api/transactions"],
+    enabled: isOpen, // Only fetch when modal is open
+    refetchOnMount: true,
+  });
+
+  const formatTimestamp = (timestamp: string | Date) => {
+    const date = new Date(timestamp);
+    return {
+      date: date.toLocaleDateString(),
+      time: date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    };
+  };
+
+  const getTransactionIcon = (type: string) => {
+    switch (type) {
+      case "addition":
+        return Plus;
+      case "dispensed":
+        return Minus;
+      case "move":
+        return MoveIcon;
+      default:
+        return Clock;
+    }
+  };
+
+  const getTransactionColor = (type: string) => {
+    switch (type) {
+      case "addition":
+        return "bg-green-100 text-green-800 border-green-200";
+      case "dispensed":
+        return "bg-red-100 text-red-800 border-red-200";
+      case "move":
+        return "bg-purple-100 text-purple-800 border-purple-200";
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-200";
+    }
+  };
+
+  const getTransactionTitle = (type: string) => {
+    switch (type) {
+      case "addition":
+        return "Added";
+      case "dispensed":
+        return "Dispensed";
+      case "move":
+        return "Moved";
+      default:
+        return "Updated";
+    }
+  };
+
+  const getTransactionDescription = (transaction: MedicationTransaction) => {
+    if (transaction.type === "move") {
+      return "Location changed";
+    } else if (transaction.type === "addition") {
+      const isPen = transaction.medicationName.toLowerCase().includes("pen");
+      const unit = isPen
+        ? transaction.quantity === 1
+          ? "pen"
+          : "pens"
+        : transaction.quantity === 1
+        ? "injection"
+        : "injections";
+      return `${transaction.quantity} ${unit} added to inventory`;
+    } else {
+      // dispensed
+      const isPen = transaction.medicationName.toLowerCase().includes("pen");
+      const unit = isPen
+        ? transaction.quantity === 1
+          ? "pen"
+          : "pens"
+        : transaction.quantity === 1
+        ? "injection"
+        : "injections";
+      return `${transaction.quantity} ${unit} dispensed to patient`;
+    }
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -58,8 +150,8 @@ export function TransactionHistory() {
                           <p className="text-sm text-gray-600 mt-2">
                             {getTransactionDescription(transaction)}
                           </p>
-                          {/* NEW: Show comment if present */}
-                          {transaction.comment && (
+                          {/* Show comment if present */}
+                          {"comment" in transaction && transaction.comment && (
                             <div className="text-xs text-gray-500 mt-1">
                               <b>Comment:</b> {transaction.comment}
                             </div>
