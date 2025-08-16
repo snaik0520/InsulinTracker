@@ -31,29 +31,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 
 /**
- * Simulated API call (replace with your real API implementation)
+ * Replace this stub with your real API function.
  */
 const apiRequest = async (method: string, url: string, data: any) => {
-  console.log(`Simulating API call: ${method} to ${url} with data:`, data);
+  console.log(`[API] ${method} ${url}`, data);
   return {
-    json: () => Promise.resolve({ success: true }),
+    json: async () => ({ success: true }),
   };
 };
 
-// Helper: convert a string to Title Case (first letter of each word capitalized)
-const titleCase = (s: string) =>
-  s
-    .toLowerCase()
-    .split(" ")
-    .filter(Boolean)
-    .map((w) => w[0].toUpperCase() + w.slice(1))
-    .join(" ");
-
+/* -------------------- MoveModal -------------------- */
 /**
- * MoveModal - move a quantity of a medication to a saved or new location.
- * - Shows current count and admin label (pens/injections).
- * - Pre-saved locations are derived from existing medication.location fields.
- * - On success it updates the /api/medications cache so the inventory list reflects changes immediately.
+ * MoveModal notes:
+ * - moveQuantity starts as empty string so user can type without deleting '1'.
+ * - Requires at least 1; clamps at max stock.
+ * - When moving we create a brand-new independent record with a new unique id
+ *   (no object identity/link to source). Source quantity is decremented.
  */
 interface MoveModalProps {
   open: boolean;
@@ -61,14 +54,14 @@ interface MoveModalProps {
   medication: Medication | null;
 }
 export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
-  // allow empty string initially so the box is blank; otherwise a number
+  // allow empty initial state so the input is blank; otherwise a number
   const [moveQuantity, setMoveQuantity] = useState<number | "">("");
   const [newLocation, setNewLocation] = useState("");
   const [selectedLocation, setSelectedLocation] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Read medications from cache to derive pre-saved locations
+  // derive list of previously used locations from the meds cache
   const { data: allMeds = [] } = useQuery<Medication[]>({
     queryKey: ["/api/medications"],
   });
@@ -83,37 +76,53 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
   }, [allMeds]);
 
   const moveMutation = useMutation({
-    mutationFn: async (data: { medicationId: string; quantity: number; newLocation: string }) => {
-      const response = await apiRequest("POST", "/api/medications/move", data);
-      return response.json();
+    mutationFn: async (payload: { medicationId: string; quantity: number; newLocation: string }) => {
+      const res = await apiRequest("POST", "/api/medications/move", payload);
+      return res.json();
     },
     onSuccess: () => {
-      if (!medication) return;
-
-      // coerce moveQuantity to a number (safe because we validate before calling)
-      const qty = typeof moveQuantity === "number" ? moveQuantity : parseInt(String(moveQuantity), 10) || 0;
-      const destLocation = (selectedLocation || newLocation).trim();
-
-      // Optimistically update the /api/medications cache so UI shows moved quantities immediately
+      // Update cache: subtract from source (by id) and create an entirely new record for destination.
       queryClient.setQueryData<Medication[] | undefined>(["/api/medications"], (old) => {
-        if (!old) return old;
+        if (!old || !medication) return old;
 
-        // subtract from the source medication
-        const updated = old.map((m) =>
-          m.id === medication.id ? { ...m, quantity: Math.max(0, (m.quantity ?? 0) - qty) } : { ...m }
+        const destLocation = (selectedLocation || newLocation).trim();
+        const qty = typeof moveQuantity === "number" ? moveQuantity : 0;
+
+        // 1) subtract from source by id
+        const updated = old.map((m) => (m.id === medication.id ? { ...m, quantity: Math.max(0, (m.quantity ?? 0) - qty) } : { ...m }));
+
+        // 2) try to find an existing destination record *by exact location and exact id match is NOT used*:
+        //    We prefer to keep destination separate, but if there is an exact match (same medicalName + location + dose)
+        //    we increment that entry — otherwise create a brand new independent record.
+        const findDestIndex = updated.findIndex(
+          (m) =>
+            (m.medicalName || "").trim().toLowerCase() === (medication.medicalName || "").trim().toLowerCase() &&
+            ((m.location || "").trim().toLowerCase() === destLocation.toLowerCase()) &&
+            (m.dose || "") === (medication.dose || "")
         );
 
-                // create a new temporary record for the moved quantity at destination
-        // IMPORTANT: always create a separate medication record for the moved amount so
-        // the source and destination remain independent. This allows removing/adding/moving
-        // from each location independently.
-        const newRecord: Medication = {
-          ...medication,
-          id: `${medication.id}-moved-${Date.now()}`, // temporary unique id for UI
-          quantity: qty,
-          location: destLocation,
-        };
-        updated.push(newRecord);
+        if (findDestIndex >= 0) {
+          // increment existing destination record
+          const dest = { ...updated[findDestIndex] };
+          dest.quantity = (dest.quantity ?? 0) + qty;
+          updated[findDestIndex] = dest;
+        } else {
+          // create a fully independent record (new unique id; no retained references to source)
+          const destRecord: Medication = {
+            ...medication,
+            id: `${medication.id}-moved-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+            quantity: qty,
+            location: destLocation,
+            // remove any server-side linking fields if present:
+            // @ts-ignore - ensure we don't copy an existing backend link field
+            originalId: undefined,
+            // you can also mark it as its own batch if you have that concept:
+            // @ts-ignore
+            batchId: `moved-${Date.now()}`,
+            // Keep other descriptive fields (medicalName, genericName, dose, expirationDate, etc.)
+          };
+          updated.push(destRecord);
+        }
 
         return updated;
       });
@@ -121,32 +130,35 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"] });
 
-      const isPen =
-        (medication.administrationForm || (medication as any).administrativeForm || (medication as any).formType || "")
-          .toString()
-          .toLowerCase()
-          .includes("pen");
-
-      const unit = isPen ? (qty === 1 ? "pen" : "pens") : qty === 1 ? "injection" : "injections";
+      const adminNormalized = (
+        medication?.administrationForm ||
+        (medication as any)?.administrativeForm ||
+        (medication as any)?.formType ||
+        ""
+      )
+        .toString()
+        .toLowerCase();
+      const isPen = adminNormalized.includes("pen");
+      const qtyNum = typeof moveQuantity === "number" ? moveQuantity : 0;
+      const unit = qtyNum === 1 ? (isPen ? "pen" : "injection") : isPen ? "pens" : "injections";
 
       toast({
         title: "Success",
-        description: `Successfully moved ${qty} ${unit} to ${selectedLocation || newLocation}`,
+        description: `Successfully moved ${qtyNum} ${unit} to ${selectedLocation || newLocation}`,
         duration: 3000,
       });
 
-      // reset to empty so next time user must enter a value again
+      // reset modal state
       setMoveQuantity("");
       setNewLocation("");
       setSelectedLocation("");
       onOpenChange(false);
     },
-    onError: (error: Error) => {
+    onError: (err: Error) => {
       toast({
         title: "Error",
-        description: error.message,
+        description: err.message,
         variant: "destructive",
-        duration: 3000,
       });
     },
   });
@@ -154,7 +166,6 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
   const handleMove = () => {
     if (!medication) return;
 
-    // validate moveQuantity
     if (moveQuantity === "" || typeof moveQuantity !== "number" || moveQuantity < 1) {
       toast({
         title: "Error",
@@ -172,6 +183,7 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
       });
       return;
     }
+
     if (!selectedLocation && !newLocation) {
       toast({
         title: "Error",
@@ -180,6 +192,7 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
       });
       return;
     }
+
     moveMutation.mutate({
       medicationId: medication.id,
       quantity: moveQuantity,
@@ -189,21 +202,18 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
 
   const incrementQuantity = () => {
     if (!medication) return;
-
     if (moveQuantity === "") {
       setMoveQuantity(1);
       return;
     }
-
     if (typeof moveQuantity === "number" && moveQuantity < (medication.quantity ?? 0)) {
       setMoveQuantity((q) => (typeof q === "number" ? q + 1 : 1));
     }
   };
+
   const decrementQuantity = () => {
     if (moveQuantity === "" || typeof moveQuantity !== "number") return;
-    if (moveQuantity > 1) {
-      setMoveQuantity((q) => (typeof q === "number" ? q - 1 : 1));
-    }
+    if (moveQuantity > 1) setMoveQuantity((q) => (typeof q === "number" ? q - 1 : q));
   };
 
   if (!medication) return null;
@@ -214,22 +224,20 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
     (medication as any).formType ||
     ""
   ).toString();
-
   const isPenForm = adminFormNormalized.toLowerCase().includes("pen");
   const adminUnitCurrent =
     (medication.quantity ?? 0) === 1 ? (isPenForm ? "pen" : "injection") : isPenForm ? "pens" : "injections";
 
-  // derived values for UI disabling
   const qtyNumber = typeof moveQuantity === "number" ? moveQuantity : 0;
   const decrementDisabled = qtyNumber <= 1;
-  const incrementDisabled = medication ? qtyNumber >= (medication.quantity ?? 0) : true;
+  const incrementDisabled = qtyNumber >= (medication.quantity ?? 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md" data-testid="modal-move-medication">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <CornerRightDown className="h-5 w-5 text-indigo-600" />
+            <CornerRightDown className="h-5 w-5 text-blue-600" />
             Move Medication
           </DialogTitle>
         </DialogHeader>
@@ -260,12 +268,14 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
               >
                 <Minus className="h-4 w-4" />
               </Button>
+
               <Input
                 id="moveQuantity"
                 type="number"
                 min={1}
                 max={medication.quantity}
-                // allow empty string for initial blank
+                className="w-24 text-center"
+                data-testid="input-move-quantity"
                 value={moveQuantity === "" ? "" : moveQuantity}
                 onChange={(e) => {
                   const raw = e.target.value;
@@ -278,13 +288,11 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
                     setMoveQuantity("");
                     return;
                   }
-                  // clamp to [1, medication.quantity]
                   const clamped = Math.max(1, Math.min(parsed, medication.quantity ?? parsed));
                   setMoveQuantity(clamped);
                 }}
-                className="w-20 text-center"
-                data-testid="input-move-quantity"
               />
+
               <Button
                 type="button"
                 variant="outline"
@@ -308,8 +316,8 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
                 {predefinedLocations.length === 0 ? (
                   <SelectItem value="">No saved locations — enter a new one below</SelectItem>
                 ) : (
-                  predefinedLocations.map((loc, index) => (
-                    <SelectItem key={index} value={loc}>
+                  predefinedLocations.map((loc, idx) => (
+                    <SelectItem key={idx} value={loc}>
                       {loc}
                     </SelectItem>
                   ))
@@ -332,10 +340,7 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
               placeholder="e.g., Shelf 3, Cabinet B"
               value={newLocation}
               onChange={(e) => {
-                // apply title case as user types
-                const raw = e.target.value;
-                const titled = raw === "" ? "" : titleCase(raw);
-                setNewLocation(titled);
+                setNewLocation(e.target.value);
                 setSelectedLocation("");
               }}
               disabled={!!selectedLocation}
@@ -346,7 +351,7 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
         <DialogFooter className="flex flex-col gap-3 pt-4 sm:flex-row sm:justify-end">
           <Button
             onClick={handleMove}
-            className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white sm:flex-none"
+            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white sm:flex-none"
             disabled={moveMutation.isPending}
             data-testid="button-confirm-move"
           >
@@ -359,12 +364,8 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
               </>
             )}
           </Button>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            data-testid="button-cancel-move"
-            className="sm:flex-none"
-          >
+
+          <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel-move" className="sm:flex-none">
             Cancel
           </Button>
         </DialogFooter>
@@ -373,7 +374,8 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
   );
 }
 
-// ---------- Inventory component and helpers (updated) ----------
+/* -------------------- Inventory (rest of file) -------------------- */
+
 const typeIcons = {
   rapid: Zap,
   long: Clock,
@@ -381,13 +383,6 @@ const typeIcons = {
   other: HelpCircle,
 } as const;
 
-/**
- * Muted pastel palette:
- * - rapid  -> rose / pink pastel
- * - long   -> violet pastel
- * - inter -> emerald pastel
- * - other  -> amber pastel
- */
 const badgeColors = {
   rapid: "bg-rose-100 text-rose-800",
   long: "bg-violet-100 text-violet-800",
@@ -406,7 +401,7 @@ const filterSelectedClasses = {
   rapid: "bg-rose-100 text-rose-800 border-rose-200",
   long: "bg-violet-100 text-violet-800 border-violet-200",
   intermediate: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  other: "bg-amber-100 text-amber-800 border-amber-200",
+  other: "bg-amber-100 text-amber-100 border-amber-200",
 } as const;
 
 const filterHoverClasses = {
@@ -458,7 +453,7 @@ export default function Inventory() {
   const [selectedType, setSelectedType] = useState("all");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isDispenseModalOpen, setIsDispenseModalOpen] = useState(false);
-  const [isMoveModalOpen, setIsMoveModalOpen] = useState(false); // New state for Move modal
+  const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
   const [selectedMedication, setSelectedMedication] = useState<Medication | null>(null);
 
   const { data: medications = [], isLoading } = useQuery<Medication[]>({
@@ -487,13 +482,11 @@ export default function Inventory() {
     setIsDispenseModalOpen(true);
   };
 
-  // New handler for the Move button
   const handleMove = (medication: Medication) => {
     setSelectedMedication(medication);
     setIsMoveModalOpen(true);
   };
 
-  // Scroll target: LowStockTicker element
   const scrollToTrackers = () => {
     if (typeof document !== "undefined") {
       const el = document.getElementById("low-stock-ticker");
@@ -555,14 +548,7 @@ export default function Inventory() {
               </div>
 
               <div className="flex gap-3 flex-shrink-0">
-                <Button
-                  onClick={scrollToTrackers}
-                  size="sm"
-                  variant="outline"
-                  className="flex items-center border-rose-200 text-rose-700 hover:bg-rose-50"
-                  data-testid="button-jump-low-outstock"
-                  title="Jump to low / out of stock trackers"
-                >
+                <Button onClick={scrollToTrackers} size="sm" variant="outline" className="flex items-center border-rose-200 text-rose-700 hover:bg-rose-50" data-testid="button-jump-low-outstock" title="Jump to low / out of stock trackers">
                   <List className="h-4 w-4 mr-2" />
                   Low / Out of Stock
                 </Button>
@@ -579,14 +565,10 @@ export default function Inventory() {
             <div className="mt-6">
               <Label className="block text-sm font-medium text-gray-700 mb-3">Filter by insulin type</Label>
               <div className="flex flex-wrap gap-2">
-                <Button
-                  variant={selectedType === "all" ? "default" : "outline"}
-                  onClick={() => setSelectedType("all")}
-                  className={`text-sm ${selectedType === "all" ? "bg-white text-gray-700" : "text-gray-700"}`}
-                  data-testid="filter-all"
-                >
+                <Button variant={selectedType === "all" ? "default" : "outline"} onClick={() => setSelectedType("all")} className={`text-sm ${selectedType === "all" ? "bg-white text-gray-700" : "text-gray-700"}`} data-testid="filter-all">
                   <List className="h-4 w-4 mr-2" /> All types
                 </Button>
+
                 {Object.entries(typeLabels).map(([type, label]) => {
                   const Icon = typeIcons[type as keyof typeof typeIcons];
                   const selectedCls = (filterSelectedClasses as any)[type];
@@ -635,9 +617,7 @@ export default function Inventory() {
                   {filteredMedications.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
-                        {searchQuery || selectedType !== "all"
-                          ? "No medications found matching your criteria."
-                          : "No medications in inventory. Add your first medication to get started."}
+                        {searchQuery || selectedType !== "all" ? "No medications found matching your criteria." : "No medications in inventory. Add your first medication to get started."}
                       </td>
                     </tr>
                   ) : (
@@ -645,44 +625,30 @@ export default function Inventory() {
                       const daysUntilExpiration = calculateDaysUntilExpiration(medication.expirationDate);
                       const Icon = typeIcons[medication.type as keyof typeof typeIcons];
 
-                      // administrative form detection (support several possible fields)
+                      // administrative form normalization
                       const adminFormValue = (
                         medication.administrationForm ||
                         (medication as any).administrativeForm ||
                         (medication as any).formType ||
                         ""
                       ).toString();
-
                       const adminFormLower = adminFormValue.toLowerCase();
-                      const adminFormDisplay = adminFormLower.includes("pen")
-                        ? "Pen"
-                        : adminFormLower.includes("inject")
-                        ? "Injection"
-                        : "—";
+                      const adminFormDisplay = adminFormLower.includes("pen") ? "Pen" : adminFormLower.includes("inject") ? "Injection" : "—";
 
                       const rowTint = getRowClassName(medication.type);
-
                       const isPen = adminFormLower.includes("pen");
-                      const qtyUnit =
-                        (medication.quantity ?? 0) === 1 ? (isPen ? "pen" : "injection") : isPen ? "pens" : "injections";
+                      const qtyUnit = (medication.quantity ?? 0) === 1 ? (isPen ? "pen" : "injection") : isPen ? "pens" : "injections";
 
                       return (
                         <tr key={medication.id} className={`${rowTint} hover:bg-gray-50`} data-testid={`row-medication-${medication.id}`}>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div>
-                              <div className="text-sm font-medium text-gray-900" data-testid="text-medical-name">
-                                {medication.medicalName ?? medication.genericName ?? "—"}
-                              </div>
-                              <div className="text-sm text-gray-500" data-testid="text-generic-name">
-                                {medication.genericName ? `(${medication.genericName})` : ""}
-                              </div>
+                              <div className="text-sm font-medium text-gray-900" data-testid="text-medical-name">{medication.medicalName ?? medication.genericName ?? "—"}</div>
+                              <div className="text-sm text-gray-500" data-testid="text-generic-name">{medication.genericName ? `(${medication.genericName})` : ""}</div>
                             </div>
                           </td>
 
-                          {/* Administrative Form */}
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-administrative-form">
-                            {adminFormDisplay}
-                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-administrative-form">{adminFormDisplay}</td>
 
                           <td className="px-6 py-4 whitespace-nowrap">
                             <Badge className={(badgeColors as any)[medication.type]}>
@@ -691,17 +657,10 @@ export default function Inventory() {
                             </Badge>
                           </td>
 
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-dose">
-                            {medication.dose}
-                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" data-testid="text-dose">{medication.dose}</td>
 
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span
-                              className={`text-sm font-medium ${
-                                (medication.quantity ?? 0) <= 5 ? "text-red-600" : "text-gray-900"
-                              }`}
-                              data-testid="text-quantity"
-                            >
+                            <span className={`text-sm font-medium ${ (medication.quantity ?? 0) <= 5 ? "text-red-600" : "text-gray-900" }`} data-testid="text-quantity">
                               {medication.quantity ?? 0}
                             </span>
                             <div className="text-xs text-gray-500 mt-1">{qtyUnit}</div>
@@ -709,34 +668,19 @@ export default function Inventory() {
                           </td>
 
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span className="text-sm text-gray-900" data-testid="text-expiration-date">
-                              {medication.expirationDate ? new Date(medication.expirationDate).toLocaleDateString() : "—"}
-                            </span>
+                            <span className="text-sm text-gray-900" data-testid="text-expiration-date">{medication.expirationDate ? new Date(medication.expirationDate).toLocaleDateString() : "—"}</span>
                           </td>
 
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" data-testid="text-location">
-                            {medication.location ?? "—"}
-                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" data-testid="text-location">{medication.location ?? "—"}</td>
 
                           <td className="px-6 py-4 whitespace-nowrap space-x-2">
-                            <Button
-                              onClick={() => handleDispense(medication)}
-                              size="sm"
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                              disabled={(medication.quantity ?? 0) === 0}
-                              data-testid={`button-dispense-${medication.id}`}
-                            >
+                            <Button onClick={() => handleDispense(medication)} size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={(medication.quantity ?? 0) === 0} data-testid={`button-dispense-${medication.id}`}>
                               <HandHeart className="h-4 w-4 mr-1" />
                               Dispense
                             </Button>
 
-                            <Button
-                              onClick={() => handleMove(medication)}
-                              size="sm"
-                              className="bg-indigo-600 hover:bg-indigo-700 text-white"
-                              disabled={(medication.quantity ?? 0) === 0}
-                              data-testid={`button-move-${medication.id}`}
-                            >
+                            {/* Move button uses blue filled style now */}
+                            <Button onClick={() => handleMove(medication)} size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" disabled={(medication.quantity ?? 0) === 0} data-testid={`button-move-${medication.id}`}>
                               <CornerRightDown className="h-4 w-4 mr-1" />
                               Move
                             </Button>
@@ -751,7 +695,6 @@ export default function Inventory() {
           </CardContent>
         </Card>
 
-        {/* Give the LowStockTicker a stable id so the button can scroll to it */}
         <div id="low-stock-ticker" className="mt-8">
           <LowStockTicker />
         </div>
@@ -759,14 +702,7 @@ export default function Inventory() {
         <OutOfStockTracker />
       </main>
 
-      <AddMedicationModal
-        open={isAddModalOpen}
-        onOpenChange={setIsAddModalOpen}
-        onSave={() => {
-          // When hooking up real backend, you'll call a mutation and invalidate the meds query.
-          setIsAddModalOpen(false);
-        }}
-      />
+      <AddMedicationModal open={isAddModalOpen} onOpenChange={setIsAddModalOpen} onSave={() => setIsAddModalOpen(false)} />
 
       <DispenseModal open={isDispenseModalOpen} onOpenChange={setIsDispenseModalOpen} medication={selectedMedication} />
       <MoveModal open={isMoveModalOpen} onOpenChange={setIsMoveModalOpen} medication={selectedMedication} />
