@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, createContext, useContext } from "react";
+
+// Firebase imports
 import { initializeApp } from "firebase/app";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
-import { getFirestore, collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { getFirestore, collection, onSnapshot } from "firebase/firestore";
 
-// Placeholder for a Toast system to avoid external dependencies
+// Placeholder for a Toast system and basic UI components for a self-contained app
 const ToastContext = createContext(null);
 const useToast = () => useContext(ToastContext);
 const ToastProvider = ({ children }) => {
@@ -37,7 +39,7 @@ const ToastProvider = ({ children }) => {
   );
 };
 
-// Placeholder UI components for a self-contained app
+// Placeholder UI components
 const Button = ({ children, onClick, className = "", variant = "default", ...props }) => {
   let baseClasses = "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none";
   let variantClasses = "";
@@ -56,7 +58,7 @@ type Transaction = {
   quantity: number;
   type: "dispense" | "move" | "add";
   timestamp: string;
-  comment?: string; // Updated to include the optional comment
+  comment?: string;
 }
 
 export const TransactionHistory = () => {
@@ -91,11 +93,8 @@ export const TransactionHistory = () => {
       const db = dbRef.current;
       const userId = userIdRef.current;
       
-      // Reference to the 'transactions' collection for the current user
       const transactionsCollectionRef = collection(db, `artifacts/${__app_id}/users/${userId}/transactions`);
       
-      // Listen for real-time changes to the transactions collection
-      // Note: Ordering is not used due to a known runtime error issue
       unsubscribe = onSnapshot(transactionsCollectionRef, (querySnapshot) => {
         const txs = [];
         querySnapshot.forEach((doc) => {
@@ -103,7 +102,6 @@ export const TransactionHistory = () => {
           txs.push({ ...data, id: doc.id });
         });
         
-        // Sort transactions by timestamp in descending order in memory
         txs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         setTransactions(txs);
         
@@ -117,7 +115,7 @@ export const TransactionHistory = () => {
       });
     }
     return () => unsubscribe();
-  }, [toast]); // Added toast to dependency array
+  }, [toast]);
 
   return (
     <div className="bg-white rounded-xl border shadow p-6 max-w-2xl mx-auto">
