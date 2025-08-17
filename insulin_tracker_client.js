@@ -137,7 +137,7 @@ class GoogleSheetsSync {
 }
 
 // Initialize the sync system
-const GOOGLE_SHEETS_WEB_APP_URL = 'YOUR_DEPLOYED_WEB_APP_URL_HERE';
+const GOOGLE_SHEETS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyTQPk0rylE_Rp8qT8IdLa7HAVeUi1fqb5sRIp7wH37OTM6ighKOCIFH402nLxdWsj6/exec';
 const sheetsSync = new GoogleSheetsSync(GOOGLE_SHEETS_WEB_APP_URL);
 
 // Enhanced inventory management with auto-sync
