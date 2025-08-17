@@ -82,46 +82,44 @@ export class GoogleSheetsStorage implements IStorage {
   }
 
   async createMedication(insertMedication: InsertMedication): Promise<Medication> {
-    console.log('Creating medication:', insertMedication);
-    await this.syncFromSheets();
+  // Ensure we have the freshest data
+  await this.syncFromSheets();
 
-    // Check if medication with same properties already exists
-    const existingMedication = Array.from(this.cache.values()).find(med => 
-      med.genericName === insertMedication.genericName &&
-      med.medicalName === insertMedication.medicalName &&
-      med.dose === insertMedication.dose &&
-      med.expirationDate === insertMedication.expirationDate &&
-      med.location === insertMedication.location
-    );
+  // Try to find an exact duplicate record
+  const existing = Array.from(this.cache.values()).find(med =>
+    med.genericName === insertMedication.genericName &&
+    med.medicalName === insertMedication.medicalName &&
+    med.dose === insertMedication.dose &&
+    med.expirationDate === insertMedication.expirationDate &&
+    med.location === insertMedication.location &&
+    med.administrativeForm === insertMedication.administrativeForm
+  );
 
-    let resultMedication: Medication;
-
-    if (existingMedication) {
-      // Update existing medication quantity
-      existingMedication.quantity += insertMedication.quantity;
-      this.cache.set(existingMedication.id, existingMedication);
-      resultMedication = existingMedication;
-      console.log('Updated existing medication:', existingMedication.id);
-    } else {
-      // Create new medication
-      const id = randomUUID();
-      const medication: Medication = { ...insertMedication, id };
-      this.cache.set(id, medication);
-      resultMedication = medication;
-      console.log('Created new medication:', id);
-    }
-
-    // Sync to Google Sheets immediately
-    try {
-      await this.syncToSheets(Array.from(this.cache.values()));
-      console.log('Successfully synced medication to Google Sheets');
-    } catch (error) {
-      console.error('Failed to sync new medication to sheets:', error);
-      // Continue anyway - data is cached locally
-    }
-
-    return resultMedication;
+  let medication: Medication;
+  if (existing) {
+    // Merge into that existing item
+    existing.quantity += insertMedication.quantity;
+    existing.lastModified = new Date().toISOString();
+    this.cache.set(existing.id, existing);
+    medication = existing;
+  } else {
+    // Create a brand-new item
+    const id = randomUUID();
+    medication = { ...insertMedication, id, lastModified: new Date().toISOString() };
+    this.cache.set(id, medication);
   }
+
+  // Push the full updated list back to Google Sheets
+  try {
+    await this.syncToSheets(Array.from(this.cache.values()));
+    console.log(`Successfully synced ${medication.id} to Google Sheets`);
+  } catch (err) {
+    console.error('Failed to sync to Google Sheets:', err);
+  }
+
+  return medication;
+}
+
 
   async updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined> {
     console.log('Updating medication quantity:', id, newQuantity);
