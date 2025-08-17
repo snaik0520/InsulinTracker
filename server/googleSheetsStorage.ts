@@ -80,8 +80,8 @@ async createMedication(insertMedication: InsertMedication): Promise<Medication> 
   console.log('Creating medication:', insertMedication);
   await this.syncFromSheets();
 
-  // Merge into existing record if all identifying fields match
-  const existingMedication = Array.from(this.cache.values()).find(med =>
+  // Match on all identifying fields, including administrativeForm
+  const existing = Array.from(this.cache.values()).find(med =>
     med.genericName === insertMedication.genericName &&
     med.medicalName === insertMedication.medicalName &&
     med.dose === insertMedication.dose &&
@@ -90,41 +90,40 @@ async createMedication(insertMedication: InsertMedication): Promise<Medication> 
     med.administrativeForm === insertMedication.administrativeForm
   );
 
-  let resultMedication: Medication;
+  let result: Medication;
   const now = new Date().toISOString();
 
-  if (existingMedication) {
-    existingMedication.quantity += insertMedication.quantity;
-    existingMedication.lastModified = now;
-    this.cache.set(existingMedication.id, existingMedication);
-    resultMedication = existingMedication;
-    console.log('Updated existing medication:', existingMedication.id);
+  if (existing) {
+    // Merge quantity into existing stock
+    existing.quantity += insertMedication.quantity;
+    existing.lastModified = now;
+    this.cache.set(existing.id, existing);
+    result = existing;
+    console.log('Merged into existing medication:', existing.id);
   } else {
+    // Create a brand-new entry
     const id = randomUUID();
-    resultMedication = {
+    result = {
       id,
       ...insertMedication,
       dateAdded: now,
       lastModified: now
     };
-    this.cache.set(id, resultMedication);
+    this.cache.set(id, result);
     console.log('Created new medication:', id);
   }
 
+  // Sync the full cache
   try {
-    // Write expiry dates as strings to avoid timezone shifts
-    const medsToWrite = Array.from(this.cache.values()).map(m => ({
-      ...m,
-      expirationDate: m.expirationDate // remain as 'YYYY-MM-DD'
-    }));
-    await this.syncToSheets(medsToWrite);
-    console.log('Successfully synced medication to Google Sheets');
-  } catch (error) {
-    console.error('Failed to sync to Google Sheets:', error);
+    await this.syncToSheets(Array.from(this.cache.values()));
+    console.log('Synced to Google Sheets');
+  } catch (err) {
+    console.error('Sync failed:', err);
   }
 
-  return resultMedication;
+  return result;
 }
+
 
 
   async updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined> {
