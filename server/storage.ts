@@ -59,7 +59,7 @@ export class MemStorage implements IStorage {
     if (!medication) {
       return undefined;
     }
-    
+
     const updatedMedication = { ...medication, quantity: newQuantity };
     this.medications.set(id, updatedMedication);
     return updatedMedication;
@@ -113,20 +113,200 @@ export class MemStorage implements IStorage {
   }
 }
 
-// Import the GoogleSheetsStorage class
-import { GoogleSheetsStorage } from './googleSheetsStorage';
+export class GoogleSheetsStorage implements IStorage {
+  private webAppUrl: string;
+  private cache: Map<string, Medication> = new Map();
+  private transactionCache: Map<string, MedicationTransaction> = new Map();
+  private lastSync: number = 0;
+  private syncInterval: number = 30000; // 30 seconds
+
+  constructor(webAppUrl: string) {
+    this.webAppUrl = webAppUrl;
+  }
+
+  private async syncFromSheets(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastSync < this.syncInterval) {
+      return; // Skip sync if too recent
+    }
+
+    try {
+      const response = await fetch(this.webAppUrl + '?action=read', {
+        method: 'GET',
+        signal: AbortSignal.timeout(10000) // 10 second timeout
+      });
+
+      const data = await response.json();
+
+      if (data.result === 'success' && data.medications) {
+        this.cache.clear();
+        data.medications.forEach((med: Medication) => {
+          this.cache.set(med.id, med);
+        });
+        this.lastSync = now;
+      } else {
+        console.warn('Failed to sync from Google Sheets:', data.error);
+      }
+    } catch (error) {
+      console.error('Error syncing from Google Sheets:', error);
+      // Continue with cached data if sync fails
+    }
+  }
+
+  private async syncToSheets(medications: Medication[]): Promise<void> {
+    try {
+      const response = await fetch(this.webAppUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          action: 'update',
+          data: JSON.stringify(medications)
+        }),
+        signal: AbortSignal.timeout(15000) // 15 second timeout
+      });
+
+      const result = await response.text();
+      console.log('Synced to Google Sheets:', result);
+    } catch (error) {
+      console.error('Error syncing to Google Sheets:', error);
+      throw error; // Re-throw to handle at higher level
+    }
+  }
+
+  async getMedications(): Promise<Medication[]> {
+    await this.syncFromSheets();
+    return Array.from(this.cache.values());
+  }
+
+  async getMedicationById(id: string): Promise<Medication | undefined> {
+    await this.syncFromSheets();
+    return this.cache.get(id);
+  }
+
+  async createMedication(insertMedication: InsertMedication): Promise<Medication> {
+    await this.syncFromSheets();
+
+    // Check if medication with same properties already exists
+    const existingMedication = Array.from(this.cache.values()).find(med => 
+      med.genericName === insertMedication.genericName &&
+      med.medicalName === insertMedication.medicalName &&
+      med.dose === insertMedication.dose &&
+      med.expirationDate === insertMedication.expirationDate &&
+      med.location === insertMedication.location
+    );
+
+    let resultMedication: Medication;
+
+    if (existingMedication) {
+      // Update existing medication quantity
+      existingMedication.quantity += insertMedication.quantity;
+      this.cache.set(existingMedication.id, existingMedication);
+      resultMedication = existingMedication;
+    } else {
+      // Create new medication
+      const id = randomUUID();
+      const medication: Medication = { ...insertMedication, id };
+      this.cache.set(id, medication);
+      resultMedication = medication;
+    }
+
+    // Sync to Google Sheets
+    try {
+      await this.syncToSheets(Array.from(this.cache.values()));
+    } catch (error) {
+      console.error('Failed to sync new medication to sheets:', error);
+      // Continue anyway - data is cached locally
+    }
+
+    return resultMedication;
+  }
+
+  async updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined> {
+    await this.syncFromSheets();
+
+    const medication = this.cache.get(id);
+    if (!medication) {
+      return undefined;
+    }
+
+    const updatedMedication = { ...medication, quantity: newQuantity };
+    this.cache.set(id, updatedMedication);
+
+    // Sync to Google Sheets
+    try {
+      await this.syncToSheets(Array.from(this.cache.values()));
+    } catch (error) {
+      console.error('Failed to sync quantity update to sheets:', error);
+      // Continue anyway - data is cached locally
+    }
+
+    return updatedMedication;
+  }
+
+  async searchMedications(query: string): Promise<Medication[]> {
+    await this.syncFromSheets();
+
+    const lowerQuery = query.toLowerCase();
+    return Array.from(this.cache.values()).filter(medication =>
+      medication.genericName.toLowerCase().includes(lowerQuery) ||
+      medication.medicalName.toLowerCase().includes(lowerQuery)
+    );
+  }
+
+  async filterMedicationsByType(type: string): Promise<Medication[]> {
+    await this.syncFromSheets();
+
+    if (type === "all") {
+      return this.getMedications();
+    }
+    return Array.from(this.cache.values()).filter(medication =>
+      medication.type === type
+    );
+  }
+
+  async getLowStockMedications(threshold: number = 5): Promise<Medication[]> {
+    await this.syncFromSheets();
+
+    return Array.from(this.cache.values()).filter(medication =>
+      medication.quantity > 0 && medication.quantity <= threshold
+    );
+  }
+
+  async getTransactions(): Promise<MedicationTransaction[]> {
+    // For now, transactions are stored locally
+    // You could extend this to sync with another sheet tab if needed
+    return Array.from(this.transactionCache.values()).sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+  }
+
+  async createTransaction(insertTransaction: InsertTransaction): Promise<MedicationTransaction> {
+    const id = randomUUID();
+    const transaction: MedicationTransaction = { 
+      ...insertTransaction, 
+      id, 
+      timestamp: new Date() as any,
+      notes: insertTransaction.notes || null
+    };
+    this.transactionCache.set(id, transaction);
+    return transaction;
+  }
+}
 
 // Configuration
 const GOOGLE_APPS_SCRIPT_URL = process.env.GOOGLE_APPS_SCRIPT_URL || '';
 
 // Create storage instance based on environment
 function createStorage(): IStorage {
-  // Use Google Sheets if URL is provided and not in development mode
-  if (GOOGLE_APPS_SCRIPT_URL && process.env.NODE_ENV !== 'development') {
-    console.log('Using Google Sheets storage');
+  // Use Google Sheets if URL is provided
+  if (GOOGLE_APPS_SCRIPT_URL && GOOGLE_APPS_SCRIPT_URL.trim() !== '') {
+    console.log('Using Google Sheets storage with URL:', GOOGLE_APPS_SCRIPT_URL);
     return new GoogleSheetsStorage(GOOGLE_APPS_SCRIPT_URL);
   } else {
-    console.log('Using in-memory storage (development mode)');
+    console.log('Using in-memory storage (no Google Sheets URL provided)');
+    console.log('To use Google Sheets storage, set GOOGLE_APPS_SCRIPT_URL environment variable');
     return new MemStorage();
   }
 }
