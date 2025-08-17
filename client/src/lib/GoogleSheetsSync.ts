@@ -3,7 +3,7 @@
 // Add this new file to your client/src/lib/ directory
 
 export class GoogleSheetsSync {
-  private webAppUrl: string;
+  private webAppUrl = 'https://script.google.com/macros/s/AKfycbzd_dwmLQj9r5ef8MZYI3jH0EsjbunFgPtNEAOMWID30F67F_VLKMjoEKXvyjQsdJ7m/exec';
   private syncInProgress = false;
 
   constructor(webAppUrl: string) {
