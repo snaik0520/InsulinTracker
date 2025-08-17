@@ -5,7 +5,7 @@
 import { GoogleSheetsSync } from './GoogleSheetsSync';
 import type { Medication } from '@shared/schema';
 
-const GOOGLE_SHEETS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzd_dwmLQj9r5ef8MZYI3jH0EsjbunFgPtNEAOMWID30F67F_VLKMjoEKXvyjQsdJ7m/exec';
+const GOOGLE_SHEETS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzJH1v1_o07tpyounTULlyWCCS1MaWYJRKZL0RgTz0kuJLXWVopSOTgCBZ2B2XF0WQ/exec';
 const LOCAL_STORAGE_KEY = 'insulin_medications_backup';
 
 export class MedicationStorage {
