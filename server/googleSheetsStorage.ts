@@ -74,43 +74,58 @@ export class GoogleSheetsStorage implements IStorage {
     return this.cache.get(id);
   }
 
-  async createMedication(insertMedication: InsertMedication): Promise<Medication> {
-    console.log('Creating medication:', insertMedication);
-    await this.syncFromSheets();
+  // In GoogleSheetsStorage class
 
-    // Merge into existing record if all identifying fields match
-    const existingMedication = Array.from(this.cache.values()).find(med =>
-      med.genericName === insertMedication.genericName &&
-      med.medicalName === insertMedication.medicalName &&
-      med.dose === insertMedication.dose &&
-      med.expirationDate === insertMedication.expirationDate &&
-      med.location === insertMedication.location &&
-      med.administrativeForm === insertMedication.administrativeForm
-    );
+async createMedication(insertMedication: InsertMedication): Promise<Medication> {
+  console.log('Creating medication:', insertMedication);
+  await this.syncFromSheets();
 
-    let resultMedication: Medication;
-    if (existingMedication) {
-      existingMedication.quantity += insertMedication.quantity;
-      existingMedication.lastModified = new Date().toISOString();
-      this.cache.set(existingMedication.id, existingMedication);
-      resultMedication = existingMedication;
-      console.log('Updated existing medication:', existingMedication.id);
-    } else {
-      const id = randomUUID();
-      resultMedication = { ...insertMedication, id, lastModified: new Date().toISOString() };
-      this.cache.set(id, resultMedication);
-      console.log('Created new medication:', id);
-    }
+  // Merge into existing record if all identifying fields match
+  const existingMedication = Array.from(this.cache.values()).find(med =>
+    med.genericName === insertMedication.genericName &&
+    med.medicalName === insertMedication.medicalName &&
+    med.dose === insertMedication.dose &&
+    med.expirationDate === insertMedication.expirationDate &&
+    med.location === insertMedication.location &&
+    med.administrativeForm === insertMedication.administrativeForm
+  );
 
-    try {
-      await this.syncToSheets(Array.from(this.cache.values()));
-      console.log('Successfully synced medication to Google Sheets');
-    } catch (error) {
-      console.error('Failed to sync to Google Sheets:', error);
-    }
+  let resultMedication: Medication;
+  const now = new Date().toISOString();
 
-    return resultMedication;
+  if (existingMedication) {
+    existingMedication.quantity += insertMedication.quantity;
+    existingMedication.lastModified = now;
+    this.cache.set(existingMedication.id, existingMedication);
+    resultMedication = existingMedication;
+    console.log('Updated existing medication:', existingMedication.id);
+  } else {
+    const id = randomUUID();
+    resultMedication = {
+      id,
+      ...insertMedication,
+      dateAdded: now,
+      lastModified: now
+    };
+    this.cache.set(id, resultMedication);
+    console.log('Created new medication:', id);
   }
+
+  try {
+    // Write expiry dates as strings to avoid timezone shifts
+    const medsToWrite = Array.from(this.cache.values()).map(m => ({
+      ...m,
+      expirationDate: m.expirationDate // remain as 'YYYY-MM-DD'
+    }));
+    await this.syncToSheets(medsToWrite);
+    console.log('Successfully synced medication to Google Sheets');
+  } catch (error) {
+    console.error('Failed to sync to Google Sheets:', error);
+  }
+
+  return resultMedication;
+}
+
 
   async updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined> {
     console.log('Updating medication quantity:', id, newQuantity);
