@@ -3,7 +3,7 @@
 import { type Medication } from "@shared/schema";
 
 export class GoogleSheetsSync {
-  private webAppUrl = 'https://script.google.com/macros/s/AKfycbzd_dwmLQj9r5ef8MZYI3jH0EsjbunFgPtNEAOMWID30F67F_VLKMjoEKXvyjQsdJ7m/exec';
+  private webAppUrl = 'https://script.google.com/macros/s/AKfycbzJH1v1_o07tpyounTULlyWCCS1MaWYJRKZL0RgTz0kuJLXWVopSOTgCBZ2B2XF0WQ/exec';
   private syncInProgress = false;
 
   /** Send inventory data to Google Sheets */
