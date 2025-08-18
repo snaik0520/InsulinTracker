@@ -1,73 +1,202 @@
+// server/googleSheetsStorage.ts
 
-// GoogleSheetsSync.ts
-// Add this new file to your client/src/lib/ directory
+import { type Medication, type InsertMedication, type MedicationTransaction, type InsertTransaction } from "@shared/schema";
+import { type IStorage } from "./storage";
+import { randomUUID } from "crypto";
 
-export class GoogleSheetsSync {
-  private webAppUrl = 'https://script.google.com/macros/s/AKfycbzJH1v1_o07tpyounTULlyWCCS1MaWYJRKZL0RgTz0kuJLXWVopSOTgCBZ2B2XF0WQ/exec';
-  private syncInProgress = false;
+export class GoogleSheetsStorage implements IStorage {
+  private webAppUrl: string;
+  private cache = new Map<string, Medication>();
+  private transactionCache = new Map<string, MedicationTransaction>();
+  private lastSync = 0;
+  private syncInterval = 30000; // 30 seconds
 
   constructor(webAppUrl: string) {
     this.webAppUrl = webAppUrl;
+    console.log("GoogleSheetsStorage initialized with URL:", webAppUrl);
   }
 
-  // Send medication data to Google Sheets
-  async syncToSheets(medications: any[]): Promise<boolean> {
-    if (this.syncInProgress) return false;
+  private async syncFromSheets(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastSync < this.syncInterval) return;
 
-    this.syncInProgress = true;
     try {
-      const response = await fetch(this.webAppUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          action: 'update',
-          data: JSON.stringify(medications)
-        })
+      console.log("Syncing from Google Sheets...");
+      const res = await fetch(`${this.webAppUrl}?action=read`, {
+        method: "GET",
+        signal: AbortSignal.timeout(10000),
       });
-
-      const result = await response.text();
-      console.log('Sync to Sheets successful:', result);
-      return true;
-    } catch (error) {
-      console.error('Error syncing to Sheets:', error);
-      return false;
-    } finally {
-      this.syncInProgress = false;
-    }
-  }
-
-  // Get medication data from Google Sheets
-  async getFromSheets(): Promise<any[] | null> {
-    try {
-      const response = await fetch(this.webAppUrl + '?action=read');
-      const data = await response.json();
-
-      if (data.result === 'success') {
-        return data.medications || [];
+      const data = await res.json();
+      if (data.result === "success" && data.medications) {
+        this.cache.clear();
+        data.medications.forEach((med: Medication) => {
+          this.cache.set(med.id, med);
+        });
+        this.lastSync = now;
+        console.log(`Synced ${data.medications.length} medications`);
+      } else {
+        console.warn("Read failed:", data.error);
       }
-
-      console.error('Error from sheets:', data.error);
-      return null;
-    } catch (error) {
-      console.error('Error getting data from Sheets:', error);
-      return null;
+    } catch (e) {
+      console.error("Sync error:", e);
     }
   }
 
-  // Check if Google Sheets sync is available
-  async isAvailable(): Promise<boolean> {
+  private async syncToSheets(rows: Medication[]): Promise<void> {
     try {
-      const response = await fetch(this.webAppUrl + '?action=status', {
-        method: 'GET',
-        signal: AbortSignal.timeout(5000) // 5 second timeout
+      console.log(`Syncing ${rows.length} medications to Sheets...`);
+      const response = await fetch(this.webAppUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          action: "update",
+          data: JSON.stringify(rows.map(m => ({
+            ...m,
+            expirationDate: m.expirationDate, // plain text
+          }))),
+        }),
+        signal: AbortSignal.timeout(15000),
       });
-      const data = await response.json();
-      return data.result === 'success' && data.status === 'Online';
-    } catch (error) {
-      console.warn('Google Sheets sync not available:', error);
-      return false;
+      console.log("Sync response:", await response.text());
+    } catch (e) {
+      console.error("Sync error:", e);
+      throw e;
     }
+  }
+
+  async getMedications(): Promise<Medication[]> {
+    await this.syncFromSheets();
+    return Array.from(this.cache.values());
+  }
+
+  async getMedicationById(id: string): Promise<Medication | undefined> {
+    await this.syncFromSheets();
+    return this.cache.get(id);
+  }
+
+  async createMedication(insertMedication: InsertMedication): Promise<Medication> {
+    console.log("Creating medication:", insertMedication);
+    await this.syncFromSheets();
+
+    // Merge based only on: medicalName, administrativeForm, type, dose, expirationDate, location
+    const existing = Array.from(this.cache.values()).find(med =>
+      med.medicalName === insertMedication.medicalName &&
+      med.administrativeForm === insertMedication.administrativeForm &&
+      med.type === insertMedication.type &&
+      med.dose === insertMedication.dose &&
+      med.expirationDate === insertMedication.expirationDate &&
+      med.location === insertMedication.location
+    );
+
+    const now = new Date().toISOString();
+    let result: Medication;
+
+    if (existing) {
+      existing.quantity += insertMedication.quantity;
+      existing.lastModified = now;
+      this.cache.set(existing.id, existing);
+      result = existing;
+      console.log("Merged into existing:", existing.id);
+    } else {
+      const id = randomUUID();
+      result = {
+        id,
+        medicalName: insertMedication.medicalName,
+        genericName: insertMedication.genericName,
+        type: insertMedication.type,
+        dose: insertMedication.dose,
+        quantity: insertMedication.quantity,
+        expirationDate: insertMedication.expirationDate,
+        location: insertMedication.location,
+        administrativeForm: insertMedication.administrativeForm,
+        notes: insertMedication.notes || "",
+        dateAdded: now,
+        lastModified: now,
+      };
+      this.cache.set(id, result);
+      console.log("Created new medication:", id);
+    }
+
+    // Sync updated cache back to Sheets
+    try {
+      await this.syncToSheets(Array.from(this.cache.values()));
+      console.log("Synced to Google Sheets");
+    } catch {
+      /* swallow errors, already logged */
+    }
+
+    return result;
+  }
+
+  async updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined> {
+    await this.syncFromSheets();
+    const med = this.cache.get(id);
+    if (!med) return undefined;
+    med.quantity = newQuantity;
+    med.lastModified = new Date().toISOString();
+    this.cache.set(id, med);
+    try { await this.syncToSheets(Array.from(this.cache.values())); } catch {}
+    return med;
+  }
+
+  async searchMedications(query: string): Promise<Medication[]> {
+    await this.syncFromSheets();
+    const q = query.toLowerCase();
+    return Array.from(this.cache.values()).filter(m =>
+      m.genericName.toLowerCase().includes(q) ||
+      m.medicalName.toLowerCase().includes(q)
+    );
+  }
+
+  async filterMedicationsByType(type: string): Promise<Medication[]> {
+    await this.syncFromSheets();
+    if (type === "all") return this.getMedications();
+    return Array.from(this.cache.values()).filter(m => m.type === type);
+  }
+
+  async getLowStockMedications(threshold = 5): Promise<Medication[]> {
+    await this.syncFromSheets();
+    return Array.from(this.cache.values()).filter(m => m.quantity > 0 && m.quantity <= threshold);
+  }
+
+  async getOutOfStockMedications(): Promise<Medication[]> {
+    await this.syncFromSheets();
+    return Array.from(this.cache.values()).filter(m => m.quantity === 0);
+  }
+
+  async getTransactions(): Promise<MedicationTransaction[]> {
+    return Array.from(this.transactionCache.values()).sort((a, b) =>
+      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+  }
+
+  async createTransaction(insertTransaction: InsertTransaction): Promise<MedicationTransaction> {
+    const id = randomUUID();
+    const tx: MedicationTransaction = {
+      ...insertTransaction,
+      id,
+      timestamp: new Date() as any,
+      notes: insertTransaction.notes || null,
+    };
+    this.transactionCache.set(id, tx);
+    return tx;
+  }
+
+  async dispenseMedication(medicationId: string, quantity: number): Promise<{ medication: Medication; transaction: MedicationTransaction }> {
+    const med = await this.getMedicationById(medicationId);
+    if (!med) throw new Error("Medication not found");
+    if (med.quantity < quantity) throw new Error("Insufficient stock");
+
+    const updated = await this.updateMedicationQuantity(medicationId, med.quantity - quantity);
+    if (!updated) throw new Error("Failed to update quantity");
+
+    const tx = await this.createTransaction({
+      medicationId,
+      medicationName: `${med.medicalName} (${med.genericName}) - ${med.administrativeForm}`,
+      type: "dispensed",
+      quantity,
+      notes: "Dispensed to patient",
+    });
+    return { medication: updated, transaction: tx };
   }
 }
