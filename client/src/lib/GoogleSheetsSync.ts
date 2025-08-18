@@ -5,7 +5,7 @@ import { type IStorage } from "./storage";
 import { randomUUID } from "crypto";
 
 export class GoogleSheetsStorage implements IStorage {
-  private webAppUrl: string;
+  private webAppUrl='https://script.google.com/macros/s/AKfycbzJH1v1_o07tpyounTULlyWCCS1MaWYJRKZL0RgTz0kuJLXWVopSOTgCBZ2B2XF0WQ/exec';
   private cache = new Map<string, Medication>();
   private transactionCache = new Map<string, MedicationTransaction>();
   private lastSync = 0;
