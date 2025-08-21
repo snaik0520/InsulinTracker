@@ -1,9 +1,16 @@
+// AddMedicationModal.tsx
 import { useMemo, useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 
@@ -37,11 +44,9 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
     staleTime: 1000 * 60 * 2,
   });
 
+  // existingMedications aggregated for quick-select (unchanged)
   const existingMedications = useMemo(() => {
-    const map = new Map<
-      string,
-      Medication & { quantity: number; locationCounts: Map<string, number> }
-    >();
+    const map = new Map<string, Medication & { quantity: number; locationCounts: Map<string, number> }>();
     for (const med of allMedications) {
       const key = `${med.genericName || ""}||${med.medicalName || ""}`;
       if (!map.has(key)) {
@@ -98,7 +103,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
       form.setValue("dose", medication.dose || "");
       form.setValue("quantity", 0);
       form.setValue("expirationDate", "");
-      
+
       const adminFrom =
         (medication as any).administrativeForm ||
         (medication as any).formType ||
@@ -152,6 +157,48 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
 
   const validateLocation = () => watchLocationInput.trim() !== "" || locationDropdownValue !== "";
 
+  // ---------- NEW: helper functions to normalize and find exact matches ----------
+  const normalizeString = (s?: string) => (s ? s.toString().trim().toLowerCase() : "");
+  // normalize date to YYYY-MM-DD if possible (dates from input type="date" will already be YYYY-MM-DD)
+  const normalizeDate = (d?: string) => {
+    if (!d) return "";
+    // pick the first 10 characters if ISO-like, otherwise trim
+    return d.length >= 10 ? d.slice(0, 10) : d.trim();
+  };
+
+  // Finds an exact matching medication row in allMedications based on fields:
+  // medicalName, administrativeForm, type, dose, expirationDate, location
+  const findMatchingMedication = (payload: Partial<InsertMedication & { location: string }>) => {
+    const mName = normalizeString(payload.medicalName);
+    const admin = normalizeString(payload.administrativeForm);
+    const type = normalizeString(payload.type);
+    const dose = normalizeString(payload.dose);
+    const exp = normalizeDate(payload.expirationDate);
+    const loc = normalizeString(payload.location);
+
+    for (const med of allMedications) {
+      const medMName = normalizeString(med.medicalName);
+      const medAdmin = normalizeString(med.administrativeForm ?? (med as any).formType);
+      const medType = normalizeString(med.type);
+      const medDose = normalizeString(med.dose);
+      const medExp = normalizeDate(med.expirationDate ?? "");
+      const medLoc = normalizeString(med.location ?? "");
+
+      if (
+        medMName === mName &&
+        medAdmin === admin &&
+        medType === type &&
+        medDose === dose &&
+        medExp === exp &&
+        medLoc === loc
+      ) {
+        return med;
+      }
+    }
+    return null;
+  };
+  // ------------------------------------------------------------------------------
+
   const onSubmit = (data: InsertMedication) => {
     if (!validateLocation()) {
       form.setError("location", { type: "manual", message: "Please select or enter a storage location" });
@@ -161,7 +208,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
       form.setError("quantity", { type: "manual", message: "Quantity must be greater than 0" });
       return;
     }
-    
+
     const admin = (form.getValues() as any).administrativeForm;
     if (!admin || (admin !== "pen" && admin !== "injection")) {
       form.setError("administrativeForm" as any, { type: "manual", message: "Administrative Form is required" });
@@ -176,8 +223,70 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
       administrativeForm: admin,
     } as any;
 
-    addMedicationMutation.mutate(payload);
+    // find exact match using the helper
+    const matched = findMatchingMedication(payload);
+
+    if (matched) {
+      // If matched, update existing medication's quantity by adding incoming quantity
+      const updatedQuantity = (matched.quantity ?? 0) + (Number(payload.quantity) || 0);
+      // Prepare update payload: send full fields if your backend expects them, or just quantity if not
+      const updatePayload = {
+        medicalName: payload.medicalName,
+        genericName: payload.genericName,
+        type: payload.type,
+        dose: payload.dose,
+        quantity: updatedQuantity,
+        expirationDate: payload.expirationDate,
+        location: payload.location,
+        administrativeForm: payload.administrativeForm,
+        lastModified: new Date().toISOString(),
+      };
+
+      updateMedicationMutation.mutate({ id: matched.id, body: updatePayload });
+    } else {
+      // No match — create a new medication entry (original behavior)
+      addMedicationMutation.mutate(payload);
+    }
   };
+
+  // ---------- NEW: mutation to update an existing medication ----------
+  const updateMedicationMutation = useMutation({
+    mutationFn: async ({ id, body }: { id: string; body: any }) => {
+      // NOTE: adjust method/endpoint if your backend expects PUT or a different path
+      const res = await apiRequest("PATCH", `/api/medications/${id}`, body);
+      // If server returns non-2xx, apiRequest should throw or return a non-ok response; .json() below assumes success
+      return res.json();
+    },
+    onSuccess: async (res: any) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/medications"], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ["/api/transactions"], refetchType: 'active' })
+      ]);
+
+      toast({ title: "Success", description: "Medication updated successfully", duration: 3000 });
+      form.reset();
+      setLocationDropdownValue("");
+      onOpenChange(false);
+      onSave?.(res);
+    },
+    onError: (error: any) => {
+      // If PATCH fails (for example server doesn't support PATCH), fallback to creating a new entry
+      toast({
+        title: "Update error — creating new entry instead",
+        description: "Could not update existing row; attempting to create a new row.",
+        variant: "destructive",
+        duration: 4000,
+      });
+      // fallback: create new medication (you may want to refine this behavior)
+      addMedicationMutation.mutate({
+        ...form.getValues(),
+        location: watchLocationInput.trim() !== "" ? watchLocationInput.trim() : locationDropdownValue,
+        administrativeForm: (form.getValues() as any).administrativeForm,
+      });
+    },
+  });
+  // -------------------------------------------------------------------
 
   const addMedicationMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -190,7 +299,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
         queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"], refetchType: 'active' }),
         queryClient.invalidateQueries({ queryKey: ["/api/transactions"], refetchType: 'active' })
       ]);
-      
+
       toast({ title: "Success", description: "Medication added successfully", duration: 3000 });
       form.reset();
       setLocationDropdownValue("");
@@ -222,7 +331,6 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
         </DialogHeader>
 
         <form onSubmit={form.handleSubmit(onSubmit)} className="px-6 pb-6 space-y-6">
-          
           {/* Quick Select Section */}
           {existingMedications.length > 0 && (
             <Card className="border-blue-100 bg-blue-50/30">
@@ -322,9 +430,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                       <SelectItem value="other">Other</SelectItem>
                     </SelectContent>
                   </Select>
-                  {formErrors.type && (
-                    <p className="text-red-600 text-xs mt-1">{formErrors.type.message}</p>
-                  )}
+                  {formErrors.type && <p className="text-red-600 text-xs mt-1">{formErrors.type.message}</p>}
                 </div>
 
                 <div>
@@ -360,9 +466,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                     placeholder="e.g., 100 units/mL"
                     className="mt-1"
                   />
-                  {formErrors.dose && (
-                    <p className="text-red-600 text-xs mt-1">{formErrors.dose.message}</p>
-                  )}
+                  {formErrors.dose && <p className="text-red-600 text-xs mt-1">{formErrors.dose.message}</p>}
                 </div>
               </div>
             </CardContent>
@@ -393,9 +497,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                     placeholder="Enter quantity"
                     className="mt-1"
                   />
-                  {formErrors.quantity && (
-                    <p className="text-red-600 text-xs mt-1">{formErrors.quantity.message}</p>
-                  )}
+                  {formErrors.quantity && <p className="text-red-600 text-xs mt-1">{formErrors.quantity.message}</p>}
                 </div>
 
                 <div>
@@ -403,12 +505,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                     <Calendar className="w-4 h-4 inline mr-1" />
                     Expiration Date *
                   </Label>
-                  <Input
-                    id="expirationDate"
-                    type="date"
-                    {...form.register("expirationDate")}
-                    className="mt-1"
-                  />
+                  <Input id="expirationDate" type="date" {...form.register("expirationDate")} className="mt-1" />
                   {formErrors.expirationDate && (
                     <p className="text-red-600 text-xs mt-1">{formErrors.expirationDate.message}</p>
                   )}
@@ -429,10 +526,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
               {existingLocations.length > 0 && (
                 <div>
                   <Label className="text-sm text-gray-600">Quick Select Location</Label>
-                  <Select
-                    value={locationDropdownValue}
-                    onValueChange={handleExistingLocationSelect}
-                  >
+                  <Select value={locationDropdownValue} onValueChange={handleExistingLocationSelect}>
                     <SelectTrigger className="mt-1 bg-gray-50">
                       <SelectValue placeholder="Choose existing location..." />
                     </SelectTrigger>
@@ -459,9 +553,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                   placeholder="e.g., Refrigerator A, Shelf 2"
                   className="mt-1"
                 />
-                {formErrors.location && (
-                  <p className="text-red-600 text-xs mt-1">{formErrors.location.message}</p>
-                )}
+                {formErrors.location && <p className="text-red-600 text-xs mt-1">{formErrors.location.message}</p>}
               </div>
             </CardContent>
           </Card>
@@ -480,10 +572,10 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
             <Button
               type="submit"
               className="flex-1 bg-blue-600 hover:bg-blue-700"
-              disabled={addMedicationMutation.isPending}
+              disabled={addMedicationMutation.isPending || updateMedicationMutation.isLoading}
               size="default"
             >
-              {addMedicationMutation.isPending ? "Adding..." : "Add Medication"}
+              {addMedicationMutation.isPending || updateMedicationMutation.isLoading ? "Adding..." : "Add Medication"}
             </Button>
           </div>
         </form>
