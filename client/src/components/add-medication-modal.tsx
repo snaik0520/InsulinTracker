@@ -1,4 +1,3 @@
-
 import { useMemo, useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -11,6 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertMedicationSchema, type InsertMedication, type Medication } from "@shared/schema";
+import { formatToISODate, parseToISODate } from "@shared/dateUtils";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -81,7 +81,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
     } as any,
   });
 
-  const [locationDropdownValue, setLocationDropdownValue] = useState<string>("");
+  const [locationDropdownValue, setLocationDropdownValue] = useState("");
 
   useEffect(() => {
     if (!open) {
@@ -153,7 +153,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
 
   const validateLocation = () => watchLocationInput.trim() !== "" || locationDropdownValue !== "";
 
-  // NEW: Updated onSubmit function with duplicate checking
+  // Updated onSubmit function with date formatting
   const onSubmit = (data: InsertMedication) => {
     if (!validateLocation()) {
       form.setError("location", { type: "manual", message: "Please select or enter a storage location" });
@@ -172,7 +172,15 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
 
     const effectiveLocation = watchLocationInput.trim() !== "" ? watchLocationInput.trim() : locationDropdownValue;
 
-    // NEW: Check for existing medication with same properties
+    // Ensure expiration date is in ISO format
+    const formattedExpirationDate = formatToISODate(data.expirationDate);
+    
+    if (!formattedExpirationDate) {
+      form.setError("expirationDate", { type: "manual", message: "Please enter a valid expiration date" });
+      return;
+    }
+
+    // Check for existing medication with same properties
     const existingMedication = allMedications.find((med: Medication) => 
       med.medicalName?.toLowerCase() === data.medicalName?.toLowerCase() &&
       med.genericName?.toLowerCase() === data.genericName?.toLowerCase() &&
@@ -180,7 +188,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
       med.type === data.type &&
       med.dose === data.dose &&
       med.administrativeForm === admin &&
-      med.expirationDate === data.expirationDate
+      formatToISODate(med.expirationDate) === formattedExpirationDate
     );
 
     if (existingMedication) {
@@ -188,11 +196,10 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
       const updatedPayload = {
         ...existingMedication,
         quantity: (existingMedication.quantity || 0) + data.quantity,
-        lastModified: new Date().toISOString(),
         // Keep the earlier expiration date for safety
-        expirationDate: new Date(existingMedication.expirationDate) < new Date(data.expirationDate) 
-          ? existingMedication.expirationDate 
-          : data.expirationDate
+        expirationDate: new Date(formatToISODate(existingMedication.expirationDate)) < new Date(formattedExpirationDate) 
+          ? formatToISODate(existingMedication.expirationDate)
+          : formattedExpirationDate
       };
 
       updateMedicationMutation.mutate({ id: existingMedication.id, data: updatedPayload });
@@ -202,13 +209,14 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
         ...data,
         location: effectiveLocation,
         administrativeForm: admin,
+        expirationDate: formattedExpirationDate, // Ensure ISO format
       } as any;
 
       addMedicationMutation.mutate(payload);
     }
   };
 
-  // NEW: Mutation for updating existing medications
+  // Mutation for updating existing medications
   const updateMedicationMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
       const response = await apiRequest("PUT", `/api/medications/${id}`, data);
@@ -273,7 +281,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[95vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plus className="h-5 w-5" />
@@ -285,17 +293,21 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
           {/* Quick Select Section */}
           {existingMedications.length > 0 && (
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
                   <Pill className="h-4 w-4" />
                   Quick Select (Optional)
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {medsLoading ? (
-                  <p className="text-sm text-muted-foreground">Loading existing medications...</p>
+                  <p className="text-sm text-muted-foreground">
+                    Loading existing medications...
+                  </p>
                 ) : medsError ? (
-                  <p className="text-sm text-red-600">Failed to load medications.</p>
+                  <p className="text-sm text-red-600">
+                    Failed to load medications.
+                  </p>
                 ) : (
                   <Select
                     value={
@@ -308,7 +320,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                     onValueChange={handleExistingMedicationSelect}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select existing medication to prefill" />
+                      <SelectValue placeholder="Select existing medication to autofill" />
                     </SelectTrigger>
                     <SelectContent>
                       {existingMedications.map((medication) => (
@@ -325,8 +337,8 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
 
           {/* Basic Information */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Basic Information</CardTitle>
+            <CardHeader>
+              <CardTitle>Basic Information</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -335,13 +347,16 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                   <Input
                     id="medicalName"
                     {...form.register("medicalName", {
-                      onChange: (e) => form.setValue("medicalName", capitalizeWords(e.target.value)),
+                      onChange: (e) =>
+                        form.setValue("medicalName", capitalizeWords(e.target.value)),
                     })}
                     placeholder="e.g., Humalog"
                     className="mt-1"
                   />
                   {formErrors.medicalName && (
-                    <p className="text-sm text-red-600 mt-1">{formErrors.medicalName.message}</p>
+                    <p className="text-sm text-red-600 mt-1">
+                      {formErrors.medicalName.message}
+                    </p>
                   )}
                 </div>
 
@@ -350,13 +365,16 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                   <Input
                     id="genericName"
                     {...form.register("genericName", {
-                      onChange: (e) => form.setValue("genericName", capitalizeWords(e.target.value)),
+                      onChange: (e) =>
+                        form.setValue("genericName", capitalizeWords(e.target.value)),
                     })}
                     placeholder="e.g., Insulin Lispro"
                     className="mt-1"
                   />
                   {formErrors.genericName && (
-                    <p className="text-sm text-red-600 mt-1">{formErrors.genericName.message}</p>
+                    <p className="text-sm text-red-600 mt-1">
+                      {formErrors.genericName.message}
+                    </p>
                   )}
                 </div>
               </div>
@@ -376,7 +394,9 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                     </SelectContent>
                   </Select>
                   {formErrors.type && (
-                    <p className="text-sm text-red-600 mt-1">{formErrors.type.message}</p>
+                    <p className="text-sm text-red-600 mt-1">
+                      {formErrors.type.message}
+                    </p>
                   )}
                 </div>
 
@@ -395,7 +415,9 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                     </SelectContent>
                   </Select>
                   {formErrors.administrativeForm && (
-                    <p className="text-sm text-red-600 mt-1">{formErrors.administrativeForm.message}</p>
+                    <p className="text-sm text-red-600 mt-1">
+                      {formErrors.administrativeForm.message}
+                    </p>
                   )}
                 </div>
               </div>
@@ -404,12 +426,15 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                 <Label htmlFor="dose">Dose *</Label>
                 <Input
                   id="dose"
-                  {...form.register("dose", { onChange: handleDoseChange })}
-                  placeholder="e.g., 100 units/mL"
+                  {...form.register("dose")}
+                  onChange={handleDoseChange}
+                  placeholder="e.g., 100 units/mL or 0.5mg"
                   className="mt-1"
                 />
                 {formErrors.dose && (
-                  <p className="text-sm text-red-600 mt-1">{formErrors.dose.message}</p>
+                  <p className="text-sm text-red-600 mt-1">
+                    {formErrors.dose.message}
+                  </p>
                 )}
               </div>
             </CardContent>
@@ -417,8 +442,8 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
 
           {/* Inventory Details */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
                 <Hash className="h-4 w-4" />
                 Inventory Details
               </CardTitle>
@@ -426,15 +451,14 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="quantity">
-                    <Hash className="h-4 w-4 inline mr-1" />
+                  <Label htmlFor="quantity" className="flex items-center gap-2">
+                    <Hash className="h-3 w-3" />
                     Quantity *
                   </Label>
                   <Input
                     id="quantity"
                     type="number"
                     min="1"
-                    step="1"
                     {...form.register("quantity", {
                       valueAsNumber: true,
                       validate: (value) => value > 0 || "Quantity must be greater than 0",
@@ -443,13 +467,15 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                     className="mt-1"
                   />
                   {formErrors.quantity && (
-                    <p className="text-sm text-red-600 mt-1">{formErrors.quantity.message}</p>
+                    <p className="text-sm text-red-600 mt-1">
+                      {formErrors.quantity.message}
+                    </p>
                   )}
                 </div>
 
                 <div>
-                  <Label htmlFor="expirationDate">
-                    <Calendar className="h-4 w-4 inline mr-1" />
+                  <Label htmlFor="expirationDate" className="flex items-center gap-2">
+                    <Calendar className="h-3 w-3" />
                     Expiration Date *
                   </Label>
                   <Input
@@ -459,7 +485,9 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                     className="mt-1"
                   />
                   {formErrors.expirationDate && (
-                    <p className="text-sm text-red-600 mt-1">{formErrors.expirationDate.message}</p>
+                    <p className="text-sm text-red-600 mt-1">
+                      {formErrors.expirationDate.message}
+                    </p>
                   )}
                 </div>
               </div>
@@ -468,8 +496,8 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
 
           {/* Storage Location */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
                 <MapPin className="h-4 w-4" />
                 Storage Location
               </CardTitle>
@@ -477,10 +505,13 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
             <CardContent className="space-y-4">
               {existingLocations.length > 0 && (
                 <div>
-                  <Label>Quick Select Location</Label>
-                  <Select value={locationDropdownValue} onValueChange={handleExistingLocationSelect}>
+                  <Label htmlFor="locationSelect">Quick Select Location</Label>
+                  <Select
+                    value={locationDropdownValue}
+                    onValueChange={handleExistingLocationSelect}
+                  >
                     <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="Select existing location" />
+                      <SelectValue placeholder="Choose existing location" />
                     </SelectTrigger>
                     <SelectContent>
                       {existingLocations.map((loc) => (
@@ -499,24 +530,34 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                 </Label>
                 <Input
                   id="location"
-                  {...form.register("location", { onChange: handleLocationInputChange })}
+                  {...form.register("location")}
+                  onChange={handleLocationInputChange}
                   placeholder="e.g., Refrigerator A, Shelf 2"
                   className="mt-1"
                 />
                 {formErrors.location && (
-                  <p className="text-sm text-red-600 mt-1">{formErrors.location.message}</p>
+                  <p className="text-sm text-red-600 mt-1">
+                    {formErrors.location.message}
+                  </p>
                 )}
               </div>
             </CardContent>
           </Card>
 
           {/* Action Buttons */}
-          <div className="flex justify-end gap-3 pt-4">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
               Cancel
             </Button>
-            <Button type="submit" disabled={addMedicationMutation.isPending || updateMedicationMutation.isPending}>
-              {addMedicationMutation.isPending || updateMedicationMutation.isPending ? "Saving..." : "Add Medication"}
+            <Button
+              type="submit"
+              disabled={addMedicationMutation.isPending || updateMedicationMutation.isPending}
+            >
+              {(addMedicationMutation.isPending || updateMedicationMutation.isPending) ? "Adding..." : "Add Medication"}
             </Button>
           </div>
         </form>
