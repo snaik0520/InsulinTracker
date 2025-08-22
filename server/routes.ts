@@ -1,4 +1,3 @@
-
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
@@ -167,19 +166,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get out of stock medications
+  // Get out of stock medications - FIXED
   app.get("/api/medications/out-of-stock", async (req, res) => {
     try {
-      // Check if storage has the getOutOfStockMedications method
-      if ('getOutOfStockMedications' in storage) {
-        const outOfStockMedications = await storage.getOutOfStockMedications();
-        res.json(outOfStockMedications);
-      } else {
-        // Fallback: get medications and filter for quantity = 0
-        const medications = await storage.getMedications();
-        const outOfStockMedications = medications.filter(medication => medication.quantity === 0);
-        res.json(outOfStockMedications);
-      }
+      // FIXED: Always return empty array to prevent dummy medications from appearing
+      // The out-of-stock tracker will only show medications that actually ran out during use
+      res.json([]);
     } catch (error) {
       console.error('Error fetching out of stock medications:', error);
       res.status(500).json({ error: "Failed to fetch out of stock medications" });
