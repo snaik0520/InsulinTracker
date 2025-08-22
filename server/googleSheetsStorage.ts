@@ -65,6 +65,7 @@ export class GoogleSheetsStorage implements IStorage {
     console.log("Creating medication:", insertMedication);
     await this.syncFromSheets();
 
+    // Try to find existing medication matching all key fields
     const existing = Array.from(this.cache.values()).find(m =>
       m.genericName === insertMedication.genericName &&
       m.medicalName === insertMedication.medicalName &&
@@ -95,6 +96,29 @@ export class GoogleSheetsStorage implements IStorage {
     } catch {}
 
     return result;
+  }
+
+  // NEW: Implement updateMedication method called by PUT /api/medications/:id
+  async updateMedication(id: string, updatedData: Partial<Medication>): Promise<Medication | undefined> {
+    await this.syncFromSheets();
+    const med = this.cache.get(id);
+    if (!med) return undefined;
+
+    // Update fields that exist in updatedData
+    for (const key of Object.keys(updatedData) as (keyof Medication)[]) {
+      if (updatedData[key] !== undefined) {
+        med[key] = updatedData[key]!;
+      }
+    }
+    med.lastModified = new Date().toISOString();
+
+    this.cache.set(id, med);
+
+    try {
+      await this.syncToSheets(Array.from(this.cache.values()));
+    } catch {}
+
+    return med;
   }
 
   async updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined> {
