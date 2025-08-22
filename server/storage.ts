@@ -1,4 +1,5 @@
 import { type Medication, type InsertMedication, type MedicationTransaction, type InsertTransaction } from "@shared/schema";
+import { formatToISODateTime, formatToISODate } from "@shared/dateUtils";
 import { randomUUID } from "crypto";
 
 export interface IStorage {
@@ -33,24 +34,30 @@ export class MemStorage implements IStorage {
   }
 
   async createMedication(insertMedication: InsertMedication): Promise<Medication> {
+    // Ensure expiration date is in ISO format
+    const medicationWithFormattedDate = {
+      ...insertMedication,
+      expirationDate: formatToISODate(insertMedication.expirationDate)
+    };
+
     // Check if medication with same name, dose, and expiration date already exists
     const existingMedication = Array.from(this.medications.values()).find(med => 
-      med.genericName === insertMedication.genericName &&
-      med.medicalName === insertMedication.medicalName &&
-      med.dose === insertMedication.dose &&
-      med.expirationDate === insertMedication.expirationDate &&
-      med.location === insertMedication.location
+      med.genericName === medicationWithFormattedDate.genericName &&
+      med.medicalName === medicationWithFormattedDate.medicalName &&
+      med.dose === medicationWithFormattedDate.dose &&
+      med.expirationDate === medicationWithFormattedDate.expirationDate &&
+      med.location === medicationWithFormattedDate.location
     );
 
     if (existingMedication) {
       // Update existing medication quantity instead of creating new one
-      existingMedication.quantity += insertMedication.quantity;
+      existingMedication.quantity += medicationWithFormattedDate.quantity;
       this.medications.set(existingMedication.id, existingMedication);
       return existingMedication;
     } else {
       // Create new medication
       const id = randomUUID();
-      const medication: Medication = { ...insertMedication, id };
+      const medication: Medication = { ...medicationWithFormattedDate, id };
       this.medications.set(id, medication);
       return medication;
     }
@@ -61,6 +68,11 @@ export class MemStorage implements IStorage {
     const medication = this.medications.get(id);
     if (!medication) {
       return undefined;
+    }
+
+    // Ensure expiration date is formatted if provided
+    if (updatedData.expirationDate) {
+      updatedData.expirationDate = formatToISODate(updatedData.expirationDate);
     }
 
     // Update fields that exist in updatedData
@@ -125,7 +137,7 @@ export class MemStorage implements IStorage {
     const transaction: MedicationTransaction = { 
       ...insertTransaction, 
       id, 
-      timestamp: new Date() as any,
+      timestamp: formatToISODateTime(), // Use ISO datetime format
       notes: insertTransaction.notes || null
     };
     this.transactions.set(id, transaction);
@@ -161,6 +173,10 @@ export class GoogleSheetsStorage implements IStorage {
       if (data.result === 'success' && data.medications) {
         this.cache.clear();
         data.medications.forEach((med: Medication) => {
+          // Ensure expiration dates are in ISO format when syncing from sheets
+          if (med.expirationDate) {
+            med.expirationDate = formatToISODate(med.expirationDate);
+          }
           this.cache.set(med.id, med);
         });
         this.lastSync = now;
@@ -175,6 +191,12 @@ export class GoogleSheetsStorage implements IStorage {
 
   private async syncToSheets(medications: Medication[]): Promise<void> {
     try {
+      // Ensure all medications have ISO formatted dates before syncing
+      const formattedMedications = medications.map(med => ({
+        ...med,
+        expirationDate: formatToISODate(med.expirationDate)
+      }));
+
       const response = await fetch(this.webAppUrl, {
         method: 'POST',
         headers: {
@@ -182,7 +204,7 @@ export class GoogleSheetsStorage implements IStorage {
         },
         body: new URLSearchParams({
           action: 'update',
-          data: JSON.stringify(medications)
+          data: JSON.stringify(formattedMedications)
         }),
         signal: AbortSignal.timeout(15000) // 15 second timeout
       });
@@ -208,26 +230,32 @@ export class GoogleSheetsStorage implements IStorage {
   async createMedication(insertMedication: InsertMedication): Promise<Medication> {
     await this.syncFromSheets();
 
+    // Ensure expiration date is in ISO format
+    const medicationWithFormattedDate = {
+      ...insertMedication,
+      expirationDate: formatToISODate(insertMedication.expirationDate)
+    };
+
     // Check if medication with same properties already exists
     const existingMedication = Array.from(this.cache.values()).find(med => 
-      med.genericName === insertMedication.genericName &&
-      med.medicalName === insertMedication.medicalName &&
-      med.dose === insertMedication.dose &&
-      med.expirationDate === insertMedication.expirationDate &&
-      med.location === insertMedication.location
+      med.genericName === medicationWithFormattedDate.genericName &&
+      med.medicalName === medicationWithFormattedDate.medicalName &&
+      med.dose === medicationWithFormattedDate.dose &&
+      med.expirationDate === medicationWithFormattedDate.expirationDate &&
+      med.location === medicationWithFormattedDate.location
     );
 
     let resultMedication: Medication;
 
     if (existingMedication) {
       // Update existing medication quantity
-      existingMedication.quantity += insertMedication.quantity;
+      existingMedication.quantity += medicationWithFormattedDate.quantity;
       this.cache.set(existingMedication.id, existingMedication);
       resultMedication = existingMedication;
     } else {
       // Create new medication
       const id = randomUUID();
-      const medication: Medication = { ...insertMedication, id };
+      const medication: Medication = { ...medicationWithFormattedDate, id };
       this.cache.set(id, medication);
       resultMedication = medication;
     }
@@ -248,6 +276,11 @@ export class GoogleSheetsStorage implements IStorage {
     await this.syncFromSheets();
     const med = this.cache.get(id);
     if (!med) return undefined;
+
+    // Ensure expiration date is formatted if provided
+    if (updatedData.expirationDate) {
+      updatedData.expirationDate = formatToISODate(updatedData.expirationDate);
+    }
 
     // Update fields that exist in updatedData
     for (const key of Object.keys(updatedData) as (keyof Medication)[]) {
@@ -333,7 +366,7 @@ export class GoogleSheetsStorage implements IStorage {
     const transaction: MedicationTransaction = { 
       ...insertTransaction, 
       id, 
-      timestamp: new Date() as any,
+      timestamp: formatToISODateTime(), // Use ISO datetime format
       notes: insertTransaction.notes || null
     };
     this.transactionCache.set(id, transaction);
