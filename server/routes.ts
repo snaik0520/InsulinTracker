@@ -1,4 +1,3 @@
-
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
@@ -57,8 +56,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const medicationData = insertMedicationSchema.parse(req.body);
       const medication = await storage.createMedication(medicationData);
       
-      // For MemStorage, we need to manually log the transaction
-      // For GoogleSheetsStorage, this is handled automatically in the createMedication method
+      // For MemStorage, manually log the transaction
+      // For GoogleSheetsStorage, handled automatically in createMedication method
       if (!(storage instanceof GoogleSheetsStorage)) {
         await storage.createTransaction({
           medicationId: medication.id,
@@ -80,6 +79,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // NEW: Update existing medication by ID
+  app.put("/api/medications/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const medicationData = insertMedicationSchema.parse(req.body);
+
+      // Update medication in storage
+      if (storage.updateMedication) {
+        const updatedMedication = await storage.updateMedication(id, medicationData);
+
+        if (!updatedMedication) {
+          return res.status(404).json({ error: "Medication not found" });
+        }
+
+        // Add synchronization with Google Sheets if your storage implementation requires
+
+        res.json(updatedMedication);
+      } else {
+        res.status(501).json({ error: "Update operation not implemented in storage" });
+      }
+    } catch (error) {
+      console.error('Error updating medication:', error);
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: "Invalid medication data", details: error.errors });
+      } else {
+        res.status(500).json({ error: "Failed to update medication" });
+      }
+    }
+  });
+
   // Dispense medication
   app.post("/api/medications/dispense", async (req, res) => {
     try {
@@ -96,16 +125,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!medication) {
           return res.status(404).json({ error: "Medication not found" });
         }
-
         if (medication.quantity < quantity) {
           return res.status(400).json({ error: "Insufficient stock" });
         }
-
         const updatedMedication = await storage.updateMedicationQuantity(
           medicationId,
           medication.quantity - quantity
         );
-
         // Log the dispensing transaction
         await storage.createTransaction({
           medicationId: medication.id,
@@ -114,7 +140,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           quantity: quantity,
           notes: `Dispensed to patient`
         });
-
         res.json(updatedMedication);
       }
     } catch (error) {
