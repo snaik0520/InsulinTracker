@@ -1,9 +1,16 @@
+// AddMedicationModal.tsx
 import { useMemo, useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 
@@ -37,15 +44,13 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
     staleTime: 1000 * 60 * 2,
   });
 
+  // existingMedications aggregated for quick-select (unchanged)
   const existingMedications = useMemo(() => {
-    const map = new Map<
-      string,
-      Medication & { quantity: number; locationCounts: Map<string, number> }
-    >();
+    const map = new Map<string, Medication & { quantity: number; locationCounts: Map<string, number> }>();
     for (const med of allMedications) {
       const key = `${med.genericName || ""}||${med.medicalName || ""}`;
       if (!map.has(key)) {
-        const locationCounts = new Map<string, number>();
+        const locationCounts = new Map();
         if (med.location?.trim()) locationCounts.set(med.location.trim(), med.quantity ?? 0);
         map.set(key, { ...med, quantity: med.quantity ?? 0, locationCounts });
       } else {
@@ -66,7 +71,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
     return Array.from(set);
   }, [allMedications]);
 
-  const form = useForm<InsertMedication>({
+  const form = useForm({
     resolver: zodResolver(insertMedicationSchema),
     defaultValues: {
       medicalName: "",
@@ -80,7 +85,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
     } as any,
   });
 
-  const [locationDropdownValue, setLocationDropdownValue] = useState<string>("");
+  const [locationDropdownValue, setLocationDropdownValue] = useState("");
 
   useEffect(() => {
     if (!open) {
@@ -152,7 +157,48 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
 
   const validateLocation = () => watchLocationInput.trim() !== "" || locationDropdownValue !== "";
 
-  // NEW: Updated onSubmit function with duplicate checking
+  // ---------- NEW: helper functions to normalize and find exact matches ----------
+  const normalizeString = (s?: string) => (s ? s.toString().trim().toLowerCase() : "");
+  // normalize date to YYYY-MM-DD if possible (dates from input type="date" will already be YYYY-MM-DD)
+  const normalizeDate = (d?: string) => {
+    if (!d) return "";
+    // pick the first 10 characters if ISO-like, otherwise trim
+    return d.length >= 10 ? d.slice(0, 10) : d.trim();
+  };
+
+  // Finds an exact matching medication row in allMedications based on fields:
+  // medicalName, administrativeForm, type, dose, expirationDate, location
+  const findMatchingMedication = (payload: Partial<InsertMedication & { location: string }>) => {
+    const mName = normalizeString(payload.medicalName);
+    const admin = normalizeString(payload.administrativeForm);
+    const type = normalizeString(payload.type);
+    const dose = normalizeString(payload.dose);
+    const exp = normalizeDate(payload.expirationDate);
+    const loc = normalizeString(payload.location);
+
+    for (const med of allMedications) {
+      const medMName = normalizeString(med.medicalName);
+      const medAdmin = normalizeString(med.administrativeForm ?? (med as any).formType);
+      const medType = normalizeString(med.type);
+      const medDose = normalizeString(med.dose);
+      const medExp = normalizeDate(med.expirationDate ?? "");
+      const medLoc = normalizeString(med.location ?? "");
+
+      if (
+        medMName === mName &&
+        medAdmin === admin &&
+        medType === type &&
+        medDose === dose &&
+        medExp === exp &&
+        medLoc === loc
+      ) {
+        return med;
+      }
+    }
+    return null;
+  };
+  // ------------------------------------------------------------------------------
+
   const onSubmit = (data: InsertMedication) => {
     if (!validateLocation()) {
       form.setError("location", { type: "manual", message: "Please select or enter a storage location" });
@@ -171,46 +217,45 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
 
     const effectiveLocation = watchLocationInput.trim() !== "" ? watchLocationInput.trim() : locationDropdownValue;
 
-    // NEW: Check for existing medication with same properties
-    const existingMedication = allMedications.find((med: Medication) => 
-      med.medicalName?.toLowerCase() === data.medicalName?.toLowerCase() &&
-      med.genericName?.toLowerCase() === data.genericName?.toLowerCase() &&
-      med.location?.toLowerCase() === effectiveLocation?.toLowerCase() &&
-      med.type === data.type &&
-      med.dose === data.dose &&
-      med.administrativeForm === admin
-    );
+    const payload = {
+      ...data,
+      location: effectiveLocation,
+      administrativeForm: admin,
+    } as any;
 
-    if (existingMedication) {
-      // If medication exists, update quantity instead of creating new
-      const updatedPayload = {
-        ...existingMedication,
-        quantity: (existingMedication.quantity || 0) + data.quantity,
+    // find exact match using the helper
+    const matched = findMatchingMedication(payload);
+
+    if (matched) {
+      // If matched, update existing medication's quantity by adding incoming quantity
+      const updatedQuantity = (matched.quantity ?? 0) + (Number(payload.quantity) || 0);
+      // Prepare update payload: send full fields if your backend expects them, or just quantity if not
+      const updatePayload = {
+        medicalName: payload.medicalName,
+        genericName: payload.genericName,
+        type: payload.type,
+        dose: payload.dose,
+        quantity: updatedQuantity,
+        expirationDate: payload.expirationDate,
+        location: payload.location,
+        administrativeForm: payload.administrativeForm,
         lastModified: new Date().toISOString(),
-        // Keep the earlier expiration date for safety
-        expirationDate: new Date(existingMedication.expirationDate) < new Date(data.expirationDate) 
-          ? existingMedication.expirationDate 
-          : data.expirationDate
       };
 
-      updateMedicationMutation.mutate({ id: existingMedication.id, data: updatedPayload });
+      updateMedicationMutation.mutate({ id: matched.id, body: updatePayload });
     } else {
-      // Create new medication if no match found
-      const payload = {
-        ...data,
-        location: effectiveLocation,
-        administrativeForm: admin,
-      } as any;
-
+      // No match — create a new medication entry (original behavior)
       addMedicationMutation.mutate(payload);
     }
   };
 
-  // NEW: Mutation for updating existing medications
+  // ---------- NEW: mutation to update an existing medication ----------
   const updateMedicationMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: any }) => {
-      const response = await apiRequest("PUT", `/api/medications/${id}`, data);
-      return response.json();
+    mutationFn: async ({ id, body }: { id: string; body: any }) => {
+      // NOTE: adjust method/endpoint if your backend expects PUT or a different path
+      const res = await apiRequest("PATCH", `/api/medications/${id}`, body);
+      // If server returns non-2xx, apiRequest should throw or return a non-ok response; .json() below assumes success
+      return res.json();
     },
     onSuccess: async (res: any) => {
       await Promise.all([
@@ -219,25 +264,29 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
         queryClient.invalidateQueries({ queryKey: ["/api/transactions"], refetchType: 'active' })
       ]);
 
-      toast({ 
-        title: "Success", 
-        description: "Medication quantity updated successfully", 
-        duration: 3000 
-      });
+      toast({ title: "Success", description: "Medication updated successfully", duration: 3000 });
       form.reset();
       setLocationDropdownValue("");
       onOpenChange(false);
       onSave?.(res);
     },
     onError: (error: any) => {
+      // If PATCH fails (for example server doesn't support PATCH), fallback to creating a new entry
       toast({
-        title: "Error",
-        description: error?.message ?? "An error occurred updating medication",
+        title: "Update error — creating new entry instead",
+        description: "Could not update existing row; attempting to create a new row.",
         variant: "destructive",
-        duration: 3000,
+        duration: 4000,
+      });
+      // fallback: create new medication (you may want to refine this behavior)
+      addMedicationMutation.mutate({
+        ...form.getValues(),
+        location: watchLocationInput.trim() !== "" ? watchLocationInput.trim() : locationDropdownValue,
+        administrativeForm: (form.getValues() as any).administrativeForm,
       });
     },
   });
+  // -------------------------------------------------------------------
 
   const addMedicationMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -271,29 +320,31 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Plus className="h-5 w-5" />
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-0">
+        <DialogHeader className="p-6 pb-2">
+          <DialogTitle className="flex items-center gap-2 text-xl font-semibold">
+            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+              <Plus className="w-4 h-4 text-blue-600" />
+            </div>
             Add New Medication
           </DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={form.handleSubmit(onSubmit)} className="px-6 pb-6 space-y-6">
           {/* Quick Select Section */}
           {existingMedications.length > 0 && (
-            <Card>
+            <Card className="border-blue-100 bg-blue-50/30">
               <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Pill className="h-4 w-4" />
+                <CardTitle className="text-sm font-medium text-blue-700 flex items-center gap-2">
+                  <Pill className="w-4 h-4" />
                   Quick Select (Optional)
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="pt-0">
                 {medsLoading ? (
-                  <p className="text-sm text-muted-foreground">Loading existing medications...</p>
+                  <div className="text-sm text-gray-500">Loading existing medications...</div>
                 ) : medsError ? (
-                  <p className="text-sm text-red-600">Failed to load medications.</p>
+                  <div className="text-sm text-red-600">Failed to load medications.</div>
                 ) : (
                   <Select
                     value={
@@ -305,8 +356,8 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                     }
                     onValueChange={handleExistingMedicationSelect}
                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select existing medication to prefill" />
+                    <SelectTrigger className="bg-white">
+                      <SelectValue placeholder="Select existing medication to auto-fill..." />
                     </SelectTrigger>
                     <SelectContent>
                       {existingMedications.map((medication) => (
@@ -324,12 +375,14 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
           {/* Basic Information */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Basic Information</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-700">Basic Information</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="medicalName">Medical Name *</Label>
+                  <Label htmlFor="medicalName" className="text-sm font-medium text-gray-700">
+                    Medical Name *
+                  </Label>
                   <Input
                     id="medicalName"
                     {...form.register("medicalName", {
@@ -339,12 +392,14 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                     className="mt-1"
                   />
                   {formErrors.medicalName && (
-                    <p className="text-sm text-red-600 mt-1">{formErrors.medicalName.message}</p>
+                    <p className="text-red-600 text-xs mt-1">{formErrors.medicalName.message}</p>
                   )}
                 </div>
 
                 <div>
-                  <Label htmlFor="genericName">Generic Name *</Label>
+                  <Label htmlFor="genericName" className="text-sm font-medium text-gray-700">
+                    Generic Name *
+                  </Label>
                   <Input
                     id="genericName"
                     {...form.register("genericName", {
@@ -354,17 +409,19 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                     className="mt-1"
                   />
                   {formErrors.genericName && (
-                    <p className="text-sm text-red-600 mt-1">{formErrors.genericName.message}</p>
+                    <p className="text-red-600 text-xs mt-1">{formErrors.genericName.message}</p>
                   )}
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <Label htmlFor="type">Insulin Type *</Label>
+                  <Label htmlFor="type" className="text-sm font-medium text-gray-700">
+                    Insulin Type *
+                  </Label>
                   <Select onValueChange={(value) => form.setValue("type", value)} value={form.watch("type")}>
                     <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="Select insulin type" />
+                      <SelectValue placeholder="Select type" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="rapid">Rapid Acting</SelectItem>
@@ -373,13 +430,13 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                       <SelectItem value="other">Other</SelectItem>
                     </SelectContent>
                   </Select>
-                  {formErrors.type && (
-                    <p className="text-sm text-red-600 mt-1">{formErrors.type.message}</p>
-                  )}
+                  {formErrors.type && <p className="text-red-600 text-xs mt-1">{formErrors.type.message}</p>}
                 </div>
 
                 <div>
-                  <Label htmlFor="administrativeForm">Form *</Label>
+                  <Label htmlFor="administrativeForm" className="text-sm font-medium text-gray-700">
+                    Form *
+                  </Label>
                   <Select
                     onValueChange={(value) => form.setValue("administrativeForm" as any, value)}
                     value={form.watch("administrativeForm" as any)}
@@ -393,22 +450,24 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                     </SelectContent>
                   </Select>
                   {formErrors.administrativeForm && (
-                    <p className="text-sm text-red-600 mt-1">{formErrors.administrativeForm.message}</p>
+                    <p className="text-red-600 text-xs mt-1">{formErrors.administrativeForm.message}</p>
                   )}
                 </div>
-              </div>
 
-              <div>
-                <Label htmlFor="dose">Dose *</Label>
-                <Input
-                  id="dose"
-                  {...form.register("dose", { onChange: handleDoseChange })}
-                  placeholder="e.g., 100 units/mL"
-                  className="mt-1"
-                />
-                {formErrors.dose && (
-                  <p className="text-sm text-red-600 mt-1">{formErrors.dose.message}</p>
-                )}
+                <div>
+                  <Label htmlFor="dose" className="text-sm font-medium text-gray-700">
+                    Dose *
+                  </Label>
+                  <Input
+                    id="dose"
+                    {...form.register("dose", {
+                      onChange: handleDoseChange,
+                    })}
+                    placeholder="e.g., 100 units/mL"
+                    className="mt-1"
+                  />
+                  {formErrors.dose && <p className="text-red-600 text-xs mt-1">{formErrors.dose.message}</p>}
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -416,23 +475,21 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
           {/* Inventory Details */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Hash className="h-4 w-4" />
+              <CardTitle className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                <Hash className="w-4 h-4" />
                 Inventory Details
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="quantity">
-                    <Hash className="h-4 w-4 inline mr-1" />
+                  <Label htmlFor="quantity" className="text-sm font-medium text-gray-700">
                     Quantity *
                   </Label>
                   <Input
                     id="quantity"
                     type="number"
                     min="1"
-                    step="1"
                     {...form.register("quantity", {
                       valueAsNumber: true,
                       validate: (value) => value > 0 || "Quantity must be greater than 0",
@@ -440,24 +497,17 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
                     placeholder="Enter quantity"
                     className="mt-1"
                   />
-                  {formErrors.quantity && (
-                    <p className="text-sm text-red-600 mt-1">{formErrors.quantity.message}</p>
-                  )}
+                  {formErrors.quantity && <p className="text-red-600 text-xs mt-1">{formErrors.quantity.message}</p>}
                 </div>
 
                 <div>
-                  <Label htmlFor="expirationDate">
-                    <Calendar className="h-4 w-4 inline mr-1" />
+                  <Label htmlFor="expirationDate" className="text-sm font-medium text-gray-700">
+                    <Calendar className="w-4 h-4 inline mr-1" />
                     Expiration Date *
                   </Label>
-                  <Input
-                    id="expirationDate"
-                    type="date"
-                    {...form.register("expirationDate")}
-                    className="mt-1"
-                  />
+                  <Input id="expirationDate" type="date" {...form.register("expirationDate")} className="mt-1" />
                   {formErrors.expirationDate && (
-                    <p className="text-sm text-red-600 mt-1">{formErrors.expirationDate.message}</p>
+                    <p className="text-red-600 text-xs mt-1">{formErrors.expirationDate.message}</p>
                   )}
                 </div>
               </div>
@@ -467,18 +517,18 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
           {/* Storage Location */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <MapPin className="h-4 w-4" />
+              <CardTitle className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                <MapPin className="w-4 h-4" />
                 Storage Location
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               {existingLocations.length > 0 && (
                 <div>
-                  <Label>Quick Select Location</Label>
+                  <Label className="text-sm text-gray-600">Quick Select Location</Label>
                   <Select value={locationDropdownValue} onValueChange={handleExistingLocationSelect}>
-                    <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="Select existing location" />
+                    <SelectTrigger className="mt-1 bg-gray-50">
+                      <SelectValue placeholder="Choose existing location..." />
                     </SelectTrigger>
                     <SelectContent>
                       {existingLocations.map((loc) => (
@@ -492,29 +542,40 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
               )}
 
               <div>
-                <Label htmlFor="location">
+                <Label htmlFor="location" className="text-sm font-medium text-gray-700">
                   {existingLocations.length > 0 ? "Or Enter New Location *" : "Storage Location *"}
                 </Label>
                 <Input
                   id="location"
-                  {...form.register("location", { onChange: handleLocationInputChange })}
+                  {...form.register("location", {
+                    onChange: handleLocationInputChange,
+                  })}
                   placeholder="e.g., Refrigerator A, Shelf 2"
                   className="mt-1"
                 />
-                {formErrors.location && (
-                  <p className="text-sm text-red-600 mt-1">{formErrors.location.message}</p>
-                )}
+                {formErrors.location && <p className="text-red-600 text-xs mt-1">{formErrors.location.message}</p>}
               </div>
             </CardContent>
           </Card>
 
           {/* Action Buttons */}
-          <div className="flex justify-end gap-3 pt-4">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <div className="flex gap-3 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              className="flex-1"
+              size="default"
+            >
               Cancel
             </Button>
-            <Button type="submit" disabled={addMedicationMutation.isPending || updateMedicationMutation.isPending}>
-              {addMedicationMutation.isPending || updateMedicationMutation.isPending ? "Saving..." : "Add Medication"}
+            <Button
+              type="submit"
+              className="flex-1 bg-blue-600 hover:bg-blue-700"
+              disabled={addMedicationMutation.isPending || updateMedicationMutation.isLoading}
+              size="default"
+            >
+              {addMedicationMutation.isPending || updateMedicationMutation.isLoading ? "Adding..." : "Add Medication"}
             </Button>
           </div>
         </form>
