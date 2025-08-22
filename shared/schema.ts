@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, integer, date, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { isValidISODate, formatToISODate } from "./dateUtils";
 
 export const medications = pgTable("medications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -12,9 +13,8 @@ export const medications = pgTable("medications", {
   quantity: integer("quantity").notNull(),
   expirationDate: date("expiration_date").notNull(),
   location: text("location").notNull(),
-  administrativeForm: text("administrative_form").notNull(), // ADD THIS LINE
+  administrativeForm: text("administrative_form").notNull(),
 });
-
 
 export const medicationTransactions = pgTable("medication_transactions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -26,9 +26,19 @@ export const medicationTransactions = pgTable("medication_transactions", {
   notes: text("notes"),
 });
 
-export const insertMedicationSchema = createInsertSchema(medications).omit({
-  id: true,
-});
+// Custom Zod schema with date validation and transformation
+export const insertMedicationSchema = createInsertSchema(medications)
+  .omit({
+    id: true,
+  })
+  .extend({
+    // Override expirationDate to ensure ISO format
+    expirationDate: z.string()
+      .refine(isValidISODate, {
+        message: "Expiration date must be in YYYY-MM-DD format"
+      })
+      .transform(formatToISODate)
+  });
 
 export const insertTransactionSchema = createInsertSchema(medicationTransactions).omit({
   id: true,
