@@ -1,3 +1,4 @@
+
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
@@ -56,6 +57,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const medicationData = insertMedicationSchema.parse(req.body);
       const medication = await storage.createMedication(medicationData);
       
+      // For MemStorage, manually log the transaction
+      // For GoogleSheetsStorage, handled automatically in createMedication method
       if (!(storage instanceof GoogleSheetsStorage)) {
         await storage.createTransaction({
           medicationId: medication.id,
@@ -77,18 +80,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Update existing medication by ID
+  // NEW: Update existing medication by ID
   app.put("/api/medications/:id", async (req, res) => {
     try {
       const { id } = req.params;
       const medicationData = insertMedicationSchema.parse(req.body);
 
+      // Update medication in storage
       if (storage.updateMedication) {
         const updatedMedication = await storage.updateMedication(id, medicationData);
 
         if (!updatedMedication) {
           return res.status(404).json({ error: "Medication not found" });
         }
+
+        // Add synchronization with Google Sheets if your storage implementation requires
 
         res.json(updatedMedication);
       } else {
@@ -104,63 +110,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // DELETE medication by ID
-  app.delete("/api/medications/:id", async (req, res) => {
-    try {
-      const { id } = req.params;
-
-      if (storage.deleteMedication) {
-        const deleted = await storage.deleteMedication(id);
-
-        if (!deleted) {
-          return res.status(404).json({ error: "Medication not found" });
-        }
-
-        res.json({ message: "Medication deleted successfully", deleted });
-      } else {
-        res.status(501).json({ error: "Delete operation not implemented in storage" });
-      }
-    } catch (error) {
-      console.error('Error deleting medication:', error);
-      res.status(500).json({ error: "Failed to delete medication" });
-    }
-  });
-
-  // Bulk delete all out-of-stock medications
-  app.delete("/api/medications/out-of-stock/bulk", async (req, res) => {
-    try {
-      if (storage.deleteOutOfStockMedications) {
-        const deletedCount = await storage.deleteOutOfStockMedications();
-        res.json({ message: `Successfully deleted ${deletedCount} out-of-stock medications`, deletedCount });
-      } else {
-        const outOfStockMedications = await storage.getMedications();
-        const toDelete = outOfStockMedications.filter(med => med.quantity === 0);
-        
-        let deletedCount = 0;
-        for (const med of toDelete) {
-          if (storage.deleteMedication) {
-            const deleted = await storage.deleteMedication(med.id);
-            if (deleted) deletedCount++;
-          }
-        }
-        
-        res.json({ message: `Successfully deleted ${deletedCount} out-of-stock medications`, deletedCount });
-      }
-    } catch (error) {
-      console.error('Error bulk deleting out-of-stock medications:', error);
-      res.status(500).json({ error: "Failed to delete out-of-stock medications" });
-    }
-  });
-
-  // Dispense medication endpoint (unchanged)
+  // Dispense medication
   app.post("/api/medications/dispense", async (req, res) => {
     try {
       const { medicationId, quantity } = dispenseSchema.parse(req.body);
       
+      // Check if we're using GoogleSheetsStorage
       if (storage instanceof GoogleSheetsStorage) {
+        // Use the combined dispense method for Google Sheets
         const result = await storage.dispenseMedication(medicationId, quantity);
         res.json(result.medication);
       } else {
+        // Keep existing logic for MemStorage
         const medication = await storage.getMedicationById(medicationId);
         if (!medication) {
           return res.status(404).json({ error: "Medication not found" });
@@ -172,11 +133,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           medicationId,
           medication.quantity - quantity
         );
+        // Log the dispensing transaction
         await storage.createTransaction({
           medicationId: medication.id,
           medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
           type: "dispensed",
-          quantity,
+          quantity: quantity,
           notes: `Dispensed to patient`
         });
         res.json(updatedMedication);
@@ -193,7 +155,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Low stock medications, out-of-stock medications, transactions endpoints unchanged...
+  // Get low stock medications
+  app.get("/api/medications/low-stock", async (req, res) => {
+    try {
+      const threshold = req.query.threshold ? parseInt(req.query.threshold as string) : 5;
+      const lowStockMedications = await storage.getLowStockMedications(threshold);
+      res.json(lowStockMedications);
+    } catch (error) {
+      console.error('Error fetching low stock medications:', error);
+      res.status(500).json({ error: "Failed to fetch low stock medications" });
+    }
+  });
+
+  // Get out of stock medications
+  app.get("/api/medications/out-of-stock", async (req, res) => {
+    try {
+      // Check if storage has the getOutOfStockMedications method
+      if ('getOutOfStockMedications' in storage) {
+        const outOfStockMedications = await storage.getOutOfStockMedications();
+        res.json(outOfStockMedications);
+      } else {
+        // Fallback: get medications and filter for quantity = 0
+        const medications = await storage.getMedications();
+        const outOfStockMedications = medications.filter(medication => medication.quantity === 0);
+        res.json(outOfStockMedications);
+      }
+    } catch (error) {
+      console.error('Error fetching out of stock medications:', error);
+      res.status(500).json({ error: "Failed to fetch out of stock medications" });
+    }
+  });
+
+  // Get medication transactions
+  app.get("/api/transactions", async (req, res) => {
+    try {
+      const transactions = await storage.getTransactions();
+      res.json(transactions);
+    } catch (error) {
+      console.error('Error fetching transactions:', error);
+      res.status(500).json({ error: "Failed to fetch transactions" });
+    }
+  });
 
   const httpServer = createServer(app);
   return httpServer;
