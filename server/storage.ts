@@ -1,18 +1,14 @@
+
 import { type Medication, type InsertMedication, type MedicationTransaction, type InsertTransaction } from "@shared/schema";
 import { formatToISODateTime, formatToISODate } from "@shared/dateUtils";
 import { randomUUID } from "crypto";
 
-// Updated interface to return metadata about medication creation
 export interface IStorage {
   getMedications(): Promise<Medication[]>;
   getMedicationById(id: string): Promise<Medication | undefined>;
-  // Updated to return result with metadata
-  createMedication(medication: InsertMedication): Promise<{
-    medication: Medication;
-    wasExisting: boolean;
-    addedQuantity: number;
-  }>;
+  createMedication(medication: InsertMedication): Promise<Medication>;
   updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined>;
+  // NEW: Added missing updateMedication method to interface
   updateMedication(id: string, updatedData: Partial<Medication>): Promise<Medication | undefined>;
   searchMedications(query: string): Promise<Medication[]>;
   filterMedicationsByType(type: string): Promise<Medication[]>;
@@ -38,11 +34,7 @@ export class MemStorage implements IStorage {
     return this.medications.get(id);
   }
 
-  async createMedication(insertMedication: InsertMedication): Promise<{
-    medication: Medication;
-    wasExisting: boolean;
-    addedQuantity: number;
-  }> {
+  async createMedication(insertMedication: InsertMedication): Promise<Medication> {
     // Ensure expiration date is in ISO format
     const medicationWithFormattedDate = {
       ...insertMedication,
@@ -58,27 +50,17 @@ export class MemStorage implements IStorage {
       med.location === medicationWithFormattedDate.location
     );
 
-    const addedQuantity = medicationWithFormattedDate.quantity;
-
     if (existingMedication) {
       // Update existing medication quantity instead of creating new one
       existingMedication.quantity += medicationWithFormattedDate.quantity;
       this.medications.set(existingMedication.id, existingMedication);
-      return {
-        medication: existingMedication,
-        wasExisting: true,
-        addedQuantity: addedQuantity
-      };
+      return existingMedication;
     } else {
       // Create new medication
       const id = randomUUID();
       const medication: Medication = { ...medicationWithFormattedDate, id };
       this.medications.set(id, medication);
-      return {
-        medication: medication,
-        wasExisting: false,
-        addedQuantity: addedQuantity
-      };
+      return medication;
     }
   }
 
@@ -246,11 +228,7 @@ export class GoogleSheetsStorage implements IStorage {
     return this.cache.get(id);
   }
 
-  async createMedication(insertMedication: InsertMedication): Promise<{
-    medication: Medication;
-    wasExisting: boolean;
-    addedQuantity: number;
-  }> {
+  async createMedication(insertMedication: InsertMedication): Promise<Medication> {
     await this.syncFromSheets();
 
     // Ensure expiration date is in ISO format
@@ -268,23 +246,19 @@ export class GoogleSheetsStorage implements IStorage {
       med.location === medicationWithFormattedDate.location
     );
 
-    const addedQuantity = medicationWithFormattedDate.quantity;
     let resultMedication: Medication;
-    let wasExisting: boolean;
 
     if (existingMedication) {
       // Update existing medication quantity
       existingMedication.quantity += medicationWithFormattedDate.quantity;
       this.cache.set(existingMedication.id, existingMedication);
       resultMedication = existingMedication;
-      wasExisting = true;
     } else {
       // Create new medication
       const id = randomUUID();
       const medication: Medication = { ...medicationWithFormattedDate, id };
       this.cache.set(id, medication);
       resultMedication = medication;
-      wasExisting = false;
     }
 
     // Sync to Google Sheets
@@ -295,11 +269,7 @@ export class GoogleSheetsStorage implements IStorage {
       // Continue anyway - data is cached locally
     }
 
-    return {
-      medication: resultMedication,
-      wasExisting,
-      addedQuantity
-    };
+    return resultMedication;
   }
 
   // NEW: Added missing updateMedication method for GoogleSheetsStorage
