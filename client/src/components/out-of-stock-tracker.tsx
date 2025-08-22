@@ -16,7 +16,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { type Medication } from "@shared/schema";
-import { AlertCircle, ChevronDown, ChevronUp, Package, XCircle, Trash2, Trash } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronUp, Package, XCircle, Trash2, Trash } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -27,9 +27,10 @@ export function OutOfStockTracker() {
 
   const { data: outOfStockMedications = [], isLoading } = useQuery({
     queryKey: ["/api/medications/out-of-stock"],
-    refetchInterval: 5000,
+    refetchInterval: 5000, // Refetch every 5 seconds to keep data fresh
   });
 
+  // Mutation for deleting individual medications
   const deleteMedicationMutation = useMutation({
     mutationFn: async (medicationId: string) => {
       const response = await apiRequest("DELETE", `/api/medications/${medicationId}`);
@@ -58,6 +59,7 @@ export function OutOfStockTracker() {
     },
   });
 
+  // Mutation for bulk deleting all out-of-stock medications
   const bulkDeleteMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest("DELETE", "/api/medications/out-of-stock/bulk");
@@ -120,10 +122,10 @@ export function OutOfStockTracker() {
                   <Package className="h-5 w-5 text-green-600" />
                   <div>
                     <h3 className="font-medium text-green-800">
-                      No Medications Out of Stock
+                      All Stock Levels Good
                     </h3>
                     <p className="text-sm text-green-600">
-                      All medications have inventory
+                      No medications out of stock
                     </p>
                   </div>
                 </>
@@ -197,7 +199,7 @@ export function OutOfStockTracker() {
           {outOfStockCount > 0 && (
             <CollapsibleContent className="mt-4">
               <div className="space-y-3">
-                <h4 className="font-medium text-red-800">Medications Completely Out of Stock:</h4>
+                <h4 className="font-medium text-red-800">Medications Requiring Attention:</h4>
                 <div className="space-y-2">
                   {outOfStockMedications.map((medication) => (
                     <div
@@ -212,7 +214,7 @@ export function OutOfStockTracker() {
                           {medication.genericName} • {medication.dose} • {medication.location}
                         </p>
                         <p className="text-xs text-gray-500 mt-1">
-                          Last expiration: {new Date(medication.expirationDate).toLocaleDateString()}
+                          Expires: {new Date(medication.expirationDate).toLocaleDateString()}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
