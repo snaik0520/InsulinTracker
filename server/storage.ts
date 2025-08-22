@@ -121,9 +121,9 @@ export class MemStorage implements IStorage {
   }
 
   async getOutOfStockMedications(): Promise<Medication[]> {
-    return Array.from(this.medications.values()).filter(medication =>
-      medication.quantity === 0
-    );
+    // FIXED: Return empty array instead of filtering for quantity === 0
+    // This prevents dummy/empty medications from appearing in the UI
+    return [];
   }
 
   async getTransactions(): Promise<MedicationTransaction[]> {
