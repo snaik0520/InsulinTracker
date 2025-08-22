@@ -75,7 +75,7 @@ export function TransactionHistory() {
     if (transaction.type === "move") {
       return "Location changed";
     } else if (transaction.type === "addition") {
-      // Determine unit based on "pen" presence in medication name
+      // Determine unit based on "pen" presence
       const isPen = transaction.medicationName.toLowerCase().includes("pen");
       const unit = isPen
         ? transaction.quantity === 1
@@ -84,13 +84,7 @@ export function TransactionHistory() {
         : transaction.quantity === 1
         ? "injection"
         : "injections";
-      
-      // Show different message based on notes
-      if (transaction.notes?.includes("existing")) {
-        return `${transaction.quantity} ${unit} added to existing inventory`;
-      } else {
-        return `${transaction.quantity} ${unit} added to inventory`;
-      }
+      return `${transaction.quantity} ${unit} added to inventory`;
     } else {
       // dispensed
       const isPen = transaction.medicationName.toLowerCase().includes("pen");
@@ -169,11 +163,6 @@ export function TransactionHistory() {
                           <p className="text-sm text-gray-600 mt-1">
                             {getTransactionDescription(transaction)}
                           </p>
-                          {transaction.notes && (
-                            <p className="text-xs text-gray-500 mt-1 italic">
-                              {transaction.notes}
-                            </p>
-                          )}
                         </div>
                       </div>
 
