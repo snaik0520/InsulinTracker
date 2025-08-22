@@ -1,27 +1,106 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { type Medication } from "@shared/schema";
-import { AlertCircle, ChevronDown, ChevronUp, Package, XCircle } from "lucide-react";
+import { AlertCircle, ChevronDown, ChevronUp, Package, XCircle, Trash2, Trash } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 export function OutOfStockTracker() {
   const [isExpanded, setIsExpanded] = useState(false);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
-  const { data: outOfStockMedications = [], isLoading } = useQuery<Medication[]>({
+  const { data: outOfStockMedications = [], isLoading } = useQuery({
     queryKey: ["/api/medications/out-of-stock"],
-    refetchInterval: 5000, // Refetch every 5 seconds to keep data fresh
+    refetchInterval: 5000,
   });
+
+  const deleteMedicationMutation = useMutation({
+    mutationFn: async (medicationId: string) => {
+      const response = await apiRequest("DELETE", `/api/medications/${medicationId}`);
+      return response.json();
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/medications"], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ["/api/medications/out-of-stock"], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ["/api/transactions"], refetchType: 'active' })
+      ]);
+      toast({
+        title: "Success",
+        description: "Medication deleted successfully",
+        duration: 3000
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error?.message ?? "Failed to delete medication",
+        variant: "destructive",
+        duration: 3000
+      });
+    },
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("DELETE", "/api/medications/out-of-stock/bulk");
+      return response.json();
+    },
+    onSuccess: async (data) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/medications"], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ["/api/medications/out-of-stock"], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ["/api/transactions"], refetchType: 'active' })
+      ]);
+      toast({
+        title: "Success",
+        description: `Successfully deleted ${data.deletedCount} out-of-stock medications`,
+        duration: 3000
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error?.message ?? "Failed to delete out-of-stock medications",
+        variant: "destructive",
+        duration: 3000
+      });
+    },
+  });
+
+  const handleDeleteMedication = (medicationId: string) => {
+    deleteMedicationMutation.mutate(medicationId);
+  };
+
+  const handleBulkDelete = () => {
+    bulkDeleteMutation.mutate();
+  };
 
   if (isLoading) {
     return (
-      <Card className="mt-4">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-center py-2">
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-500"></div>
-            <span className="ml-2 text-sm text-gray-600">Checking stock status...</span>
+      <Card className="border-orange-200 bg-orange-50">
+        <CardContent className="p-6">
+          <div className="flex items-center gap-3">
+            <Package className="h-5 w-5 text-orange-600" />
+            Checking stock status...
           </div>
         </CardContent>
       </Card>
@@ -31,34 +110,34 @@ export function OutOfStockTracker() {
   const outOfStockCount = outOfStockMedications.length;
 
   return (
-    <Card className="mt-4 border-l-4 border-l-red-500">
-      <CardContent className="p-4">
+    <Card className="border-red-200 bg-red-50">
+      <CardContent className="p-6">
         <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center gap-3">
               {outOfStockCount === 0 ? (
                 <>
-                  <div className="flex items-center justify-center w-8 h-8 bg-green-100 rounded-full">
-                    <Package className="h-4 w-4 text-green-600" />
-                  </div>
+                  <Package className="h-5 w-5 text-green-600" />
                   <div>
-                    <p className="text-sm font-medium text-green-800">No Medications Out of Stock</p>
-                    <p className="text-xs text-green-600">All medications have inventory</p>
+                    <h3 className="font-medium text-green-800">
+                      No Medications Out of Stock
+                    </h3>
+                    <p className="text-sm text-green-600">
+                      All medications have inventory
+                    </p>
                   </div>
                 </>
               ) : (
                 <>
-                  <div className="flex items-center justify-center w-8 h-8 bg-red-100 rounded-full animate-pulse">
-                    <XCircle className="h-4 w-4 text-red-600" />
-                  </div>
+                  <XCircle className="h-5 w-5 text-red-600" />
                   <div>
-                    <p className="text-sm font-medium text-red-800">
-                      <Badge variant="destructive" className="mr-2 bg-red-600">
+                    <h3 className="font-medium text-red-800 flex items-center gap-2">
+                      <Badge variant="destructive" className="px-2 py-1">
                         {outOfStockCount}
                       </Badge>
                       Medication{outOfStockCount > 1 ? 's' : ''} Out of Stock
-                    </p>
-                    <p className="text-xs text-red-600">
+                    </h3>
+                    <p className="text-sm text-red-600">
                       {outOfStockCount === 1 ? 'One medication is' : 'Multiple medications are'} completely out of stock
                     </p>
                   </div>
@@ -67,59 +146,111 @@ export function OutOfStockTracker() {
             </div>
 
             {outOfStockCount > 0 && (
-              <CollapsibleTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-red-600 hover:text-red-800 hover:bg-red-50"
-                  data-testid="button-toggle-out-of-stock-tracker"
-                >
-                  <span className="text-xs mr-1">
-                    {isExpanded ? 'Hide Details' : 'View Details'}
-                  </span>
-                  {isExpanded ? (
-                    <ChevronUp className="h-4 w-4" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4" />
-                  )}
-                </Button>
-              </CollapsibleTrigger>
+              <div className="flex items-center gap-2">
+                {/* Bulk Delete Button */}
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="flex items-center gap-2"
+                      disabled={bulkDeleteMutation.isPending}
+                    >
+                      <Trash className="h-4 w-4" />
+                      Delete All
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete All Out-of-Stock Medications?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently delete all {outOfStockCount} out-of-stock medication{outOfStockCount > 1 ? 's' : ''} from your inventory. 
+                        This action cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleBulkDelete}
+                        className="bg-red-600 hover:bg-red-700"
+                      >
+                        {bulkDeleteMutation.isPending ? "Deleting..." : "Delete All"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+
+                {/* Expand/Collapse Button */}
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="sm">
+                    {isExpanded ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                  </Button>
+                </CollapsibleTrigger>
+              </div>
             )}
           </div>
 
           {outOfStockCount > 0 && (
             <CollapsibleContent className="mt-4">
-              <div className="border-t border-red-200 pt-4">
-                <h4 className="text-sm font-medium text-red-800 mb-3 flex items-center">
-                  <AlertCircle className="h-4 w-4 mr-2" />
-                  Medications Completely Out of Stock:
-                </h4>
-                <div className="grid gap-3">
+              <div className="space-y-3">
+                <h4 className="font-medium text-red-800">Medications Completely Out of Stock:</h4>
+                <div className="space-y-2">
                   {outOfStockMedications.map((medication) => (
                     <div
                       key={medication.id}
-                      className="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-100 hover:bg-red-100 transition-colors"
-                      data-testid={`tracker-out-of-stock-item-${medication.id}`}
+                      className="flex items-center justify-between p-3 bg-white rounded-lg border border-red-200"
                     >
                       <div className="flex-1">
-                        <div className="font-medium">
-  {medication.medicalName}
-</div>
-<div className="text-sm text-muted-foreground">
-  {medication.genericName} • {medication.dose} • {medication.location}
-</div>
-
-                        <div className="text-xs text-gray-500 mt-1">
+                        <p className="font-medium text-gray-900">
+                          {medication.medicalName}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          {medication.genericName} • {medication.dose} • {medication.location}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">
                           Last expiration: {new Date(medication.expirationDate).toLocaleDateString()}
-                        </div>
+                        </p>
                       </div>
-                      <div className="text-right ml-4">
-                        <Badge 
-                          variant="destructive" 
-                          className="text-xs bg-red-600"
-                        >
+                      <div className="flex items-center gap-2">
+                        <Badge variant="destructive" className="ml-4">
                           0 left
                         </Badge>
+                        
+                        {/* Individual Delete Button */}
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-600 hover:text-red-800 hover:bg-red-100"
+                              disabled={deleteMedicationMutation.isPending}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Medication?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to delete "{medication.medicalName} ({medication.genericName})" 
+                                from your inventory? This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDeleteMedication(medication.id)}
+                                className="bg-red-600 hover:bg-red-700"
+                              >
+                                {deleteMedicationMutation.isPending ? "Deleting..." : "Delete"}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
                     </div>
                   ))}
