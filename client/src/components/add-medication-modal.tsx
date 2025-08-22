@@ -1,3 +1,4 @@
+
 import { useMemo, useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -153,7 +154,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
 
   const validateLocation = () => watchLocationInput.trim() !== "" || locationDropdownValue !== "";
 
-  // Simplified onSubmit function - let backend handle everything
+  // Updated onSubmit function with date formatting
   const onSubmit = (data: InsertMedication) => {
     if (!validateLocation()) {
       form.setError("location", { type: "manual", message: "Please select or enter a storage location" });
@@ -180,16 +181,74 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
       return;
     }
 
-    // Let backend handle all the logic - just submit the data
-    const payload = {
-      ...data,
-      location: effectiveLocation,
-      administrativeForm: admin,
-      expirationDate: formattedExpirationDate,
-    } as any;
+    // Check for existing medication with same properties
+    const existingMedication = allMedications.find((med: Medication) => 
+      med.medicalName?.toLowerCase() === data.medicalName?.toLowerCase() &&
+      med.genericName?.toLowerCase() === data.genericName?.toLowerCase() &&
+      med.location?.toLowerCase() === effectiveLocation?.toLowerCase() &&
+      med.type === data.type &&
+      med.dose === data.dose &&
+      med.administrativeForm === admin &&
+      formatToISODate(med.expirationDate) === formattedExpirationDate
+    );
 
-    addMedicationMutation.mutate(payload);
+    if (existingMedication) {
+      // If medication exists, update quantity instead of creating new
+      const updatedPayload = {
+        ...existingMedication,
+        quantity: (existingMedication.quantity || 0) + data.quantity,
+        // Keep the earlier expiration date for safety
+        expirationDate: new Date(formatToISODate(existingMedication.expirationDate)) < new Date(formattedExpirationDate) 
+          ? formatToISODate(existingMedication.expirationDate)
+          : formattedExpirationDate
+      };
+
+      updateMedicationMutation.mutate({ id: existingMedication.id, data: updatedPayload });
+    } else {
+      // Create new medication if no match found
+      const payload = {
+        ...data,
+        location: effectiveLocation,
+        administrativeForm: admin,
+        expirationDate: formattedExpirationDate, // Ensure ISO format
+      } as any;
+
+      addMedicationMutation.mutate(payload);
+    }
   };
+
+  // Mutation for updating existing medications
+  const updateMedicationMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const response = await apiRequest("PUT", `/api/medications/${id}`, data);
+      return response.json();
+    },
+    onSuccess: async (res: any) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/medications"], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ["/api/transactions"], refetchType: 'active' })
+      ]);
+
+      toast({ 
+        title: "Success", 
+        description: "Medication quantity updated successfully", 
+        duration: 3000 
+      });
+      form.reset();
+      setLocationDropdownValue("");
+      onOpenChange(false);
+      onSave?.(res);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error?.message ?? "An error occurred updating medication",
+        variant: "destructive",
+        duration: 3000,
+      });
+    },
+  });
 
   const addMedicationMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -203,11 +262,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
         queryClient.invalidateQueries({ queryKey: ["/api/transactions"], refetchType: 'active' })
       ]);
 
-      toast({ 
-        title: "Success", 
-        description: "Medication added successfully", 
-        duration: 3000 
-      });
+      toast({ title: "Success", description: "Medication added successfully", duration: 3000 });
       form.reset();
       setLocationDropdownValue("");
       onOpenChange(false);
@@ -501,9 +556,9 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
             </Button>
             <Button
               type="submit"
-              disabled={addMedicationMutation.isPending}
+              disabled={addMedicationMutation.isPending || updateMedicationMutation.isPending}
             >
-              {addMedicationMutation.isPending ? "Adding..." : "Add Medication"}
+              {(addMedicationMutation.isPending || updateMedicationMutation.isPending) ? "Adding..." : "Add Medication"}
             </Button>
           </div>
         </form>
