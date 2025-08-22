@@ -6,6 +6,8 @@ export interface IStorage {
   getMedicationById(id: string): Promise<Medication | undefined>;
   createMedication(medication: InsertMedication): Promise<Medication>;
   updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined>;
+  // NEW: Added missing updateMedication method to interface
+  updateMedication(id: string, updatedData: Partial<Medication>): Promise<Medication | undefined>;
   searchMedications(query: string): Promise<Medication[]>;
   filterMedicationsByType(type: string): Promise<Medication[]>;
   getLowStockMedications(threshold?: number): Promise<Medication[]>;
@@ -52,6 +54,24 @@ export class MemStorage implements IStorage {
       this.medications.set(id, medication);
       return medication;
     }
+  }
+
+  // NEW: Added updateMedication method for MemStorage
+  async updateMedication(id: string, updatedData: Partial<Medication>): Promise<Medication | undefined> {
+    const medication = this.medications.get(id);
+    if (!medication) {
+      return undefined;
+    }
+
+    // Update fields that exist in updatedData
+    for (const key of Object.keys(updatedData) as (keyof Medication)[]) {
+      if (updatedData[key] !== undefined) {
+        (medication as any)[key] = updatedData[key]!;
+      }
+    }
+
+    this.medications.set(id, medication);
+    return medication;
   }
 
   async updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined> {
@@ -221,6 +241,32 @@ export class GoogleSheetsStorage implements IStorage {
     }
 
     return resultMedication;
+  }
+
+  // NEW: Added missing updateMedication method for GoogleSheetsStorage
+  async updateMedication(id: string, updatedData: Partial<Medication>): Promise<Medication | undefined> {
+    await this.syncFromSheets();
+    const med = this.cache.get(id);
+    if (!med) return undefined;
+
+    // Update fields that exist in updatedData
+    for (const key of Object.keys(updatedData) as (keyof Medication)[]) {
+      if (updatedData[key] !== undefined) {
+        (med as any)[key] = updatedData[key]!;
+      }
+    }
+
+    this.cache.set(id, med);
+
+    // Sync to Google Sheets
+    try {
+      await this.syncToSheets(Array.from(this.cache.values()));
+    } catch (error) {
+      console.error('Failed to sync medication update to sheets:', error);
+      // Continue anyway - data is cached locally
+    }
+
+    return med;
   }
 
   async updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined> {
