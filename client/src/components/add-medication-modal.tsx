@@ -178,7 +178,8 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
       med.location?.toLowerCase() === effectiveLocation?.toLowerCase() &&
       med.type === data.type &&
       med.dose === data.dose &&
-      med.administrativeForm === admin
+      med.administrativeForm === admin &&
+      med.expirationDate === data.expirationDate
     );
 
     if (existingMedication) {
