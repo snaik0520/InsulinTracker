@@ -102,7 +102,7 @@ export function OutOfStockTracker() {
         <CardContent className="p-6">
           <div className="flex items-center gap-3">
             <Package className="h-5 w-5 text-orange-600" />
-            Checking stock status...
+            Checking stock levels...
           </div>
         </CardContent>
       </Card>
@@ -149,7 +149,7 @@ export function OutOfStockTracker() {
 
             {outOfStockCount > 0 && (
               <div className="flex items-center gap-2">
-                {/* Bulk Delete Button */}
+                {/* Bulk Delete Button - NEW addition for out-of-stock */}
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button
@@ -182,7 +182,6 @@ export function OutOfStockTracker() {
                   </AlertDialogContent>
                 </AlertDialog>
 
-                {/* Expand/Collapse Button */}
                 <CollapsibleTrigger asChild>
                   <Button variant="ghost" size="sm">
                     {isExpanded ? (
@@ -218,11 +217,11 @@ export function OutOfStockTracker() {
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge variant="destructive" className="ml-4">
+                        <Badge variant="destructive">
                           0 left
                         </Badge>
                         
-                        {/* Individual Delete Button */}
+                        {/* Individual Delete Button - NEW addition for out-of-stock */}
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button
