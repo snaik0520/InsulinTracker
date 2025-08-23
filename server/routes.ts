@@ -44,19 +44,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/medications", async (req, res) => {
     try {
       const data = insertMedicationSchema.parse(req.body);
-      const med = await storage.createMedication(data);
+      const result = await storage.createMedication(data);
+      const { medication, isNewMedication, addedQuantity } = result;
+
+      // Create transaction for both new medications and additions to existing stock
       if (!(storage instanceof GoogleSheetsStorage)) {
         await storage.createTransaction({
-          medicationId: med.id,
-          medicationName: `${med.medicalName} (${med.genericName}) - ${med.administrativeForm}`,
+          medicationId: medication.id,
+          medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
           type: "addition",
-          quantity: med.quantity,
-          notes: "New medication added to inventory",
+          quantity: addedQuantity, // Use the added quantity, not the total quantity
+          dose: medication.dose, // Include dose information
+          notes: isNewMedication 
+            ? "New medication added to inventory" 
+            : "Medication quantity increased in existing stock",
         });
       }
-      res.status(201).json(med);
+
+      res.status(201).json(medication);
     } catch (e) {
-      res.status(e instanceof z.ZodError ? 400 : 500).json({ error: e instanceof z.ZodError ? "Invalid data" : "Failed to create medication" });
+      res.status(e instanceof z.ZodError ? 400 : 500).json({ 
+        error: e instanceof z.ZodError ? "Invalid data" : "Failed to create medication" 
+      });
     }
   });
 
@@ -68,7 +77,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!updated) return res.status(404).json({ error: "Medication not found" });
       res.json(updated);
     } catch (e) {
-      res.status(e instanceof z.ZodError ? 400 : 500).json({ error: e instanceof z.ZodError ? "Invalid data" : "Failed to update medication" });
+      res.status(e instanceof z.ZodError ? 400 : 500).json({ 
+        error: e instanceof z.ZodError ? "Invalid data" : "Failed to update medication" 
+      });
     }
   });
 
@@ -88,12 +99,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           medicationName: `${med.medicalName} (${med.genericName}) - ${med.administrativeForm}`,
           type: "dispensed",
           quantity,
+          dose: med.dose, // Include dose information
           notes: "Dispensed to patient",
         });
         res.json(updated);
       }
     } catch (e) {
-      res.status(e instanceof z.ZodError ? 400 : 500).json({ error: e instanceof z.ZodError ? "Invalid data" : "Failed to dispense medication" });
+      res.status(e instanceof z.ZodError ? 400 : 500).json({ 
+        error: e instanceof z.ZodError ? "Invalid data" : "Failed to dispense medication" 
+      });
     }
   });
 
