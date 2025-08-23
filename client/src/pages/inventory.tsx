@@ -97,16 +97,9 @@ export default function Inventory() {
     queryKey: ["/api/medications"],
   });
 
-  // only render the out-of-stock tracker if there's at least one med at 0 qty with valid data
+  // only render the out-of-stock tracker if there’s at least one med at 0 qty
   const outOfStockCount = useMemo(
-    () => medications.filter((m) => 
-      (m.quantity ?? 0) === 0 && 
-      m.medicalName && 
-      m.medicalName.trim() !== "" &&
-      m.expirationDate && 
-      m.expirationDate !== "Invalid Date" &&
-      m.expirationDate.trim() !== ""
-    ).length,
+    () => medications.filter((m) => (m.quantity ?? 0) === 0).length,
     [medications]
   );
 
