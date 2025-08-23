@@ -376,7 +376,8 @@ export default function Inventory() {
           <LowStockTicker />
         </div>
 
-        {outOfStockCount > 0 && <OutOfStockTracker />}
+        <OutOfStockTracker />
+
       </main>
 
       <AddMedicationModal
