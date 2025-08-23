@@ -46,13 +46,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const data = insertMedicationSchema.parse(req.body);
       const { medication, isNewMedication, addedQuantity } = await storage.createMedication(data);
 
+      // Create transaction for both new medications and additions to existing stock
       if (!(storage instanceof GoogleSheetsStorage)) {
         await storage.createTransaction({
           medicationId: medication.id,
           medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
           type: "addition",
-          quantity: addedQuantity,
-          dose: medication.dose,
+          quantity: addedQuantity, // Use the added quantity, not the total quantity
+          dose: medication.dose,    // Include dose information
           notes: isNewMedication
             ? "New medication added to inventory"
             : "Medication quantity increased in existing stock",
@@ -97,7 +98,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           medicationName: `${med.medicalName} (${med.genericName}) - ${med.administrativeForm}`,
           type: "dispensed",
           quantity,
-          dose: med.dose,
+          dose: med.dose, // Include dose information
           notes: "Dispensed to patient",
         });
         res.json(updated);
