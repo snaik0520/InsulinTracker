@@ -39,7 +39,10 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
   });
 
   const existingMedications = useMemo(() => {
-    const map = new Map<string, Medication & { quantity: number; locationCounts: Map<string, number> }>();
+    const map = new Map<
+      string,
+      Medication & { quantity: number; locationCounts: Map<string, number> }
+    >();
     for (const med of allMedications) {
       const key = `${med.genericName || ""}||${med.medicalName || ""}`;
       if (!map.has(key)) {
@@ -48,7 +51,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
         map.set(key, { ...med, quantity: med.quantity ?? 0, locationCounts });
       } else {
         const existing = map.get(key)!;
-        existing.quantity += med.quantity ?? 0;
+        existing.quantity = (existing.quantity ?? 0) + (med.quantity ?? 0);
         if (med.location?.trim()) {
           const loc = med.location.trim();
           existing.locationCounts.set(loc, (existing.locationCounts.get(loc) ?? 0) + (med.quantity ?? 0));
@@ -150,6 +153,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
 
   const validateLocation = () => watchLocationInput.trim() !== "" || locationDropdownValue !== "";
 
+  // Updated onSubmit function with date formatting
   const onSubmit = (data: InsertMedication) => {
     if (!validateLocation()) {
       form.setError("location", { type: "manual", message: "Please select or enter a storage location" });
@@ -167,23 +171,52 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
     }
 
     const effectiveLocation = watchLocationInput.trim() !== "" ? watchLocationInput.trim() : locationDropdownValue;
+
+    // Ensure expiration date is in ISO format
     const formattedExpirationDate = formatToISODate(data.expirationDate);
+    
     if (!formattedExpirationDate) {
       form.setError("expirationDate", { type: "manual", message: "Please enter a valid expiration date" });
       return;
     }
 
-    // Always use POST so backend records an addition transaction
-    const payload = {
-      ...data,
-      location: effectiveLocation,
-      administrativeForm: admin,
-      expirationDate: formattedExpirationDate,
-    } as any;
+    // Check for existing medication with same properties
+    const existingMedication = allMedications.find((med: Medication) => 
+      med.medicalName?.toLowerCase() === data.medicalName?.toLowerCase() &&
+      med.genericName?.toLowerCase() === data.genericName?.toLowerCase() &&
+      med.location?.toLowerCase() === effectiveLocation?.toLowerCase() &&
+      med.type === data.type &&
+      med.dose === data.dose &&
+      med.administrativeForm === admin &&
+      formatToISODate(med.expirationDate) === formattedExpirationDate
+    );
 
-    addMedicationMutation.mutate(payload);
+    if (existingMedication) {
+      // If medication exists, update quantity instead of creating new
+      const updatedPayload = {
+        ...existingMedication,
+        quantity: (existingMedication.quantity || 0) + data.quantity,
+        // Keep the earlier expiration date for safety
+        expirationDate: new Date(formatToISODate(existingMedication.expirationDate)) < new Date(formattedExpirationDate) 
+          ? formatToISODate(existingMedication.expirationDate)
+          : formattedExpirationDate
+      };
+
+      updateMedicationMutation.mutate({ id: existingMedication.id, data: updatedPayload });
+    } else {
+      // Create new medication if no match found
+      const payload = {
+        ...data,
+        location: effectiveLocation,
+        administrativeForm: admin,
+        expirationDate: formattedExpirationDate, // Ensure ISO format
+      } as any;
+
+      addMedicationMutation.mutate(payload);
+    }
   };
 
+  // Mutation for updating existing medications
   const updateMedicationMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
       const response = await apiRequest("PUT", `/api/medications/${id}`, data);
