@@ -47,21 +47,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const data = insertMedicationSchema.parse(req.body);
       const result = await storage.createMedication(data);
       const { medication, isNewMedication, addedQuantity } = result;
-
-      // Create transaction for both new medications and additions to existing stock
-      if (!(storage instanceof GoogleSheetsStorage)) {
-        await storage.createTransaction({
-          medicationId: medication.id,
-          medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
-          type: "addition",
-          quantity: addedQuantity, // Use the added quantity, not the total quantity
-          dose: medication.dose, // Include dose information
-          notes: isNewMedication 
-            ? "New medication added to inventory" 
-            : "Medication quantity increased in existing stock",
-        });
-      }
-
+      
       res.status(201).json(medication);
     } catch (e) {
       res.status(e instanceof z.ZodError ? 400 : 500).json({ 
