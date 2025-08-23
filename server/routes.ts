@@ -91,7 +91,7 @@ app.put("/api/medications/:id", async (req, res) => {
       await storage.createTransaction({
         medicationId: id,
         medicationName: `${updated.medicalName} (${updated.genericName}) - ${updated.administrativeForm}`,
-        type: "added",
+        type: "updated",
         quantity: addedQuantity,
         dose: updated.dose,
         notes: "Added to existing stock"
