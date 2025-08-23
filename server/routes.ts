@@ -70,19 +70,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/medications/:id", async (req, res) => {
-    try {
-      const { id } = req.params;
-      const data = insertMedicationSchema.parse(req.body);
-      const updated = await storage.updateMedication(id, data);
-      if (!updated) return res.status(404).json({ error: "Medication not found" });
-      res.json(updated);
-    } catch (e) {
-      res.status(e instanceof z.ZodError ? 400 : 500).json({ 
-        error: e instanceof z.ZodError ? "Invalid data" : "Failed to update medication" 
+app.put("/api/medications/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const data = insertMedicationSchema.parse(req.body);
+    
+    // Get the original medication to calculate quantity difference
+    const originalMedication = await storage.getMedicationById(id);
+    if (!originalMedication) return res.status(404).json({ error: "Medication not found" });
+    
+    const updated = await storage.updateMedication(id, data);
+    if (!updated) return res.status(404).json({ error: "Medication not found" });
+    
+    // Check if quantity was increased and log transaction
+    const originalQuantity = originalMedication.quantity || 0;
+    const newQuantity = updated.quantity || 0;
+    
+    if (newQuantity > originalQuantity) {
+      const addedQuantity = newQuantity - originalQuantity;
+      await storage.createTransaction({
+        medicationId: id,
+        medicationName: `${updated.medicalName} (${updated.genericName}) - ${updated.administrativeForm}`,
+        type: "added",
+        quantity: addedQuantity,
+        dose: updated.dose,
+        notes: "Added to existing stock"
       });
     }
-  });
+    
+    res.json(updated);
+  } catch (e) {
+    res.status(e instanceof z.ZodError ? 400 : 500).json({ 
+      error: e instanceof z.ZodError ? "Invalid data" : "Failed to update medication" 
+    });
+  }
+});
 
   app.post("/api/medications/dispense", async (req, res) => {
     try {
