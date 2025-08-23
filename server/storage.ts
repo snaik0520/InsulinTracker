@@ -47,6 +47,17 @@ export class MemStorage implements IStorage {
       const addedQuantity = medicationWithFormattedDate.quantity;
       existing.quantity += addedQuantity;
       this.medications.set(existing.id, existing);
+
+      // Log the addition as a transaction
+      await this.createTransaction({
+        medicationId: existing.id,
+        medicationName: `${existing.medicalName} (${existing.genericName}) - ${existing.administrativeForm}`,
+        type: "added",
+        quantity: addedQuantity,
+        dose: existing.dose,
+        notes: "Added to existing stock"
+      });
+
       return { 
         medication: existing, 
         isNewMedication: false, 
@@ -57,6 +68,17 @@ export class MemStorage implements IStorage {
       const id = randomUUID();
       const medication: Medication = { ...medicationWithFormattedDate, id };
       this.medications.set(id, medication);
+
+      // Log the creation as a transaction
+      await this.createTransaction({
+        medicationId: id,
+        medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
+        type: "added",
+        quantity: medication.quantity,
+        dose: medication.dose,
+        notes: "New medication added"
+      });
+
       return { 
         medication, 
         isNewMedication: true, 
@@ -219,6 +241,17 @@ export class GoogleSheetsStorage implements IStorage {
       isNewMedication = true;
     }
     await this.syncToSheets(Array.from(this.cache.values()));
+
+    // Log the stock change as a transaction
+    await this.createTransaction({
+      medicationId: result.id,
+      medicationName: `${result.medicalName} (${result.genericName}) - ${result.administrativeForm}`,
+      type: "added",
+      quantity: addedQuantity,
+      dose: result.dose,
+      notes: isNewMedication ? "New medication added" : "Added to existing stock"
+    });
+
     return { medication: result, isNewMedication, addedQuantity };
   }
 
