@@ -22,13 +22,6 @@ const typeIcons = {
   other: HelpCircle,
 } as const;
 
-/**
- * Muted pastel palette:
- * - rapid  -> rose / pink pastel
- * - long   -> violet pastel
- * - inter -> emerald pastel
- * - other  -> amber pastel
- */
 const badgeColors = {
   rapid: "bg-rose-100 text-rose-800",
   long: "bg-violet-100 text-violet-800",
@@ -36,7 +29,6 @@ const badgeColors = {
   other: "bg-amber-100 text-amber-800",
 } as const;
 
-// subtle row background tints (muted pastels)
 const rowBgClasses = {
   rapid: "bg-rose-50",
   long: "bg-violet-50",
@@ -82,12 +74,10 @@ const getRowClassName = (type: string) => {
 
 const calculateDaysUntilExpiration = (expirationDate: string) => {
   const today = new Date();
-  // Ensure we're working with ISO date format
   const formattedExpirationDate = formatToISODate(expirationDate);
   const expiry = new Date(formattedExpirationDate);
   const diffTime = expiry.getTime() - today.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  return diffDays;
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 };
 
 const getExpirationClassName = (days: number) => {
@@ -107,9 +97,14 @@ export default function Inventory() {
     queryKey: ["/api/medications"],
   });
 
+  // only render the out-of-stock tracker if there’s at least one med at 0 qty
+  const outOfStockCount = useMemo(
+    () => medications.filter((m) => (m.quantity ?? 0) === 0).length,
+    [medications]
+  );
+
   const filteredMedications = useMemo(() => {
-    let filtered = medications;
-    filtered = filtered.filter((medication) => (medication.quantity ?? 0) > 0);
+    let filtered = medications.filter((med) => (med.quantity ?? 0) > 0);
 
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -132,7 +127,6 @@ export default function Inventory() {
     setIsDispenseModalOpen(true);
   };
 
-  // Scroll target: LowStockTicker element
   const scrollToTrackers = () => {
     if (typeof document !== "undefined") {
       const el = document.getElementById("low-stock-ticker");
@@ -166,7 +160,12 @@ export default function Inventory() {
             </div>
             <div className="flex items-center space-x-4">
               <span className="text-lg text-gray-600 font-medium tracking-wide">SLO Noor Foundation</span>
-              <img src={logo} alt="SLO Noor Foundation logo" className="h-14 w-auto object-contain" data-testid="logo" />
+              <img
+                src={logo}
+                alt="SLO Noor Foundation logo"
+                className="h-14 w-auto object-contain"
+                data-testid="logo"
+              />
             </div>
           </div>
         </div>
@@ -240,7 +239,9 @@ export default function Inventory() {
                       key={type}
                       variant={selectedType === type ? "default" : "outline"}
                       onClick={() => setSelectedType(type)}
-                      className={`text-sm ${selectedType === type ? selectedCls : `border-gray-200 ${hoverCls}`}`}
+                      className={`text-sm ${
+                        selectedType === type ? selectedCls : `border-gray-200 ${hoverCls}`
+                      }`}
                       data-testid={`filter-${type}`}
                     >
                       <Icon className="h-4 w-4 mr-2" />
@@ -284,17 +285,21 @@ export default function Inventory() {
                     </tr>
                   ) : (
                     filteredMedications.map((medication) => {
-                      const daysUntilExpiration = calculateDaysUntilExpiration(medication.expirationDate);
+                      const days = calculateDaysUntilExpiration(medication.expirationDate);
+                      const expClass = getExpirationClassName(days);
                       const Icon = typeIcons[medication.type as keyof typeof typeIcons];
-                      // administrative form display logic:
-                      const adminFormValue =
+                      const adminValue =
                         (medication.administrativeForm as string | undefined) ||
                         (medication.formType as string | undefined) ||
                         "";
-                      const adminFormDisplay =
-                        adminFormValue.toLowerCase() === "pen" ? "Pen" : adminFormValue.toLowerCase() === "injection" ? "Injection" : "—";
-                      
+                      const adminDisplay =
+                        adminValue.toLowerCase() === "pen"
+                          ? "Pen"
+                          : adminValue.toLowerCase() === "injection"
+                          ? "Injection"
+                          : "—";
                       const rowTint = getRowClassName(medication.type);
+
                       return (
                         <tr
                           key={medication.id}
@@ -312,7 +317,7 @@ export default function Inventory() {
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900" data-testid="text-administrative-form">
-                            {adminFormDisplay}
+                            {adminDisplay}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center">
                             <div className="flex justify-center">
@@ -328,16 +333,16 @@ export default function Inventory() {
                           <td className="px-6 py-4 whitespace-nowrap text-center">
                             <span
                               className={`text-sm font-medium ${
-                                (medication.quantity ?? 0) <= 5 ? "text-red-600" : "text-gray-900"
+                                medication.quantity! <= 5 ? "text-red-600" : "text-gray-900"
                               }`}
                               data-testid="text-quantity"
                             >
-                              {medication.quantity ?? 0}
+                              {medication.quantity}
                             </span>
-                            {(medication.quantity ?? 0) <= 5 && <div className="text-xs text-red-600">Low stock</div>}
+                            {medication.quantity! <= 5 && <div className="text-xs text-red-600">Low stock</div>}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center">
-                            <span className="text-sm text-gray-900" data-testid="text-expiration-date">
+                            <span className={`${expClass} text-sm`} data-testid="text-expiration-date">
                               {medication.expirationDate ? formatToISODate(medication.expirationDate) : "—"}
                             </span>
                           </td>
@@ -349,7 +354,7 @@ export default function Inventory() {
                               onClick={() => handleDispense(medication)}
                               size="sm"
                               className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                              disabled={(medication.quantity ?? 0) === 0}
+                              disabled={medication.quantity === 0}
                               data-testid={`button-dispense-${medication.id}`}
                             >
                               <HandHeart className="h-4 w-4 mr-1" />
@@ -370,21 +375,24 @@ export default function Inventory() {
         <div id="low-stock-ticker" className="mt-8">
           <LowStockTicker />
         </div>
-        
-        <OutOfStockTracker />
+
+        {outOfStockCount > 0 && <OutOfStockTracker />}
       </main>
 
       <AddMedicationModal
         open={isAddModalOpen}
         onOpenChange={setIsAddModalOpen}
         onSave={(newMed: any) => {
-          // Note: replace with your backend mutation; this is only local client push
           medications.push(newMed);
           setIsAddModalOpen(false);
         }}
       />
-      
-      <DispenseModal open={isDispenseModalOpen} onOpenChange={setIsDispenseModalOpen} medication={selectedMedication} />
+
+      <DispenseModal
+        open={isDispenseModalOpen}
+        onOpenChange={setIsDispenseModalOpen}
+        medication={selectedMedication}
+      />
     </div>
   );
 }
