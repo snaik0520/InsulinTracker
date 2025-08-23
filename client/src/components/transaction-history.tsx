@@ -61,6 +61,7 @@ export function TransactionHistory() {
   const getTransactionTitle = (type: string) => {
     switch (type) {
       case "addition":
+      case "added":  // Add this line
         return "Added";
       case "dispensed":
         return "Dispensed";
