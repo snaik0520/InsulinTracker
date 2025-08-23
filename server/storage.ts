@@ -5,9 +5,9 @@ import { randomUUID } from "crypto";
 export interface IStorage {
   getMedications(): Promise<Medication[]>;
   getMedicationById(id: string): Promise<Medication | undefined>;
-  createMedication(medication: InsertMedication): Promise<Medication>;
+  createMedication(medication: InsertMedication): Promise<{ medication: Medication; isNewMedication: boolean; addedQuantity: number }>;
   updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined>;
-  updateMedication(id: string, updatedData: Partial<Medication>): Promise<Medication | undefined>;
+  updateMedication(id: string, updatedData: Partial<InsertMedication>): Promise<Medication | undefined>;
   searchMedications(query: string): Promise<Medication[]>;
   filterMedicationsByType(type: string): Promise<Medication[]>;
   getLowStockMedications(threshold?: number): Promise<Medication[]>;
@@ -28,7 +28,7 @@ export class MemStorage implements IStorage {
     return this.medications.get(id);
   }
 
-  async createMedication(insertMedication: InsertMedication): Promise<Medication> {
+  async createMedication(insertMedication: InsertMedication): Promise<{ medication: Medication; isNewMedication: boolean; addedQuantity: number }> {
     const medicationWithFormattedDate = {
       ...insertMedication,
       expirationDate: formatToISODate(insertMedication.expirationDate),
@@ -43,18 +43,29 @@ export class MemStorage implements IStorage {
     );
 
     if (existing) {
-      existing.quantity += medicationWithFormattedDate.quantity;
+      // Adding to existing stock
+      const addedQuantity = medicationWithFormattedDate.quantity;
+      existing.quantity += addedQuantity;
       this.medications.set(existing.id, existing);
-      return existing;
+      return { 
+        medication: existing, 
+        isNewMedication: false, 
+        addedQuantity 
+      };
     } else {
+      // Creating new medication
       const id = randomUUID();
       const medication: Medication = { ...medicationWithFormattedDate, id };
       this.medications.set(id, medication);
-      return medication;
+      return { 
+        medication, 
+        isNewMedication: true, 
+        addedQuantity: medication.quantity 
+      };
     }
   }
 
-  async updateMedication(id: string, updatedData: Partial<Medication>): Promise<Medication | undefined> {
+  async updateMedication(id: string, updatedData: Partial<InsertMedication>): Promise<Medication | undefined> {
     const medication = this.medications.get(id);
     if (!medication) return undefined;
     if (updatedData.expirationDate) {
@@ -176,7 +187,7 @@ export class GoogleSheetsStorage implements IStorage {
     return this.cache.get(id);
   }
 
-  async createMedication(insertMedication: InsertMedication): Promise<Medication> {
+  async createMedication(insertMedication: InsertMedication): Promise<{ medication: Medication; isNewMedication: boolean; addedQuantity: number }> {
     await this.syncFromSheets();
     const existing = Array.from(this.cache.values()).find(med =>
       med.genericName === insertMedication.genericName &&
@@ -188,21 +199,30 @@ export class GoogleSheetsStorage implements IStorage {
     );
     const now = new Date().toISOString();
     let result: Medication;
+    let isNewMedication: boolean;
+    let addedQuantity: number;
+
     if (existing) {
-      existing.quantity += insertMedication.quantity;
+      // Adding to existing stock
+      addedQuantity = insertMedication.quantity;
+      existing.quantity += addedQuantity;
       existing.lastModified = now;
       this.cache.set(existing.id, existing);
       result = existing;
+      isNewMedication = false;
     } else {
+      // Creating new medication
       const id = randomUUID();
+      addedQuantity = insertMedication.quantity;
       result = { id, ...insertMedication, dateAdded: now, lastModified: now };
       this.cache.set(id, result);
+      isNewMedication = true;
     }
     await this.syncToSheets(Array.from(this.cache.values()));
-    return result;
+    return { medication: result, isNewMedication, addedQuantity };
   }
 
-  async updateMedication(id: string, updatedData: Partial<Medication>): Promise<Medication | undefined> {
+  async updateMedication(id: string, updatedData: Partial<InsertMedication>): Promise<Medication | undefined> {
     await this.syncFromSheets();
     const med = this.cache.get(id);
     if (!med) return undefined;
@@ -282,6 +302,7 @@ export class GoogleSheetsStorage implements IStorage {
       medicationName: `${med.medicalName} (${med.genericName}) - ${med.administrativeForm}`,
       type: "dispensed",
       quantity,
+      dose: med.dose, // Added dose field
       notes: "Dispensed to patient",
     });
     return { medication: updated, transaction: tx };
