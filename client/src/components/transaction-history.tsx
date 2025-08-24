@@ -102,7 +102,7 @@ export function TransactionHistory() {
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
+        <Button variant="outline" size="default">
           <History className="h-4 w-4 mr-2" />
           Transaction History
         </Button>
