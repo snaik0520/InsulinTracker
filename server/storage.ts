@@ -1,4 +1,3 @@
-
 import { type Medication, type InsertMedication, type MedicationTransaction, type InsertTransaction } from "@shared/schema";
 import { formatToISODateTime, formatToISODate } from "@shared/dateUtils";
 import { randomUUID } from "crypto";
@@ -24,8 +23,15 @@ export class MemStorage implements IStorage {
   private medications = new Map<string, Medication>();
   private transactions = new Map<string, MedicationTransaction>();
 
+  // Sort helper: oldest-expiration first
+  private sortByExpiration(meds: Medication[]): Medication[] {
+    return meds.sort((a, b) =>
+      new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime()
+    );
+  }
+
   async getMedications(): Promise<Medication[]> {
-    return Array.from(this.medications.values());
+    return this.sortByExpiration(Array.from(this.medications.values()));
   }
 
   async getMedicationById(id: string): Promise<Medication | undefined> {
@@ -50,13 +56,11 @@ export class MemStorage implements IStorage {
     );
 
     if (existing) {
-      // Adding to existing stock
       const addedQuantity = medicationWithFormattedDate.quantity;
       existing.quantity += addedQuantity;
       this.medications.set(existing.id, existing);
       return { medication: existing, isNewMedication: false, addedQuantity };
     } else {
-      // Creating new medication
       const id = randomUUID();
       const medication: Medication = { ...medicationWithFormattedDate, id };
       this.medications.set(id, medication);
@@ -89,24 +93,28 @@ export class MemStorage implements IStorage {
 
   async searchMedications(query: string): Promise<Medication[]> {
     const q = query.toLowerCase();
-    return Array.from(this.medications.values()).filter(
+    const filtered = Array.from(this.medications.values()).filter(
       med => med.genericName.toLowerCase().includes(q) || med.medicalName.toLowerCase().includes(q)
     );
+    return this.sortByExpiration(filtered);
   }
 
   async filterMedicationsByType(type: string): Promise<Medication[]> {
     if (type === "all") return this.getMedications();
-    return Array.from(this.medications.values()).filter(med => med.type === type);
+    const filtered = Array.from(this.medications.values()).filter(med => med.type === type);
+    return this.sortByExpiration(filtered);
   }
 
   async getLowStockMedications(threshold: number = 5): Promise<Medication[]> {
-    return Array.from(this.medications.values()).filter(
+    const filtered = Array.from(this.medications.values()).filter(
       med => med.quantity > 0 && med.quantity <= threshold
     );
+    return this.sortByExpiration(filtered);
   }
 
   async getOutOfStockMedications(): Promise<Medication[]> {
-    return Array.from(this.medications.values()).filter(med => med.quantity === 0);
+    const filtered = Array.from(this.medications.values()).filter(med => med.quantity === 0);
+    return this.sortByExpiration(filtered);
   }
 
   async getTransactions(): Promise<MedicationTransaction[]> {
@@ -191,7 +199,7 @@ export class GoogleSheetsStorage implements IStorage {
 
   async getMedications(): Promise<Medication[]> {
     await this.syncFromSheets();
-    return Array.from(this.cache.values());
+    return this.sortByExpiration(Array.from(this.cache.values()));
   }
 
   async getMedicationById(id: string): Promise<Medication | undefined> {
@@ -218,7 +226,6 @@ export class GoogleSheetsStorage implements IStorage {
     let addedQuantity: number;
 
     if (existing) {
-      // Adding to existing stock
       addedQuantity = insertMedication.quantity;
       existing.quantity += addedQuantity;
       existing.lastModified = new Date().toISOString();
@@ -226,7 +233,6 @@ export class GoogleSheetsStorage implements IStorage {
       result = existing;
       isNewMedication = false;
     } else {
-      // Creating new medication
       const id = randomUUID();
       result = { id, ...insertMedication, administrativeForm: insertMedication.administrativeForm, dateAdded: new Date().toISOString(), lastModified: new Date().toISOString() };
       addedQuantity = insertMedication.quantity;
@@ -235,7 +241,6 @@ export class GoogleSheetsStorage implements IStorage {
     }
 
     await this.syncToSheets(Array.from(this.cache.values()));
-
     return { medication: result, isNewMedication, addedQuantity };
   }
 
@@ -266,25 +271,29 @@ export class GoogleSheetsStorage implements IStorage {
   async searchMedications(query: string): Promise<Medication[]> {
     await this.syncFromSheets();
     const q = query.toLowerCase();
-    return Array.from(this.cache.values()).filter(
+    const filtered = Array.from(this.cache.values()).filter(
       med => med.genericName.toLowerCase().includes(q) || med.medicalName.toLowerCase().includes(q)
     );
+    return this.sortByExpiration(filtered);
   }
 
   async filterMedicationsByType(type: string): Promise<Medication[]> {
     await this.syncFromSheets();
     if (type === "all") return this.getMedications();
-    return Array.from(this.cache.values()).filter(med => med.type === type);
+    const filtered = Array.from(this.cache.values()).filter(med => med.type === type);
+    return this.sortByExpiration(filtered);
   }
 
   async getLowStockMedications(threshold: number = 5): Promise<Medication[]> {
     await this.syncFromSheets();
-    return Array.from(this.cache.values()).filter(med => med.quantity > 0 && med.quantity <= threshold);
+    const filtered = Array.from(this.cache.values()).filter(med => med.quantity > 0 && med.quantity <= threshold);
+    return this.sortByExpiration(filtered);
   }
 
   async getOutOfStockMedications(): Promise<Medication[]> {
     await this.syncFromSheets();
-    return Array.from(this.cache.values()).filter(med => med.quantity === 0);
+    const filtered = Array.from(this.cache.values()).filter(med => med.quantity === 0);
+    return this.sortByExpiration(filtered);
   }
 
   async getTransactions(): Promise<MedicationTransaction[]> {
@@ -321,6 +330,13 @@ export class GoogleSheetsStorage implements IStorage {
       notes: "Dispensed to patient",
     });
     return { medication: updated, transaction: tx };
+  }
+
+  // Re-use server-side sort helper in this class
+  private sortByExpiration(meds: Medication[]): Medication[] {
+    return meds.sort((a, b) =>
+      new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime()
+    );
   }
 }
 
