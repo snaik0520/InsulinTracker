@@ -110,7 +110,7 @@ export function LowStockTicker() {
 </div>
 
                         <div className="text-xs text-gray-500 mt-1">
-                          Expires: {new Date(medication.expirationDate).toLocaleDateString()}
+                          Expiration: {new Date(medication.expirationDate).toLocaleDateString()}
                         </div>
                       </div>
                       <div className="text-right ml-4">
