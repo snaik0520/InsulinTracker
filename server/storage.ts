@@ -235,16 +235,6 @@ export class GoogleSheetsStorage implements IStorage {
 
     await this.syncToSheets(Array.from(this.cache.values()));
 
-    // Log the stock change as a transaction
-    await this.createTransaction({
-      medicationId: result.id,
-      medicationName: `${result.medicalName} (${result.genericName}) - ${result.administrativeForm}`,
-      type: "addition",
-      quantity: addedQuantity,
-      dose: result.dose,
-      notes: isNewMedication ? "New medication added" : "Added to existing stock",
-    });
-
     return { medication: result, isNewMedication, addedQuantity };
   }
 
