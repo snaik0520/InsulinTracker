@@ -85,7 +85,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.createTransaction({
           medicationId: id,
           medicationName: `${updated.medicalName} (${updated.genericName}) - ${updated.administrativeForm}`,
-          type: "addition",  // now also “Added” for stock increases
+          type: "addition",  // logs "Added" for stock increases
           quantity: addedQty,
           dose: updated.dose,
           notes: "Medication quantity increased in existing stock",
