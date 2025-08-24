@@ -1,3 +1,4 @@
+
 import { type Medication, type InsertMedication, type MedicationTransaction, type InsertTransaction } from "@shared/schema";
 import { formatToISODateTime, formatToISODate } from "@shared/dateUtils";
 import { randomUUID } from "crypto";
@@ -24,10 +25,7 @@ export class MemStorage implements IStorage {
   private transactions = new Map<string, MedicationTransaction>();
 
   async getMedications(): Promise<Medication[]> {
-    // Sort by expirationDate ascending (oldest first)
-    return Array.from(this.medications.values()).sort(
-      (a, b) => new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime()
-    );
+    return Array.from(this.medications.values());
   }
 
   async getMedicationById(id: string): Promise<Medication | undefined> {
@@ -52,11 +50,13 @@ export class MemStorage implements IStorage {
     );
 
     if (existing) {
+      // Adding to existing stock
       const addedQuantity = medicationWithFormattedDate.quantity;
       existing.quantity += addedQuantity;
       this.medications.set(existing.id, existing);
       return { medication: existing, isNewMedication: false, addedQuantity };
     } else {
+      // Creating new medication
       const id = randomUUID();
       const medication: Medication = { ...medicationWithFormattedDate, id };
       this.medications.set(id, medication);
@@ -67,17 +67,14 @@ export class MemStorage implements IStorage {
   async updateMedication(id: string, updatedData: Partial<Medication>): Promise<Medication | undefined> {
     const medication = this.medications.get(id);
     if (!medication) return undefined;
-
     if (updatedData.expirationDate) {
       updatedData.expirationDate = formatToISODate(updatedData.expirationDate);
     }
-
     for (const key of Object.keys(updatedData) as (keyof Medication)[]) {
       if (updatedData[key] !== undefined) {
         (medication as any)[key] = updatedData[key]!;
       }
     }
-
     this.medications.set(id, medication);
     return medication;
   }
@@ -92,31 +89,24 @@ export class MemStorage implements IStorage {
 
   async searchMedications(query: string): Promise<Medication[]> {
     const q = query.toLowerCase();
-    return Array.from(this.medications.values())
-      .filter(med =>
-        med.genericName.toLowerCase().includes(q) ||
-        med.medicalName.toLowerCase().includes(q)
-      )
-      .sort((a, b) => new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime());
+    return Array.from(this.medications.values()).filter(
+      med => med.genericName.toLowerCase().includes(q) || med.medicalName.toLowerCase().includes(q)
+    );
   }
 
   async filterMedicationsByType(type: string): Promise<Medication[]> {
     if (type === "all") return this.getMedications();
-    return Array.from(this.medications.values())
-      .filter(med => med.type === type)
-      .sort((a, b) => new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime());
+    return Array.from(this.medications.values()).filter(med => med.type === type);
   }
 
   async getLowStockMedications(threshold: number = 5): Promise<Medication[]> {
-    return Array.from(this.medications.values())
-      .filter(med => med.quantity > 0 && med.quantity <= threshold)
-      .sort((a, b) => new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime());
+    return Array.from(this.medications.values()).filter(
+      med => med.quantity > 0 && med.quantity <= threshold
+    );
   }
 
   async getOutOfStockMedications(): Promise<Medication[]> {
-    return Array.from(this.medications.values())
-      .filter(med => med.quantity === 0)
-      .sort((a, b) => new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime());
+    return Array.from(this.medications.values()).filter(med => med.quantity === 0);
   }
 
   async getTransactions(): Promise<MedicationTransaction[]> {
@@ -137,17 +127,12 @@ export class MemStorage implements IStorage {
     return transaction;
   }
 
-  async dispenseMedication(
-    medicationId: string,
-    quantity: number
-  ): Promise<{ medication: Medication; transaction: MedicationTransaction }> {
+  async dispenseMedication(medicationId: string, quantity: number): Promise<{ medication: Medication; transaction: MedicationTransaction }> {
     const med = await this.getMedicationById(medicationId);
     if (!med) throw new Error("Medication not found");
     if (med.quantity < quantity) throw new Error("Insufficient stock");
-
     const updated = await this.updateMedicationQuantity(medicationId, med.quantity - quantity);
     if (!updated) throw new Error("Update failed");
-
     const tx = await this.createTransaction({
       medicationId,
       medicationName: `${med.medicalName} (${med.genericName}) - ${med.administrativeForm}`,
@@ -156,7 +141,6 @@ export class MemStorage implements IStorage {
       dose: med.dose,
       notes: "Dispensed to patient",
     });
-
     return { medication: updated, transaction: tx };
   }
 }
@@ -175,7 +159,6 @@ export class GoogleSheetsStorage implements IStorage {
   private async syncFromSheets(): Promise<void> {
     const now = Date.now();
     if (now - this.lastSync < this.syncInterval) return;
-
     try {
       const res = await fetch(`${this.webAppUrl}?action=read`, { signal: AbortSignal.timeout(10000) });
       const data = await res.json();
@@ -220,7 +203,6 @@ export class GoogleSheetsStorage implements IStorage {
     insertMedication: InsertMedication
   ): Promise<{ medication: Medication; isNewMedication: boolean; addedQuantity: number }> {
     await this.syncFromSheets();
-
     const existing = Array.from(this.cache.values()).find(
       med =>
         med.genericName === insertMedication.genericName &&
@@ -236,6 +218,7 @@ export class GoogleSheetsStorage implements IStorage {
     let addedQuantity: number;
 
     if (existing) {
+      // Adding to existing stock
       addedQuantity = insertMedication.quantity;
       existing.quantity += addedQuantity;
       existing.lastModified = new Date().toISOString();
@@ -243,20 +226,16 @@ export class GoogleSheetsStorage implements IStorage {
       result = existing;
       isNewMedication = false;
     } else {
+      // Creating new medication
       const id = randomUUID();
-      result = {
-        id,
-        ...insertMedication,
-        administrativeForm: insertMedication.administrativeForm,
-        dateAdded: new Date().toISOString(),
-        lastModified: new Date().toISOString(),
-      };
+      result = { id, ...insertMedication, administrativeForm: insertMedication.administrativeForm, dateAdded: new Date().toISOString(), lastModified: new Date().toISOString() };
       addedQuantity = insertMedication.quantity;
       this.cache.set(id, result);
       isNewMedication = true;
     }
 
     await this.syncToSheets(Array.from(this.cache.values()));
+
     return { medication: result, isNewMedication, addedQuantity };
   }
 
@@ -326,10 +305,7 @@ export class GoogleSheetsStorage implements IStorage {
     return transaction;
   }
 
-  async dispenseMedication(
-    medicationId: string,
-    quantity: number
-  ): Promise<{ medication: Medication; transaction: MedicationTransaction }> {
+  async dispenseMedication(medicationId: string, quantity: number): Promise<{ medication: Medication; transaction: MedicationTransaction }> {
     await this.syncFromSheets();
     const med = this.cache.get(medicationId);
     if (!med) throw new Error("Medication not found");
@@ -348,6 +324,7 @@ export class GoogleSheetsStorage implements IStorage {
   }
 }
 
+// Instantiate storage based on environment
 const GOOGLE_APPS_SCRIPT_URL = process.env.GOOGLE_APPS_SCRIPT_URL || "";
 
 function createStorage(): IStorage {
