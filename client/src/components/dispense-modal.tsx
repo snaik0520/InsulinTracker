@@ -122,6 +122,9 @@ export function DispenseModal({ open, onOpenChange, medication }: DispenseModalP
             </p>
             <p className="text-xs text-gray-500 mt-1" data-testid="text-available-stock">
               Available: {medication.quantity}
+    </p>
+    <p className="text-xs text-gray-500 mt-1" data-testid="text-medication-dose">
+      Dose: {medication.dose}
             </p>
           </div>
           <div>
