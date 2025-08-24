@@ -108,7 +108,7 @@ export function OutOfStockTracker() {
                           {med.genericName} • {med.dose} • {med.location}
                         </div>
                         <div className="text-xs text-gray-500 mt-1">
-                          Last expiration: {new Date(med.expirationDate).toLocaleDateString()}
+                          Expiration: {new Date(med.expirationDate).toLocaleDateString()}
                         </div>
                       </div>
                       <Badge variant="destructive" className="text-xs bg-red-600">0 left</Badge>
