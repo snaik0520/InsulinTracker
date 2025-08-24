@@ -180,40 +180,16 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
       return;
     }
 
-    // Check for existing medication with same properties
-    const existingMedication = allMedications.find((med: Medication) => 
-      med.medicalName?.toLowerCase() === data.medicalName?.toLowerCase() &&
-      med.genericName?.toLowerCase() === data.genericName?.toLowerCase() &&
-      med.location?.toLowerCase() === effectiveLocation?.toLowerCase() &&
-      med.type === data.type &&
-      med.dose === data.dose &&
-      med.administrativeForm === admin &&
-      formatToISODate(med.expirationDate) === formattedExpirationDate
-    );
+    // Always use the POST endpoint - let the server handle duplicates
+const payload = {
+  ...data,
+  location: effectiveLocation,
+  administrativeForm: admin,
+  expirationDate: formattedExpirationDate,
+} as any;
 
-    if (existingMedication) {
-      // If medication exists, update quantity instead of creating new
-      const updatedPayload = {
-        ...existingMedication,
-        quantity: (existingMedication.quantity || 0) + data.quantity,
-        // Keep the earlier expiration date for safety
-        expirationDate: new Date(formatToISODate(existingMedication.expirationDate)) < new Date(formattedExpirationDate) 
-          ? formatToISODate(existingMedication.expirationDate)
-          : formattedExpirationDate
-      };
+addMedicationMutation.mutate(payload);
 
-      updateMedicationMutation.mutate({ id: existingMedication.id, data: updatedPayload });
-    } else {
-      // Create new medication if no match found
-      const payload = {
-        ...data,
-        location: effectiveLocation,
-        administrativeForm: admin,
-        expirationDate: formattedExpirationDate, // Ensure ISO format
-      } as any;
-
-      addMedicationMutation.mutate(payload);
-    }
   };
 
   // Mutation for updating existing medications
