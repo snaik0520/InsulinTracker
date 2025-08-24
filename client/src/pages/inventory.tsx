@@ -1,3 +1,4 @@
+
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
@@ -346,11 +347,11 @@ export default function Inventory() {
                               {medication.expirationDate ? formatToISODate(medication.expirationDate) : "—"}
                             </span>
                           </td>
-                          <td className="px-2 py-3 text-sm border-b border-gray-200 min-w-0">
-  <div className="max-w-28 sm:max-w-32 md:max-w-40 break-words whitespace-normal leading-tight">
+                          <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500" data-testid="text-location">
+                            <div className="max-w-28 sm:max-w-32 md:max-w-40 break-words whitespace-normal leading-tight">
     {medication.location ?? "—"}
   </div>
-</td>
+                          </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center">
                             <Button
                               onClick={() => handleDispense(medication)}
