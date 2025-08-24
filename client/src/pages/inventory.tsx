@@ -203,7 +203,9 @@ export default function Inventory() {
                 >
                   <List className="h-4 w-4 mr-2" />
                   Low / Out of Stock
-                </Button>
+                </Button
+                  size="default"
+                >
                 <div className="h-10 flex items-center">
                   <TransactionHistory />
                 </div>
