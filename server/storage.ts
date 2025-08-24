@@ -16,6 +16,7 @@ export interface IStorage {
   getOutOfStockMedications(): Promise<Medication[]>;
   getTransactions(): Promise<MedicationTransaction[]>;
   createTransaction(transaction: InsertTransaction): Promise<MedicationTransaction>;
+  dispenseMedication?(medicationId: string, quantity: number): Promise<{ medication: Medication; transaction: MedicationTransaction }>;
 }
 
 export class MemStorage implements IStorage {
@@ -48,31 +49,15 @@ export class MemStorage implements IStorage {
     );
 
     if (existing) {
-      // Adding to existing stock
       const addedQuantity = medicationWithFormattedDate.quantity;
       existing.quantity += addedQuantity;
       this.medications.set(existing.id, existing);
-
-      // NOTE: Removed internal createTransaction to avoid duplicates
-
-      return {
-        medication: existing,
-        isNewMedication: false,
-        addedQuantity,
-      };
+      return { medication: existing, isNewMedication: false, addedQuantity };
     } else {
-      // Creating new medication
       const id = randomUUID();
       const medication: Medication = { ...medicationWithFormattedDate, id };
       this.medications.set(id, medication);
-
-      // NOTE: Removed internal createTransaction to avoid duplicates
-
-      return {
-        medication,
-        isNewMedication: true,
-        addedQuantity: medication.quantity,
-      };
+      return { medication, isNewMedication: true, addedQuantity: medication.quantity };
     }
   }
 
@@ -138,9 +123,6 @@ export class MemStorage implements IStorage {
     this.transactions.set(id, transaction);
     return transaction;
   }
-}
-
-// GoogleSheetsStorage unchanged...
 
   async dispenseMedication(medicationId: string, quantity: number): Promise<{ medication: Medication; transaction: MedicationTransaction }> {
     const med = await this.getMedicationById(medicationId);
@@ -153,7 +135,7 @@ export class MemStorage implements IStorage {
       medicationName: `${med.medicalName} (${med.genericName}) - ${med.administrativeForm}`,
       type: "dispensed",
       quantity,
-      dose: med.dose, // Added dose field
+      dose: med.dose,
       notes: "Dispensed to patient",
     });
     return { medication: updated, transaction: tx };
