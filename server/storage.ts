@@ -9,7 +9,7 @@ export interface IStorage {
     medication: InsertMedication
   ): Promise<{ medication: Medication; isNewMedication: boolean; addedQuantity: number }>;
   updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined>;
-  updateMedication(id: string, updatedData: Partial<Medication>): Promise<Medication | undefined>;
+  updateMedication(id: string, updatedData: Partial<InsertMedication>): Promise<Medication | undefined>;
   searchMedications(query: string): Promise<Medication[]>;
   filterMedicationsByType(type: string): Promise<Medication[]>;
   getLowStockMedications(threshold?: number): Promise<Medication[]>;
@@ -17,6 +17,15 @@ export interface IStorage {
   getTransactions(): Promise<MedicationTransaction[]>;
   createTransaction(transaction: InsertTransaction): Promise<MedicationTransaction>;
   dispenseMedication?(medicationId: string, quantity: number): Promise<{ medication: Medication; transaction: MedicationTransaction }>;
+  moveMedication(
+    sourceMedicationId: string, 
+    quantity: number, 
+    destinationLocation: string
+  ): Promise<{
+    sourceMedication: Medication;
+    destinationMedication: Medication | null;
+    isNewDestination: boolean;
+  }>;
 }
 
 export class MemStorage implements IStorage {
@@ -68,7 +77,7 @@ export class MemStorage implements IStorage {
     }
   }
 
-  async updateMedication(id: string, updatedData: Partial<Medication>): Promise<Medication | undefined> {
+  async updateMedication(id: string, updatedData: Partial<InsertMedication>): Promise<Medication | undefined> {
     const medication = this.medications.get(id);
     if (!medication) return undefined;
     if (updatedData.expirationDate) {
@@ -150,6 +159,68 @@ export class MemStorage implements IStorage {
       notes: "Dispensed to patient",
     });
     return { medication: updated, transaction: tx };
+  }
+
+  async moveMedication(
+    sourceMedicationId: string,
+    quantity: number,
+    destinationLocation: string
+  ): Promise<{
+    sourceMedication: Medication;
+    destinationMedication: Medication | null;
+    isNewDestination: boolean;
+  }> {
+    const sourceMed = this.medications.get(sourceMedicationId);
+    if (!sourceMed) {
+      throw new Error("Source medication not found");
+    }
+
+    if (sourceMed.quantity < quantity) {
+      throw new Error("Insufficient stock to move");
+    }
+
+    // Update source medication quantity
+    sourceMed.quantity -= quantity;
+    this.medications.set(sourceMedicationId, sourceMed);
+
+    // Find existing medication at destination location
+    const existingDestinationMed = Array.from(this.medications.values()).find(
+      med =>
+        med.genericName === sourceMed.genericName &&
+        med.medicalName === sourceMed.medicalName &&
+        med.dose === sourceMed.dose &&
+        med.expirationDate === sourceMed.expirationDate &&
+        med.location === destinationLocation &&
+        med.administrativeForm === sourceMed.administrativeForm
+    );
+
+    let destinationMed: Medication;
+    let isNewDestination: boolean;
+
+    if (existingDestinationMed) {
+      // Add to existing medication at destination
+      existingDestinationMed.quantity += quantity;
+      this.medications.set(existingDestinationMed.id, existingDestinationMed);
+      destinationMed = existingDestinationMed;
+      isNewDestination = false;
+    } else {
+      // Create new medication record at destination
+      const newId = randomUUID();
+      destinationMed = {
+        ...sourceMed,
+        id: newId,
+        location: destinationLocation,
+        quantity: quantity,
+      };
+      this.medications.set(newId, destinationMed);
+      isNewDestination = true;
+    }
+
+    return {
+      sourceMedication: sourceMed,
+      destinationMedication: destinationMed,
+      isNewDestination,
+    };
   }
 }
 
@@ -244,7 +315,7 @@ export class GoogleSheetsStorage implements IStorage {
     return { medication: result, isNewMedication, addedQuantity };
   }
 
-  async updateMedication(id: string, updatedData: Partial<Medication>): Promise<Medication | undefined> {
+  async updateMedication(id: string, updatedData: Partial<InsertMedication>): Promise<Medication | undefined> {
     await this.syncFromSheets();
     const med = this.cache.get(id);
     if (!med) return undefined;
@@ -330,6 +401,76 @@ export class GoogleSheetsStorage implements IStorage {
       notes: "Dispensed to patient",
     });
     return { medication: updated, transaction: tx };
+  }
+
+  async moveMedication(
+    sourceMedicationId: string,
+    quantity: number,
+    destinationLocation: string
+  ): Promise<{
+    sourceMedication: Medication;
+    destinationMedication: Medication | null;
+    isNewDestination: boolean;
+  }> {
+    await this.syncFromSheets();
+    
+    const sourceMed = this.cache.get(sourceMedicationId);
+    if (!sourceMed) {
+      throw new Error("Source medication not found");
+    }
+
+    if (sourceMed.quantity < quantity) {
+      throw new Error("Insufficient stock to move");
+    }
+
+    // Update source medication quantity
+    sourceMed.quantity -= quantity;
+    sourceMed.lastModified = new Date().toISOString();
+    this.cache.set(sourceMedicationId, sourceMed);
+
+    // Find existing medication at destination location
+    const existingDestinationMed = Array.from(this.cache.values()).find(
+      med =>
+        med.genericName === sourceMed.genericName &&
+        med.medicalName === sourceMed.medicalName &&
+        med.dose === sourceMed.dose &&
+        med.expirationDate === sourceMed.expirationDate &&
+        med.location === destinationLocation &&
+        med.administrativeForm === sourceMed.administrativeForm
+    );
+
+    let destinationMed: Medication;
+    let isNewDestination: boolean;
+
+    if (existingDestinationMed) {
+      // Add to existing medication at destination
+      existingDestinationMed.quantity += quantity;
+      existingDestinationMed.lastModified = new Date().toISOString();
+      this.cache.set(existingDestinationMed.id, existingDestinationMed);
+      destinationMed = existingDestinationMed;
+      isNewDestination = false;
+    } else {
+      // Create new medication record at destination
+      const newId = randomUUID();
+      destinationMed = {
+        ...sourceMed,
+        id: newId,
+        location: destinationLocation,
+        quantity: quantity,
+        dateAdded: new Date().toISOString(),
+        lastModified: new Date().toISOString(),
+      };
+      this.cache.set(newId, destinationMed);
+      isNewDestination = true;
+    }
+
+    await this.syncToSheets(Array.from(this.cache.values()));
+
+    return {
+      sourceMedication: sourceMed,
+      destinationMedication: destinationMed,
+      isNewDestination,
+    };
   }
 
   // Re-use server-side sort helper in this class
