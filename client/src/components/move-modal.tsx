@@ -240,7 +240,6 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
             <Button
               variant="outline"
               onClick={() => onOpenChange(false)}
-              className="flex-1"
             >
               Cancel
             </Button>
