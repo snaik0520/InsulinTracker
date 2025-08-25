@@ -356,17 +356,18 @@ export default function Inventory() {
                           <td className="px-6 py-4 whitespace-nowrap text-center">
                             <Button
                               onClick={() => handleDispense(medication)}
-                              size="sm"
+                              size="xs"
                               className="bg-emerald-600 hover:bg-emerald-700 text-white"
                               data-testid={`button-dispense-${medication.id}`}
                             >
                               <HandHeart className="h-4 w-4 mr-1" />
                               Dispense
                             </Button>
+
                             
                             <Button
                               onClick={() => handleMove(medication)}
-                              size="sm"
+                              size="xs"
                               className="bg-blue-600 hover:bg-blue-700 text-white mr-2"
                               data-testid={`button-move-${medication.id}`}
                             >
