@@ -9,6 +9,9 @@ export default {
         '8xl': '88rem',    // 1408px
         '9xl': '96rem',    // 1536px
         '10xl': '104rem',  // 1664px
+        '11xl': '112rem',    // 1408px
+        '12xl': '120rem',    // 1536px
+        '13xl': '128rem',  // 1664px
       },
       borderRadius: {
         lg: "var(--radius)",
