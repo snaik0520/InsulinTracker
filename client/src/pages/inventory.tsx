@@ -148,9 +148,9 @@ export default function Inventory() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="container mx-auto py-8">
         <div className="text-center">
-          <div className="text-xl font-semibold text-gray-600 mb-2">Loading medications…</div>
+          <div className="text-lg">Loading medications…</div>
         </div>
       </div>
     );
@@ -158,111 +158,125 @@ export default function Inventory() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      <div className="container mx-auto px-4 py-6">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-4">
-            <img src={logo} alt="Noor Logo" className="h-12 w-12" />
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Insulin Inventory</h1>
-              <p className="text-gray-600">Track and manage your insulin medications</p>
+      {/* Header */}
+      <div className="bg-white shadow-sm border-b">
+        <div className="container mx-auto px-6 py-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <img src={logo} alt="Noor Logo" className="h-12 w-12" />
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">Insulin Inventory</h1>
+                <p className="text-gray-600 mt-1">Track and manage your insulin medications</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-4">
+              <Button
+                onClick={scrollToTrackers}
+                variant="outline"
+                size="sm"
+                className="text-blue-600 border-blue-200 hover:bg-blue-50"
+              >
+                <List className="h-4 w-4 mr-2" />
+                View Reports
+              </Button>
+              <Button onClick={() => setIsAddModalOpen(true)} className="bg-blue-600 hover:bg-blue-700">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Medication
+              </Button>
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Search and Controls */}
-        <div className="flex flex-col lg:flex-row gap-4 mb-6">
-          <div className="flex-1">
-            <Label htmlFor="search" className="sr-only">
-              Search medications
-            </Label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-              <Input
-                id="search"
-                placeholder="Search by medication name..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-                data-testid="input-search-medication"
-              />
+      {/* Search and Controls */}
+      <div className="container mx-auto px-6 py-8">
+        <Card className="mb-8 border-0 shadow-lg">
+          <CardContent className="p-6">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
+              <div className="relative flex-1 lg:max-w-md">
+                <Label htmlFor="search" className="sr-only">
+                  Search medications
+                </Label>
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="search"
+                  placeholder="Search by medication name..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                  data-testid="input-search-medication"
+                />
+              </div>
             </div>
-          </div>
 
-          <div className="flex gap-2">
-            <Button
-              onClick={() => setIsAddModalOpen(true)}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Medication
-            </Button>
-            <Button variant="outline" onClick={scrollToTrackers}>
-              <List className="h-4 w-4 mr-2" />
-              View Trackers
-            </Button>
-          </div>
-        </div>
-
-        {/* Type Filters */}
-        <div className="mb-6">
-          <Label className="text-sm font-medium text-gray-700 mb-3 block">
-            Filter by insulin type
-          </Label>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant={selectedType === "all" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setSelectedType("all")}
-              className={selectedType === "all" ? "bg-gray-800 text-white" : ""}
-            >
-              All Types
-            </Button>
-            {Object.entries(typeLabels).map(([type, label]) => {
-              const Icon = typeIcons[type as keyof typeof typeIcons];
-              const selectedCls = (filterSelectedClasses as any)[type];
-              const hoverCls = (filterHoverClasses as any)[type];
-              return (
+            {/* Type Filters */}
+            <div className="mt-6">
+              <Label className="text-sm font-medium text-gray-700 mb-3 block">
+                Filter by insulin type
+              </Label>
+              <div className="flex flex-wrap gap-2">
                 <Button
-                  key={type}
+                  key="all"
                   variant="outline"
                   size="sm"
-                  onClick={() => setSelectedType(type)}
-                  className={`${selectedType === type ? selectedCls : ""} ${hoverCls}`}
+                  onClick={() => setSelectedType("all")}
+                  className={`${
+                    selectedType === "all"
+                      ? "bg-blue-100 text-blue-800 border-blue-200"
+                      : "hover:bg-gray-50"
+                  }`}
                 >
-                  <Icon className="h-4 w-4 mr-1" />
-                  {label}
+                  All Types
                 </Button>
-              );
-            })}
-          </div>
-        </div>
+                {Object.entries(typeLabels).map(([type, label]) => {
+                  const Icon = typeIcons[type as keyof typeof typeIcons];
+                  const selectedCls = (filterSelectedClasses as any)[type];
+                  const hoverCls = (filterHoverClasses as any)[type];
+                  return (
+                    <Button
+                      key={type}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedType(type)}
+                      className={`${
+                        selectedType === type ? selectedCls : `${hoverCls} border-gray-200`
+                      }`}
+                    >
+                      <Icon className="h-4 w-4 mr-1" />
+                      {label}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Inventory Table */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="text-xl">Current insulin inventory</CardTitle>
-            <p className="text-sm text-gray-600">Manage and track all insulin medications in your clinic</p>
+        <Card className="border-0 shadow-lg">
+          <CardHeader className="bg-gray-50 border-b">
+            <CardTitle className="text-xl font-semibold">Current insulin inventory</CardTitle>
+            <p className="text-gray-600 text-sm mt-1">Manage and track all insulin medications in your clinic</p>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-200">
-                    <th className="text-left p-4 font-medium text-gray-700">Medication</th>
-                    <th className="text-left p-4 font-medium text-gray-700">Administrative form</th>
-                    <th className="text-left p-4 font-medium text-gray-700">Insulin type</th>
-                    <th className="text-left p-4 font-medium text-gray-700">Dose</th>
-                    <th className="text-left p-4 font-medium text-gray-700">Quantity</th>
-                    <th className="text-left p-4 font-medium text-gray-700">Expiration</th>
-                    <th className="text-left p-4 font-medium text-gray-700">Location</th>
-                    <th className="text-right p-4 font-medium text-gray-700">Actions</th>
+                <thead className="bg-gray-50 border-b">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Medication</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Administrative form</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Insulin type</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Dose</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Quantity</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Expiration</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Location</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-700">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-gray-200">
                   {filteredMedications.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="text-center p-8 text-gray-500">
+                      <td colSpan={8} className="px-4 py-12 text-center text-gray-500">
                         {searchQuery || selectedType !== "all"
                           ? "No medications found matching your criteria."
                           : "No medications in inventory. Add your first medication to get started."}
@@ -286,25 +300,25 @@ export default function Inventory() {
                       const rowTint = getRowClassName(medication.type);
 
                       return (
-                        <tr key={medication.id} className={`border-b border-gray-100 ${rowTint}`}>
-                          <td className="p-4">
-                            <div className="font-medium">
+                        <tr key={medication.id} className={`hover:bg-gray-50 ${rowTint}`}>
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-gray-900">
                               {medication.medicalName ?? medication.genericName ?? "—"}
                             </div>
                             <div className="text-sm text-gray-500">
                               {medication.genericName ? `(${medication.genericName})` : ""}
                             </div>
                           </td>
-                          <td className="p-4">{adminDisplay}</td>
-                          <td className="p-4">
+                          <td className="px-4 py-3 text-gray-600">{adminDisplay}</td>
+                          <td className="px-4 py-3">
                             <Badge className={(badgeColors as any)[medication.type]}>
                               <Icon className="h-3 w-3 mr-1" />
                               {(typeLabels as any)[medication.type]}
                             </Badge>
                           </td>
-                          <td className="p-4">{medication.dose}</td>
-                          <td className="p-4">
-                            <div className="flex items-center gap-2">
+                          <td className="px-4 py-3 text-gray-600">{medication.dose}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center space-x-2">
                               <span className="font-medium">{medication.quantity}</span>
                               {medication.quantity! <= 5 && (
                                 <Badge variant="destructive" className="text-xs">
@@ -313,27 +327,27 @@ export default function Inventory() {
                               )}
                             </div>
                           </td>
-                          <td className={`p-4 ${expClass}`}>
+                          <td className={`px-4 py-3 ${expClass}`}>
                             {medication.expirationDate ? formatToISODate(medication.expirationDate) : "—"}
                           </td>
-                          <td className="p-4">{medication.location ?? "—"}</td>
-                          <td className="p-4 text-right">
+                          <td className="px-4 py-3 text-gray-600">{medication.location ?? "—"}</td>
+                          <td className="px-4 py-2 text-right">
                             <Button
-                              size="sm"
-                              onClick={() => handleDispense(medication)}
-                              className="bg-blue-600 hover:bg-blue-700 mr-2"
-                            >
-                              <HandHeart className="h-4 w-4 mr-1" />
-                              Dispense
-                            </Button>
-                            <Button
-                              size="sm"
                               variant="outline"
+                              size="sm"
                               onClick={() => handleMove(medication)}
-                              className="border-green-600 text-green-600 hover:bg-green-50"
+                              className="mr-2"
                             >
                               <ArrowRightLeft className="h-4 w-4 mr-1" />
                               Move
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDispense(medication)}
+                            >
+                              <HandHeart className="h-4 w-4 mr-1" />
+                              Dispense
                             </Button>
                           </td>
                         </tr>
@@ -347,7 +361,7 @@ export default function Inventory() {
         </Card>
 
         {/* Give the LowStockTicker a stable id so the button can scroll to it */}
-        <div id="low-stock-ticker">
+        <div id="low-stock-ticker" className="mt-8">
           <LowStockTicker />
         </div>
 
@@ -359,7 +373,7 @@ export default function Inventory() {
       <AddMedicationModal
         open={isAddModalOpen}
         onOpenChange={setIsAddModalOpen}
-        onSave={(newMed) => {
+        onMedicationAdded={(newMed) => {
           medications.push(newMed);
           setIsAddModalOpen(false);
         }}
