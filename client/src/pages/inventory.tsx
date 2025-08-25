@@ -95,11 +95,11 @@ export default function Inventory() {
   const [selectedMedication, setSelectedMedication] = useState<Medication | null>(null);
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
 
-  const { data: medications = [], isLoading } = useQuery({
+  const { data: medications = [], isLoading } = useQuery<Medication[]>({
     queryKey: ["/api/medications"],
   });
 
-  // only render the out-of-stock tracker if there's at least one med at 0 qty
+  // only render the out-of-stock tracker if there’s at least one med at 0 qty
   const outOfStockCount = useMemo(
     () => medications.filter((m) => (m.quantity ?? 0) === 0).length,
     [medications]
@@ -147,85 +147,95 @@ export default function Inventory() {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto py-8">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <div className="text-lg">Loading medications…</div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-rose-400 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading medications…</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="container mx-auto px-6 py-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <img src={logo} alt="Noor Logo" className="h-12 w-12" />
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900">Insulin Inventory</h1>
-                <p className="text-gray-600 mt-1">Track and manage your insulin medications</p>
-              </div>
+    <div className="bg-gray-50 min-h-screen">
+      <header className="bg-gradient-to-r from-rose-50 via-white to-emerald-50 shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div className="flex items-center">
+              <Syringe className="h-6 w-6 text-rose-600 mr-3" />
+              <h1 className="text-xl font-semibold text-rose-700">Insulin Inventory</h1>
             </div>
             <div className="flex items-center space-x-4">
-              <Button
-                onClick={scrollToTrackers}
-                variant="outline"
-                size="sm"
-                className="text-blue-600 border-blue-200 hover:bg-blue-50"
-              >
-                <List className="h-4 w-4 mr-2" />
-                View Reports
-              </Button>
-              <Button onClick={() => setIsAddModalOpen(true)} className="bg-blue-600 hover:bg-blue-700">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Medication
-              </Button>
+              <span className="text-lg text-gray-600 font-medium tracking-wide">SLO Noor Foundation</span>
+              <img
+                src={logo}
+                alt="SLO Noor Foundation logo"
+                className="h-14 w-auto object-contain"
+                data-testid="logo"
+              />
             </div>
           </div>
         </div>
-      </div>
+      </header>
 
-      {/* Search and Controls */}
-      <div className="container mx-auto px-6 py-8">
-        <Card className="mb-8 border-0 shadow-lg">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <Card className="mb-8">
           <CardContent className="p-6">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
-              <div className="relative flex-1 lg:max-w-md">
-                <Label htmlFor="search" className="sr-only">
+            <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between space-y-4 lg:space-y-0 lg:space-x-4">
+              <div className="flex-1 max-w-lg">
+                <Label htmlFor="medication-search" className="block text-sm font-medium text-gray-700 mb-2">
                   Search medications
                 </Label>
-                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="search"
-                  placeholder="Search by medication name..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
-                  data-testid="input-search-medication"
-                />
+                <div className="relative">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <Input
+                    id="medication-search"
+                    placeholder="Search by generic or medical name"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10"
+                    data-testid="input-search-medication"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 flex-shrink-0 items-center">
+                <Button
+                  onClick={scrollToTrackers}
+                  size="default"
+                  variant="outline"
+                  className="flex items-center border-rose-200 text-rose-700 hover:bg-rose-50 h-10 px-4"
+                  data-testid="button-jump-low-outstock"
+                  title="Jump to low / out of stock trackers"
+                >
+                  <List className="h-4 w-4 mr-2" />
+                  Low / Out of Stock
+                </Button>
+                <div className="h-10 flex items-center">
+                  <TransactionHistory />
+                </div>
+                <Button
+                  onClick={() => setIsAddModalOpen(true)}
+                  size="default"
+                  className="bg-rose-600 hover:bg-rose-700 text-white h-10 px-4"
+                  data-testid="button-add-medication"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Medication
+                </Button>
               </div>
             </div>
 
-            {/* Type Filters */}
             <div className="mt-6">
-              <Label className="text-sm font-medium text-gray-700 mb-3 block">
-                Filter by insulin type
-              </Label>
+              <Label className="block text-sm font-medium text-gray-700 mb-3">Filter by insulin type</Label>
               <div className="flex flex-wrap gap-2">
                 <Button
-                  key="all"
-                  variant="outline"
-                  size="sm"
+                  variant={selectedType === "all" ? "default" : "outline"}
                   onClick={() => setSelectedType("all")}
-                  className={`${
-                    selectedType === "all"
-                      ? "bg-blue-100 text-blue-800 border-blue-200"
-                      : "hover:bg-gray-50"
-                  }`}
+                  className={`text-sm ${selectedType === "all" ? "bg-white text-gray-700" : "text-gray-700"}`}
+                  data-testid="filter-all"
                 >
-                  All Types
+                  <List className="h-4 w-4 mr-2" /> All types
                 </Button>
                 {Object.entries(typeLabels).map(([type, label]) => {
                   const Icon = typeIcons[type as keyof typeof typeIcons];
@@ -234,14 +244,14 @@ export default function Inventory() {
                   return (
                     <Button
                       key={type}
-                      variant="outline"
-                      size="sm"
+                      variant={selectedType === type ? "default" : "outline"}
                       onClick={() => setSelectedType(type)}
-                      className={`${
-                        selectedType === type ? selectedCls : `${hoverCls} border-gray-200`
+                      className={`text-sm ${
+                        selectedType === type ? selectedCls : `border-gray-200 ${hoverCls}`
                       }`}
+                      data-testid={`filter-${type}`}
                     >
-                      <Icon className="h-4 w-4 mr-1" />
+                      <Icon className="h-4 w-4 mr-2" />
                       {label}
                     </Button>
                   );
@@ -251,31 +261,30 @@ export default function Inventory() {
           </CardContent>
         </Card>
 
-        {/* Inventory Table */}
-        <Card className="border-0 shadow-lg">
-          <CardHeader className="bg-gray-50 border-b">
-            <CardTitle className="text-xl font-semibold">Current insulin inventory</CardTitle>
-            <p className="text-gray-600 text-sm mt-1">Manage and track all insulin medications in your clinic</p>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg font-medium text-gray-900">Current insulin inventory</CardTitle>
+            <p className="text-sm text-gray-600">Manage and track all insulin medications in your clinic</p>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Medication</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Administrative form</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Insulin type</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Dose</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Quantity</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Expiration</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Location</th>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-700">Actions</th>
+                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Medication</th>
+                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Administrative form</th>
+                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Insulin type</th>
+                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Dose</th>
+                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Quantity</th>
+                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Expiration</th>
+                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Location</th>
+                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody className="bg-white divide-y divide-gray-200">
                   {filteredMedications.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-4 py-12 text-center text-gray-500">
+                      <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
                         {searchQuery || selectedType !== "all"
                           ? "No medications found matching your criteria."
                           : "No medications in inventory. Add your first medication to get started."}
@@ -299,51 +308,66 @@ export default function Inventory() {
                       const rowTint = getRowClassName(medication.type);
 
                       return (
-                        <tr key={medication.id} className={`hover:bg-gray-50 ${rowTint}`}>
-                          <td className="px-4 py-3">
-                            <div className="font-medium text-gray-900">
-                              {medication.medicalName ?? medication.genericName ?? "—"}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              {medication.genericName ? `(${medication.genericName})` : ""}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-gray-600">{adminDisplay}</td>
-                          <td className="px-4 py-3">
-                            <Badge className={(badgeColors as any)[medication.type]}>
-                              <Icon className="h-3 w-3 mr-1" />
-                              {(typeLabels as any)[medication.type]}
-                            </Badge>
-                          </td>
-                          <td className="px-4 py-3 text-gray-600">{medication.dose}</td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center space-x-2">
-                              <span className="font-medium">{medication.quantity}</span>
-                              {medication.quantity! <= 5 && (
-                                <Badge variant="destructive" className="text-xs">
-                                  Low stock
-                                </Badge>
-                              )}
+                        <tr key={medication.id} className={`${rowTint} hover:bg-gray-50`}>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">
+                                {medication.medicalName ?? medication.genericName ?? "—"}
+                              </div>
+                              <div className="text-sm text-gray-500">
+                                {medication.genericName ? `(${medication.genericName})` : ""}
+                              </div>
                             </div>
                           </td>
-                          <td className={`px-4 py-3 ${expClass}`}>
-                            {medication.expirationDate ? formatToISODate(medication.expirationDate) : "—"}
+                          <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
+                            {adminDisplay}
                           </td>
-                          <td className="px-4 py-3 text-gray-600">{medication.location ?? "—"}</td>
-                          <td className="px-4 py-2 text-right">
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <div className="flex justify-center">
+                              <Badge className={(badgeColors as any)[medication.type]}>
+                                <Icon className="h-3 w-3 mr-1" />
+                                {(typeLabels as any)[medication.type]}
+                              </Badge>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
+                            {medication.dose}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <span
+                              className={`text-sm font-medium ${
+                                medication.quantity! <= 5 ? "text-red-600" : "text-gray-900"
+                              }`}
+                            >
+                              {medication.quantity}
+                            </span>
+                            {medication.quantity! <= 5 && <div className="text-xs text-red-600">Low stock</div>}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <span className={`${expClass} text-sm`}>
+                              {medication.expirationDate ? formatToISODate(medication.expirationDate) : "—"}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
+                            <div className="max-w-28 sm:max-w-32 md:max-w-40 break-words whitespace-normal leading-tight">
+                              {medication.location ?? "—"}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
                             <Button
-                              variant="outline"
-                              size="sm"
                               onClick={() => handleMove(medication)}
-                              className="mr-2"
+                              size="sm"
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white mr-2"
+                              data-testid={`button-move-${medication.id}`}
                             >
                               <ArrowRightLeft className="h-4 w-4 mr-1" />
                               Move
                             </Button>
                             <Button
-                              variant="outline"
-                              size="sm"
                               onClick={() => handleDispense(medication)}
+                              size="sm"
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                              data-testid={`button-dispense-${medication.id}`}
                             >
                               <HandHeart className="h-4 w-4 mr-1" />
                               Dispense
@@ -359,15 +383,12 @@ export default function Inventory() {
           </CardContent>
         </Card>
 
-        {/* Give the LowStockTicker a stable id so the button can scroll to it */}
         <div id="low-stock-ticker" className="mt-8">
           <LowStockTicker />
         </div>
 
-        {outOfStockCount > 0 && <OutOfStockTracker />}
-
-        <TransactionHistory />
-      </div>
+        <OutOfStockTracker />
+      </main>
 
       <AddMedicationModal
         open={isAddModalOpen}
