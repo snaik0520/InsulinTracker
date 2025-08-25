@@ -237,6 +237,7 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
               <Check className="h-4 w-4 mr-2" />
               Confirm Move
             </Button>
+              <div className="flex gap-3 pt-4">
               <Button variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
