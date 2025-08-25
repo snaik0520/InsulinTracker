@@ -158,9 +158,9 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
             <div className="text-sm text-gray-900">
               {medication.medicalName} ({medication.genericName})
             </div>
-            <div className="text-muted-foreground">Available: {medication.quantity}</div>
-            <div className="text-muted-foreground">Current Location: {medication.location}</div>
-            <div className="text-muted-foreground">Dose: {medication.dose}</div>
+            <div className="text-xs text-gray-500 mt-1">Available: {medication.quantity}</div>
+            <div className="text-xs text-gray-500 mt-1">Current Location: {medication.location}</div>
+            <div className="text-xs text-gray-500 mt-1">Dose: {medication.dose}</div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="move-quantity" className="text-sm font-medium">
