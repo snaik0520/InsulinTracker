@@ -356,8 +356,8 @@ export default function Inventory() {
                           <td className="px-6 py-4 whitespace-nowrap text-center">
                             <Button
                               onClick={() => handleDispense(medication)}
-                              size="xs"
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                              size="sm"
+                              className="bg-orange-200 hover:bg-orange-300 text-white mr-2"
                               data-testid={`button-dispense-${medication.id}`}
                             >
                               <HandHeart className="h-4 w-4 mr-1" />
@@ -367,8 +367,8 @@ export default function Inventory() {
                             
                             <Button
                               onClick={() => handleMove(medication)}
-                              size="xs"
-                              className="bg-blue-600 hover:bg-blue-700 text-white mr-2"
+                              size="sm"
+                              className="bg-blue-200 hover:bg-blue-300 text-white"
                               data-testid={`button-move-${medication.id}`}
                             >
                               <ArrowRightLeft className="h-4 w-4 mr-1" />
