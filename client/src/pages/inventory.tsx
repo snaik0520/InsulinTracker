@@ -317,11 +317,11 @@ export default function Inventory() {
                             {medication.expirationDate ? formatToISODate(medication.expirationDate) : "—"}
                           </td>
                           <td className="p-4">{medication.location ?? "—"}</td>
-                          <td className="p-4 text-right space-x-2">
+                          <td className="p-4 text-right">
                             <Button
                               size="sm"
                               onClick={() => handleDispense(medication)}
-                              className="bg-blue-600 hover:bg-blue-700"
+                              className="bg-blue-600 hover:bg-blue-700 mr-2"
                             >
                               <HandHeart className="h-4 w-4 mr-1" />
                               Dispense
