@@ -155,7 +155,7 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
         </DialogHeader>
         <div className="space-y-4">
           <div className="text-sm space-y-1">
-            <div className="text-xs text-gray-500 mt-1">
+            <div className="text-sm text-gray-900">
               {medication.medicalName} ({medication.genericName})
             </div>
             <div className="text-muted-foreground">Available: {medication.quantity}</div>
