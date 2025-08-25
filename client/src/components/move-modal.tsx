@@ -23,13 +23,11 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Fetch all medications to get existing locations
   const { data: allMedications = [] } = useQuery({
     queryKey: ["/api/medications"],
     enabled: open,
   });
 
-  // Get unique locations excluding current medication's location
   const existingLocations = useMemo(() => {
     const locations = new Set<string>();
     allMedications.forEach((med: Medication) => {
@@ -53,13 +51,11 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
       queryClient.invalidateQueries({ queryKey: ["/api/medications"] });
       queryClient.invalidateQueries({ queryKey: ["/api/medications/low-stock"] });
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
-
       toast({
         title: "Success",
         description: `Successfully moved medication`,
         duration: 3000,
       });
-
       setMoveQuantity("");
       setDestinationLocation("");
       setSelectedExistingLocation("");
@@ -77,9 +73,7 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
 
   const handleMove = () => {
     if (!medication) return;
-
     const qtyNumber = typeof moveQuantity === "number" ? moveQuantity : parseInt(moveQuantity, 10);
-
     if (!moveQuantity || isNaN(qtyNumber) || qtyNumber < 1) {
       toast({
         title: "Error",
@@ -88,7 +82,6 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
       });
       return;
     }
-
     if (qtyNumber > medication.quantity) {
       toast({
         title: "Error",
@@ -97,7 +90,6 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
       });
       return;
     }
-
     const finalDestination = destinationLocation.trim() || selectedExistingLocation;
     if (!finalDestination) {
       toast({
@@ -107,7 +99,6 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
       });
       return;
     }
-
     if (finalDestination === medication.location) {
       toast({
         title: "Error",
@@ -116,7 +107,6 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
       });
       return;
     }
-
     moveMutation.mutate({
       medicationId: medication.id,
       quantity: qtyNumber,
@@ -132,9 +122,7 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
         : typeof moveQuantity === "number"
         ? moveQuantity
         : parseInt(moveQuantity, 10);
-    if (current < medication.quantity) {
-      setMoveQuantity(current + 1);
-    }
+    if (current < medication.quantity) setMoveQuantity(current + 1);
   };
 
   const decrementQuantity = () => {
@@ -144,9 +132,7 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
         : typeof moveQuantity === "number"
         ? moveQuantity
         : parseInt(moveQuantity, 10);
-    if (current > 1) {
-      setMoveQuantity(current - 1);
-    }
+    if (current > 1) setMoveQuantity(current - 1);
   };
 
   const capitalizeWords = (str: string) => str.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -167,7 +153,6 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
             Move Medication
           </DialogTitle>
         </DialogHeader>
-
         <div className="space-y-4">
           <div className="text-sm space-y-1">
             <div className="font-medium text-emerald-600">
@@ -177,18 +162,12 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
             <div className="text-muted-foreground">Current Location: {medication.location}</div>
             <div className="text-muted-foreground">Dose: {medication.dose}</div>
           </div>
-
           <div className="space-y-2">
             <Label htmlFor="move-quantity" className="text-sm font-medium">
               Quantity to Dispense
             </Label>
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={decrementQuantity}
-                disabled={decrementDisabled}
-              >
+              <Button variant="outline" size="sm" onClick={decrementQuantity} disabled={decrementDisabled}>
                 <Minus className="h-4 w-4 text-emerald-600" />
               </Button>
               <Input
@@ -199,31 +178,18 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
                 value={moveQuantity}
                 onChange={(e) => {
                   const raw = e.target.value;
-                  if (raw === "") {
-                    setMoveQuantity("");
-                    return;
-                  }
+                  if (raw === "") return setMoveQuantity("");
                   const parsed = parseInt(raw, 10);
-                  if (isNaN(parsed)) {
-                    setMoveQuantity("");
-                    return;
-                  }
-                  const clamped = Math.max(1, Math.min(parsed, medication.quantity));
-                  setMoveQuantity(clamped);
+                  if (isNaN(parsed)) return setMoveQuantity("");
+                  setMoveQuantity(Math.max(1, Math.min(parsed, medication.quantity)));
                 }}
                 className="w-20 text-center"
               />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={incrementQuantity}
-                disabled={incrementDisabled}
-              >
+              <Button variant="outline" size="sm" onClick={incrementQuantity} disabled={incrementDisabled}>
                 <Plus className="h-4 w-4 text-emerald-600" />
               </Button>
             </div>
           </div>
-
           {existingLocations.length > 0 && (
             <div className="space-y-2">
               <Label className="text-sm font-medium">Select Existing Location</Label>
@@ -247,7 +213,6 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
               </Select>
             </div>
           )}
-
           <div className="space-y-2">
             <Label htmlFor="destination-location" className="text-sm font-medium">
               {existingLocations.length > 0 ? "Or Enter New Location" : "Destination Location"}
@@ -257,31 +222,27 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
               placeholder="Enter new location"
               value={destinationLocation}
               onChange={(e) => {
-                setDestinationLocation(capitalizeWords(e.target.value));
-                if (e.target.value.trim()) {
-                  setSelectedExistingLocation("");
-                }
+                const val = capitalizeWords(e.target.value);
+                setDestinationLocation(val);
+                if (val.trim()) setSelectedExistingLocation("");
               }}
             />
           </div>
-
-          <div className="flex gap-2 pt-4">
-<Button variant="outline" onClick={() => onOpenChange(false)} className="flex-1">
-    Cancel
-  </Button>
-  <Button onClick={handleMove} disabled={moveMutation.isPending} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white">
-    <Check className="h-4 w-4 mr-2" />
-    Move
-  </Button>
-  <Button onClick={handleMove} disabled={moveMutation.isPending} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white">
-    <Check className="h-4 w-4 mr-2" />
-    Confirm Move
-  </Button>
-  <Button variant="outline" onClick={() => onOpenChange(false)} className="flex-1">
-    Cancel
-  </Button>
-</div>
-
+          <div className="pt-4">
+            <Button
+              onClick={handleMove}
+              disabled={moveMutation.isPending}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              <Check className="h-4 w-4 mr-2" />
+              Confirm Move
+            </Button>
+            <div className="mt-2 text-right">
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
