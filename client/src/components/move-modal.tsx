@@ -149,13 +149,13 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ArrowRightLeft className="h-5 w-5 text-emerald-600" />
+            <ArrowRightLeft className="h-5 w-5 text-green-600" />
             Move Medication
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="text-sm space-y-1">
-            <div className="font-medium text-emerald-600">
+            <div className="text-xs text-gray-500 mt-1">
               {medication.medicalName} ({medication.genericName})
             </div>
             <div className="text-muted-foreground">Available: {medication.quantity}</div>
@@ -168,7 +168,7 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
             </Label>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={decrementQuantity} disabled={decrementDisabled}>
-                <Minus className="h-4 w-4 text-emerald-600" />
+                <Minus className="h-4 w-4" />
               </Button>
               <Input
                 id="move-quantity"
@@ -186,7 +186,7 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
                 className="w-20 text-center"
               />
               <Button variant="outline" size="sm" onClick={incrementQuantity} disabled={incrementDisabled}>
-                <Plus className="h-4 w-4 text-emerald-600" />
+                <Plus className="h-4 w-4" />
               </Button>
             </div>
           </div>
