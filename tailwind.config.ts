@@ -5,6 +5,11 @@ export default {
   content: ["./client/index.html", "./client/src/**/*.{js,jsx,ts,tsx}"],
   theme: {
     extend: {
+      maxWidth: {
+        '8xl': '88rem',    // 1408px
+        '9xl': '96rem',    // 1536px
+        '10xl': '104rem',  // 1664px
+      },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
