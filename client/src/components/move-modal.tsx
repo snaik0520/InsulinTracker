@@ -31,7 +31,7 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
   const existingLocations = useMemo(() => {
     const locations = new Set<string>();
     allMedications.forEach((med: Medication) => {
-      if (med.location?.trim() && med.location !== medication?.location) {
+      if (med.location?.trim()) {
         locations.add(med.location.trim());
       }
     });
