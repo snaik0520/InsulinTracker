@@ -20,7 +20,7 @@ export const medicationTransactions = pgTable("medication_transactions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   medicationId: varchar("medication_id").notNull(),
   medicationName: text("medication_name").notNull(),
-  type: text("type").notNull(), // "addition", "dispensed", or "moved"
+  type: text("type").notNull(), // "addition" or "dispensed"
   quantity: integer("quantity").notNull(),
   dose: text("dose").notNull(), // Added dose field
   timestamp: timestamp("timestamp").notNull().default(sql`now()`),
