@@ -10,6 +10,12 @@ const dispenseSchema = z.object({
   quantity: z.number().min(1),
 });
 
+const moveSchema = z.object({
+  medicationId: z.string(),
+  quantity: z.number().min(1),
+  destinationLocation: z.string().min(1),
+});
+
 export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/medications", async (req, res) => {
     try {
@@ -51,7 +57,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.createTransaction({
         medicationId: medication.id,
         medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
-        type: "addition", // always “Added”
+        type: "addition", // always "Added"
         quantity: addedQuantity,
         dose: medication.dose,
         notes: isNewMedication
@@ -85,7 +91,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.createTransaction({
           medicationId: id,
           medicationName: `${updated.medicalName} (${updated.genericName}) - ${updated.administrativeForm}`,
-          type: "addition",  // logs "Added" for stock increases
+          type: "addition", // logs "Added" for stock increases
           quantity: addedQty,
           dose: updated.dose,
           notes: "Medication quantity increased in existing stock",
@@ -121,6 +127,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (e) {
       res.status(e instanceof z.ZodError ? 400 : 500).json({
         error: e instanceof z.ZodError ? "Invalid data" : "Failed to dispense medication",
+      });
+    }
+  });
+
+  app.post("/api/medications/move", async (req, res) => {
+    try {
+      const { medicationId, quantity, destinationLocation } = moveSchema.parse(req.body);
+      const result = await storage.moveMedication(medicationId, quantity, destinationLocation);
+
+      if (!result.success) {
+        return res.status(400).json({ error: result.error });
+      }
+
+      // Create transaction for the move operation
+      const sourceMed = result.sourceMedication!;
+      await storage.createTransaction({
+        medicationId: sourceMed.id,
+        medicationName: `${sourceMed.medicalName} (${sourceMed.genericName}) - ${sourceMed.administrativeForm}`,
+        type: "moved",
+        quantity,
+        dose: sourceMed.dose,
+        notes: `Moved ${quantity} units from "${sourceMed.location}" to "${destinationLocation}"`,
+      });
+
+      res.json({
+        sourceMedication: result.sourceMedication,
+        destinationMedication: result.destinationMedication,
+        message: result.message
+      });
+    } catch (e) {
+      res.status(e instanceof z.ZodError ? 400 : 500).json({
+        error: e instanceof z.ZodError ? "Invalid data" : "Failed to move medication",
       });
     }
   });
