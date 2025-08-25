@@ -277,7 +277,7 @@ export default function Inventory() {
                     <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Dose</th>
                     <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Quantity</th>
                     <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Expiration</th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-600">Location</th>
+                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Location</th>
                     <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Actions</th>
                   </tr>
                 </thead>
