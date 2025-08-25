@@ -357,7 +357,7 @@ export default function Inventory() {
                             <Button
                               onClick={() => handleDispense(medication)}
                               size="sm"
-                              className="bg-orange-200 hover:bg-orange-300 text-white mr-2"
+                              className="bg-orange-300 hover:bg-orange-300 text-white mr-2"
                               data-testid={`button-dispense-${medication.id}`}
                             >
                               <HandHeart className="h-4 w-4 mr-1" />
@@ -368,7 +368,7 @@ export default function Inventory() {
                             <Button
                               onClick={() => handleMove(medication)}
                               size="sm"
-                              className="bg-blue-200 hover:bg-blue-300 text-white"
+                              className="bg-blue-300 hover:bg-blue-300 text-white"
                               data-testid={`button-move-${medication.id}`}
                             >
                               <ArrowRightLeft className="h-4 w-4 mr-1" />
