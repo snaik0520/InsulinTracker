@@ -266,22 +266,22 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
           </div>
 
           <div className="flex gap-2 pt-4">
-            <Button
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              className="flex-1"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleMove}
-              disabled={moveMutation.isPending}
-              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
-            >
-              <Check className="h-4 w-4 mr-2" />
-              {moveMutation.isPending ? "Moving..." : "Move"}
-            </Button>
-          </div>
+<Button variant="outline" onClick={() => onOpenChange(false)} className="flex-1">
+    Cancel
+  </Button>
+  <Button onClick={handleMove} disabled={moveMutation.isPending} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white">
+    <Check className="h-4 w-4 mr-2" />
+    Move
+  </Button>
+  <Button onClick={handleMove} disabled={moveMutation.isPending} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white">
+    <Check className="h-4 w-4 mr-2" />
+    Confirm Move
+  </Button>
+  <Button variant="outline" onClick={() => onOpenChange(false)} className="flex-1">
+    Cancel
+  </Button>
+</div>
+
         </div>
       </DialogContent>
     </Dialog>
