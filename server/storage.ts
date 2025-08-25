@@ -16,6 +16,13 @@ export interface IStorage {
   getOutOfStockMedications(): Promise<Medication[]>;
   getTransactions(): Promise<MedicationTransaction[]>;
   createTransaction(transaction: InsertTransaction): Promise<MedicationTransaction>;
+  moveMedication(medicationId: string, quantity: number, destinationLocation: string): Promise<{
+    success: boolean;
+    error?: string;
+    sourceMedication?: Medication;
+    destinationMedication?: Medication;
+    message?: string;
+  }>;
   dispenseMedication?(medicationId: string, quantity: number): Promise<{ medication: Medication; transaction: MedicationTransaction }>;
 }
 
@@ -89,6 +96,76 @@ export class MemStorage implements IStorage {
     const updated = { ...medication, quantity: newQuantity };
     this.medications.set(id, updated);
     return updated;
+  }
+
+  async moveMedication(medicationId: string, quantity: number, destinationLocation: string): Promise<{
+    success: boolean;
+    error?: string;
+    sourceMedication?: Medication;
+    destinationMedication?: Medication;
+    message?: string;
+  }> {
+    const sourceMedication = this.medications.get(medicationId);
+    if (!sourceMedication) {
+      return { success: false, error: "Source medication not found" };
+    }
+
+    if (sourceMedication.quantity < quantity) {
+      return { success: false, error: "Insufficient stock in source location" };
+    }
+
+    if (sourceMedication.location === destinationLocation) {
+      return { success: false, error: "Source and destination locations cannot be the same" };
+    }
+
+    // Check if medication already exists at destination location
+    const existingAtDestination = Array.from(this.medications.values()).find(
+      med =>
+        med.genericName === sourceMedication.genericName &&
+        med.medicalName === sourceMedication.medicalName &&
+        med.dose === sourceMedication.dose &&
+        med.expirationDate === sourceMedication.expirationDate &&
+        med.location === destinationLocation &&
+        med.administrativeForm === sourceMedication.administrativeForm &&
+        med.type === sourceMedication.type
+    );
+
+    // Update source medication quantity
+    sourceMedication.quantity -= quantity;
+    this.medications.set(medicationId, sourceMedication);
+
+    let destinationMedication: Medication;
+
+    if (existingAtDestination) {
+      // Add to existing stock at destination
+      existingAtDestination.quantity += quantity;
+      this.medications.set(existingAtDestination.id, existingAtDestination);
+      destinationMedication = existingAtDestination;
+
+      return {
+        success: true,
+        sourceMedication,
+        destinationMedication,
+        message: `Successfully moved ${quantity} units. Added to existing stock at ${destinationLocation}.`
+      };
+    } else {
+      // Create new medication entry at destination
+      const newId = randomUUID();
+      destinationMedication = {
+        ...sourceMedication,
+        id: newId,
+        quantity,
+        location: destinationLocation
+      };
+      this.medications.set(newId, destinationMedication);
+
+      return {
+        success: true,
+        sourceMedication,
+        destinationMedication,
+        message: `Successfully moved ${quantity} units. Created new stock entry at ${destinationLocation}.`
+      };
+    }
   }
 
   async searchMedications(query: string): Promise<Medication[]> {
@@ -266,6 +343,80 @@ export class GoogleSheetsStorage implements IStorage {
     this.cache.set(id, med);
     await this.syncToSheets(Array.from(this.cache.values()));
     return med;
+  }
+
+  async moveMedication(medicationId: string, quantity: number, destinationLocation: string): Promise<{
+    success: boolean;
+    error?: string;
+    sourceMedication?: Medication;
+    destinationMedication?: Medication;
+    message?: string;
+  }> {
+    await this.syncFromSheets();
+
+    const sourceMedication = this.cache.get(medicationId);
+    if (!sourceMedication) {
+      return { success: false, error: "Source medication not found" };
+    }
+
+    if (sourceMedication.quantity < quantity) {
+      return { success: false, error: "Insufficient stock in source location" };
+    }
+
+    if (sourceMedication.location === destinationLocation) {
+      return { success: false, error: "Source and destination locations cannot be the same" };
+    }
+
+    // Check if medication already exists at destination location
+    const existingAtDestination = Array.from(this.cache.values()).find(
+      med =>
+        med.genericName === sourceMedication.genericName &&
+        med.medicalName === sourceMedication.medicalName &&
+        med.dose === sourceMedication.dose &&
+        med.expirationDate === sourceMedication.expirationDate &&
+        med.location === destinationLocation &&
+        med.administrativeForm === sourceMedication.administrativeForm &&
+        med.type === sourceMedication.type
+    );
+
+    // Update source medication quantity
+    sourceMedication.quantity -= quantity;
+    sourceMedication.lastModified = new Date().toISOString();
+    this.cache.set(medicationId, sourceMedication);
+
+    let destinationMedication: Medication;
+
+    if (existingAtDestination) {
+      // Add to existing stock at destination
+      existingAtDestination.quantity += quantity;
+      existingAtDestination.lastModified = new Date().toISOString();
+      this.cache.set(existingAtDestination.id, existingAtDestination);
+      destinationMedication = existingAtDestination;
+    } else {
+      // Create new medication entry at destination
+      const newId = randomUUID();
+      destinationMedication = {
+        ...sourceMedication,
+        id: newId,
+        quantity,
+        location: destinationLocation,
+        dateAdded: new Date().toISOString(),
+        lastModified: new Date().toISOString()
+      };
+      this.cache.set(newId, destinationMedication);
+    }
+
+    // Sync changes to Google Sheets
+    await this.syncToSheets(Array.from(this.cache.values()));
+
+    return {
+      success: true,
+      sourceMedication,
+      destinationMedication,
+      message: existingAtDestination 
+        ? `Successfully moved ${quantity} units. Added to existing stock at ${destinationLocation}.`
+        : `Successfully moved ${quantity} units. Created new stock entry at ${destinationLocation}.`
+    };
   }
 
   async searchMedications(query: string): Promise<Medication[]> {
