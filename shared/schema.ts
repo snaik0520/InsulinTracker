@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, integer, date, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { isValidISODate, formatToISODate } from "./dateUtils";
 
 export const medications = pgTable("medications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -12,49 +13,40 @@ export const medications = pgTable("medications", {
   quantity: integer("quantity").notNull(),
   expirationDate: date("expiration_date").notNull(),
   location: text("location").notNull(),
+  administrativeForm: text("administrative_form").notNull(),
 });
 
 export const medicationTransactions = pgTable("medication_transactions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   medicationId: varchar("medication_id").notNull(),
   medicationName: text("medication_name").notNull(),
-  type: text("type").notNull(), // "addition", "dispensed", or "move"
+  type: text("type").notNull(), // "addition", "dispensed", or "moved"
   quantity: integer("quantity").notNull(),
+  dose: text("dose").notNull(), // Added dose field
   timestamp: timestamp("timestamp").notNull().default(sql`now()`),
   notes: text("notes"),
-  fromLocation: text("from_location"), // for move transactions
-  toLocation: text("to_location"), // for move transactions
 });
 
-export const insertMedicationSchema = createInsertSchema(medications).omit({
-  id: true,
-});
+// Custom Zod schema with date validation and transformation
+export const insertMedicationSchema = createInsertSchema(medications)
+  .omit({
+    id: true,
+  })
+  .extend({
+    // Override expirationDate to ensure ISO format
+    expirationDate: z.string()
+      .refine(isValidISODate, {
+        message: "Expiration date must be in YYYY-MM-DD format"
+      })
+      .transform(formatToISODate)
+  });
 
 export const insertTransactionSchema = createInsertSchema(medicationTransactions).omit({
   id: true,
   timestamp: true,
 });
 
-// Move transaction schema with explicit validation
-export const moveTransactionSchema = z.object({
-  medicationId: z.string().min(1, "Medication ID is required"),
-  quantity: z.number().min(1, "Quantity must be at least 1"),
-  fromLocation: z.string().min(1, "From location is required"),
-  toLocation: z.string().min(1, "To location is required"),
-  notes: z.string().optional(),
-});
-
 export type InsertMedication = z.infer<typeof insertMedicationSchema>;
 export type Medication = typeof medications.$inferSelect;
 export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
 export type MedicationTransaction = typeof medicationTransactions.$inferSelect;
-export type MoveTransaction = z.infer<typeof moveTransactionSchema>;
-
-// Transaction type enum for better type safety
-export const TransactionType = {
-  ADDITION: "addition",
-  DISPENSED: "dispensed",
-  MOVE: "move"
-} as const;
-
-export type TransactionTypeEnum = typeof TransactionType[keyof typeof TransactionType];
