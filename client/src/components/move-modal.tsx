@@ -8,7 +8,7 @@ import { type Medication } from "@shared/schema";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowRightLeft, Minus, Plus, Check } from "lucide-react";
+import { MoveIcon , Minus, Plus, Check } from "lucide-react";
 
 interface MoveModalProps {
   open: boolean;
@@ -149,7 +149,7 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ArrowRightLeft className="h-5 w-5 text-green-600" />
+            <MoveIcon className="h-5 w-5 text-green-600" />
             Move Medication
           </DialogTitle>
         </DialogHeader>
