@@ -13,7 +13,7 @@ import { OutOfStockTracker } from "@/components/out-of-stock-tracker";
 import { TransactionHistory } from "@/components/transaction-history";
 import { type Medication } from "@shared/schema";
 import { formatToISODate } from "@shared/dateUtils";
-import { Search, Plus, HandHeart, Syringe, Zap, Clock, Scale, HelpCircle, List, ArrowRightLeft } from "lucide-react";
+import { Search, Plus, HandHeart, Syringe, Zap, Clock, Scale, HelpCircle, List, MoveIcon } from "lucide-react";
 import logo from "../assets/noor-logo.png";
 
 const typeIcons = {
@@ -371,7 +371,7 @@ export default function Inventory() {
                               className="bg-blue-500 hover:bg-blue-300 text-white"
                               data-testid={`button-move-${medication.id}`}
                             >
-                              <ArrowRightLeft className="h-4 w-4 mr-1" />
+                              <MoveIcon className="h-4 w-4 mr-1" />
                               Move
                             </Button>
                             
