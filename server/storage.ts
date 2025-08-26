@@ -1,197 +1,110 @@
 import { type Medication, type InsertMedication, type MedicationTransaction, type InsertTransaction } from "@shared/schema";
-import { formatToISODateTime, formatToISODate } from "@shared/dateUtils";
 import { randomUUID } from "crypto";
 
 export interface IStorage {
   getMedications(): Promise<Medication[]>;
   getMedicationById(id: string): Promise<Medication | undefined>;
-  createMedication(
-    medication: InsertMedication
-  ): Promise<{ medication: Medication; isNewMedication: boolean; addedQuantity: number }>;
+  createMedication(medication: InsertMedication): Promise<Medication>;
   updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined>;
-  updateMedication(id: string, updatedData: Partial<Medication>): Promise<Medication | undefined>;
+  updateMedicationLocation(id: string, newLocation: string): Promise<Medication | undefined>;
   searchMedications(query: string): Promise<Medication[]>;
   filterMedicationsByType(type: string): Promise<Medication[]>;
   getLowStockMedications(threshold?: number): Promise<Medication[]>;
   getOutOfStockMedications(): Promise<Medication[]>;
   getTransactions(): Promise<MedicationTransaction[]>;
   createTransaction(transaction: InsertTransaction): Promise<MedicationTransaction>;
-  moveMedication(medicationId: string, quantity: number, destinationLocation: string): Promise<{
-    success: boolean;
-    error?: string;
-    sourceMedication?: Medication;
-    destinationMedication?: Medication;
-    message?: string;
-  }>;
-  dispenseMedication?(medicationId: string, quantity: number): Promise<{ medication: Medication; transaction: MedicationTransaction }>;
 }
 
 export class MemStorage implements IStorage {
-  private medications = new Map<string, Medication>();
-  private transactions = new Map<string, MedicationTransaction>();
+  private medications: Map<string, Medication>;
+  private transactions: Map<string, MedicationTransaction>;
 
-  // Sort helper: oldest-expiration first
-  private sortByExpiration(meds: Medication[]): Medication[] {
-    return meds.sort((a, b) =>
-      new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime()
-    );
+  constructor() {
+    this.medications = new Map();
+    this.transactions = new Map();
   }
 
   async getMedications(): Promise<Medication[]> {
-    return this.sortByExpiration(Array.from(this.medications.values()));
+    return Array.from(this.medications.values());
   }
 
   async getMedicationById(id: string): Promise<Medication | undefined> {
     return this.medications.get(id);
   }
 
-  async createMedication(
-    insertMedication: InsertMedication
-  ): Promise<{ medication: Medication; isNewMedication: boolean; addedQuantity: number }> {
-    const medicationWithFormattedDate = {
-      ...insertMedication,
-      expirationDate: formatToISODate(insertMedication.expirationDate),
-    };
-
-    const existing = Array.from(this.medications.values()).find(
-      med =>
-        med.genericName === medicationWithFormattedDate.genericName &&
-        med.medicalName === medicationWithFormattedDate.medicalName &&
-        med.dose === medicationWithFormattedDate.dose &&
-        med.expirationDate === medicationWithFormattedDate.expirationDate &&
-        med.location === medicationWithFormattedDate.location
+  async createMedication(insertMedication: InsertMedication): Promise<Medication> {
+    // Check if medication with same name, dose, and expiration date already exists
+    const existingMedication = Array.from(this.medications.values()).find(med => 
+      med.genericName === insertMedication.genericName &&
+      med.medicalName === insertMedication.medicalName &&
+      med.dose === insertMedication.dose &&
+      med.expirationDate === insertMedication.expirationDate &&
+      med.location === insertMedication.location
     );
 
-    if (existing) {
-      const addedQuantity = medicationWithFormattedDate.quantity;
-      existing.quantity += addedQuantity;
-      this.medications.set(existing.id, existing);
-      return { medication: existing, isNewMedication: false, addedQuantity };
+    if (existingMedication) {
+      // Update existing medication quantity instead of creating new one
+      existingMedication.quantity += insertMedication.quantity;
+      this.medications.set(existingMedication.id, existingMedication);
+      return existingMedication;
     } else {
+      // Create new medication
       const id = randomUUID();
-      const medication: Medication = { ...medicationWithFormattedDate, id };
+      const medication: Medication = { ...insertMedication, id };
       this.medications.set(id, medication);
-      return { medication, isNewMedication: true, addedQuantity: medication.quantity };
+      return medication;
     }
-  }
-
-  async updateMedication(id: string, updatedData: Partial<Medication>): Promise<Medication | undefined> {
-    const medication = this.medications.get(id);
-    if (!medication) return undefined;
-    if (updatedData.expirationDate) {
-      updatedData.expirationDate = formatToISODate(updatedData.expirationDate);
-    }
-    for (const key of Object.keys(updatedData) as (keyof Medication)[]) {
-      if (updatedData[key] !== undefined) {
-        (medication as any)[key] = updatedData[key]!;
-      }
-    }
-    this.medications.set(id, medication);
-    return medication;
   }
 
   async updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined> {
     const medication = this.medications.get(id);
-    if (!medication) return undefined;
-    const updated = { ...medication, quantity: newQuantity };
-    this.medications.set(id, updated);
-    return updated;
+    if (!medication) {
+      return undefined;
+    }
+    
+    const updatedMedication = { ...medication, quantity: newQuantity };
+    this.medications.set(id, updatedMedication);
+    return updatedMedication;
   }
 
-  async moveMedication(medicationId: string, quantity: number, destinationLocation: string): Promise<{
-    success: boolean;
-    error?: string;
-    sourceMedication?: Medication;
-    destinationMedication?: Medication;
-    message?: string;
-  }> {
-    const sourceMedication = this.medications.get(medicationId);
-    if (!sourceMedication) {
-      return { success: false, error: "Source medication not found" };
+  async updateMedicationLocation(id: string, newLocation: string): Promise<Medication | undefined> {
+    const medication = this.medications.get(id);
+    if (!medication) {
+      return undefined;
     }
-
-    if (sourceMedication.quantity < quantity) {
-      return { success: false, error: "Insufficient stock in source location" };
-    }
-
-    if (sourceMedication.location === destinationLocation) {
-      return { success: false, error: "Source and destination locations cannot be the same" };
-    }
-
-    // Check if medication already exists at destination location
-    const existingAtDestination = Array.from(this.medications.values()).find(
-      med =>
-        med.genericName === sourceMedication.genericName &&
-        med.medicalName === sourceMedication.medicalName &&
-        med.dose === sourceMedication.dose &&
-        med.expirationDate === sourceMedication.expirationDate &&
-        med.location === destinationLocation &&
-        med.administrativeForm === sourceMedication.administrativeForm &&
-        med.type === sourceMedication.type
-    );
-
-    // Update source medication quantity
-    sourceMedication.quantity -= quantity;
-    this.medications.set(medicationId, sourceMedication);
-
-    let destinationMedication: Medication;
-
-    if (existingAtDestination) {
-      // Add to existing stock at destination
-      existingAtDestination.quantity += quantity;
-      this.medications.set(existingAtDestination.id, existingAtDestination);
-      destinationMedication = existingAtDestination;
-
-      return {
-        success: true,
-        sourceMedication,
-        destinationMedication,
-        message: `Successfully moved ${quantity} units. Added to existing stock at ${destinationLocation}.`
-      };
-    } else {
-      // Create new medication entry at destination
-      const newId = randomUUID();
-      destinationMedication = {
-        ...sourceMedication,
-        id: newId,
-        quantity,
-        location: destinationLocation
-      };
-      this.medications.set(newId, destinationMedication);
-
-      return {
-        success: true,
-        sourceMedication,
-        destinationMedication,
-        message: `Successfully moved ${quantity} units. Created new stock entry at ${destinationLocation}.`
-      };
-    }
+    
+    const updatedMedication = { ...medication, location: newLocation };
+    this.medications.set(id, updatedMedication);
+    return updatedMedication;
   }
 
   async searchMedications(query: string): Promise<Medication[]> {
-    const q = query.toLowerCase();
-    const filtered = Array.from(this.medications.values()).filter(
-      med => med.genericName.toLowerCase().includes(q) || med.medicalName.toLowerCase().includes(q)
+    const lowerQuery = query.toLowerCase();
+    return Array.from(this.medications.values()).filter(medication =>
+      medication.genericName.toLowerCase().includes(lowerQuery) ||
+      medication.medicalName.toLowerCase().includes(lowerQuery)
     );
-    return this.sortByExpiration(filtered);
   }
 
   async filterMedicationsByType(type: string): Promise<Medication[]> {
-    if (type === "all") return this.getMedications();
-    const filtered = Array.from(this.medications.values()).filter(med => med.type === type);
-    return this.sortByExpiration(filtered);
+    if (type === "all") {
+      return this.getMedications();
+    }
+    return Array.from(this.medications.values()).filter(medication =>
+      medication.type === type
+    );
   }
 
   async getLowStockMedications(threshold: number = 5): Promise<Medication[]> {
-    const filtered = Array.from(this.medications.values()).filter(
-      med => med.quantity > 0 && med.quantity <= threshold
+    return Array.from(this.medications.values()).filter(medication =>
+      medication.quantity > 0 && medication.quantity <= threshold
     );
-    return this.sortByExpiration(filtered);
   }
 
   async getOutOfStockMedications(): Promise<Medication[]> {
-    const filtered = Array.from(this.medications.values()).filter(med => med.quantity === 0);
-    return this.sortByExpiration(filtered);
+    return Array.from(this.medications.values()).filter(medication =>
+      medication.quantity === 0
+    );
   }
 
   async getTransactions(): Promise<MedicationTransaction[]> {
@@ -202,304 +115,17 @@ export class MemStorage implements IStorage {
 
   async createTransaction(insertTransaction: InsertTransaction): Promise<MedicationTransaction> {
     const id = randomUUID();
-    const transaction: MedicationTransaction = {
-      ...insertTransaction,
-      id,
-      timestamp: formatToISODateTime(),
+    const transaction: MedicationTransaction = { 
+      ...insertTransaction, 
+      id, 
+      timestamp: new Date() as any,
       notes: insertTransaction.notes || null,
+      fromLocation: insertTransaction.fromLocation || null,
+      toLocation: insertTransaction.toLocation || null
     };
     this.transactions.set(id, transaction);
     return transaction;
   }
-
-  async dispenseMedication(medicationId: string, quantity: number): Promise<{ medication: Medication; transaction: MedicationTransaction }> {
-    const med = await this.getMedicationById(medicationId);
-    if (!med) throw new Error("Medication not found");
-    if (med.quantity < quantity) throw new Error("Insufficient stock");
-    const updated = await this.updateMedicationQuantity(medicationId, med.quantity - quantity);
-    if (!updated) throw new Error("Update failed");
-    const tx = await this.createTransaction({
-      medicationId,
-      medicationName: `${med.medicalName} (${med.genericName}) - ${med.administrativeForm}`,
-      type: "dispensed",
-      quantity,
-      dose: med.dose,
-      notes: "Dispensed to patient",
-    });
-    return { medication: updated, transaction: tx };
-  }
 }
 
-export class GoogleSheetsStorage implements IStorage {
-  private webAppUrl: string;
-  private cache = new Map<string, Medication>();
-  private transactionCache = new Map<string, MedicationTransaction>();
-  private lastSync = 0;
-  private syncInterval = 30000;
-
-  constructor(webAppUrl: string) {
-    this.webAppUrl = webAppUrl;
-  }
-
-  private async syncFromSheets(): Promise<void> {
-    const now = Date.now();
-    if (now - this.lastSync < this.syncInterval) return;
-    try {
-      const res = await fetch(`${this.webAppUrl}?action=read`, { signal: AbortSignal.timeout(10000) });
-      const data = await res.json();
-      if (data.result === "success" && data.medications) {
-        this.cache.clear();
-        data.medications.forEach((med: Medication) => {
-          if (med.expirationDate) med.expirationDate = formatToISODate(med.expirationDate);
-          this.cache.set(med.id, med);
-        });
-        this.lastSync = now;
-      }
-    } catch {
-      // fallback to cache
-    }
-  }
-
-  private async syncToSheets(medications: Medication[]): Promise<void> {
-    try {
-      const rows = medications.map(med => ({ ...med, expirationDate: med.expirationDate }));
-      await fetch(this.webAppUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ action: "update", data: JSON.stringify(rows) }),
-        signal: AbortSignal.timeout(15000),
-      });
-    } catch {
-      // ignore
-    }
-  }
-
-  async getMedications(): Promise<Medication[]> {
-    await this.syncFromSheets();
-    return this.sortByExpiration(Array.from(this.cache.values()));
-  }
-
-  async getMedicationById(id: string): Promise<Medication | undefined> {
-    await this.syncFromSheets();
-    return this.cache.get(id);
-  }
-
-  async createMedication(
-    insertMedication: InsertMedication
-  ): Promise<{ medication: Medication; isNewMedication: boolean; addedQuantity: number }> {
-    await this.syncFromSheets();
-    const existing = Array.from(this.cache.values()).find(
-      med =>
-        med.genericName === insertMedication.genericName &&
-        med.medicalName === insertMedication.medicalName &&
-        med.dose === insertMedication.dose &&
-        med.expirationDate === insertMedication.expirationDate &&
-        med.location === insertMedication.location &&
-        med.administrativeForm === insertMedication.administrativeForm
-    );
-
-    let result: Medication;
-    let isNewMedication: boolean;
-    let addedQuantity: number;
-
-    if (existing) {
-      addedQuantity = insertMedication.quantity;
-      existing.quantity += addedQuantity;
-      existing.lastModified = new Date().toISOString();
-      this.cache.set(existing.id, existing);
-      result = existing;
-      isNewMedication = false;
-    } else {
-      const id = randomUUID();
-      result = { id, ...insertMedication, administrativeForm: insertMedication.administrativeForm, dateAdded: new Date().toISOString(), lastModified: new Date().toISOString() };
-      addedQuantity = insertMedication.quantity;
-      this.cache.set(id, result);
-      isNewMedication = true;
-    }
-
-    await this.syncToSheets(Array.from(this.cache.values()));
-    return { medication: result, isNewMedication, addedQuantity };
-  }
-
-  async updateMedication(id: string, updatedData: Partial<Medication>): Promise<Medication | undefined> {
-    await this.syncFromSheets();
-    const med = this.cache.get(id);
-    if (!med) return undefined;
-    for (const key of Object.keys(updatedData) as (keyof Medication)[]) {
-      if (updatedData[key] !== undefined) med[key] = updatedData[key]!;
-    }
-    med.lastModified = new Date().toISOString();
-    this.cache.set(id, med);
-    await this.syncToSheets(Array.from(this.cache.values()));
-    return med;
-  }
-
-  async updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined> {
-    await this.syncFromSheets();
-    const med = this.cache.get(id);
-    if (!med) return undefined;
-    med.quantity = newQuantity;
-    med.lastModified = new Date().toISOString();
-    this.cache.set(id, med);
-    await this.syncToSheets(Array.from(this.cache.values()));
-    return med;
-  }
-
-  async moveMedication(medicationId: string, quantity: number, destinationLocation: string): Promise<{
-    success: boolean;
-    error?: string;
-    sourceMedication?: Medication;
-    destinationMedication?: Medication;
-    message?: string;
-  }> {
-    await this.syncFromSheets();
-
-    const sourceMedication = this.cache.get(medicationId);
-    if (!sourceMedication) {
-      return { success: false, error: "Source medication not found" };
-    }
-
-    if (sourceMedication.quantity < quantity) {
-      return { success: false, error: "Insufficient stock in source location" };
-    }
-
-    if (sourceMedication.location === destinationLocation) {
-      return { success: false, error: "Source and destination locations cannot be the same" };
-    }
-
-    // Check if medication already exists at destination location
-    const existingAtDestination = Array.from(this.cache.values()).find(
-      med =>
-        med.genericName === sourceMedication.genericName &&
-        med.medicalName === sourceMedication.medicalName &&
-        med.dose === sourceMedication.dose &&
-        med.expirationDate === sourceMedication.expirationDate &&
-        med.location === destinationLocation &&
-        med.administrativeForm === sourceMedication.administrativeForm &&
-        med.type === sourceMedication.type
-    );
-
-    // Update source medication quantity
-    sourceMedication.quantity -= quantity;
-    sourceMedication.lastModified = new Date().toISOString();
-    this.cache.set(medicationId, sourceMedication);
-
-    let destinationMedication: Medication;
-
-    if (existingAtDestination) {
-      // Add to existing stock at destination
-      existingAtDestination.quantity += quantity;
-      existingAtDestination.lastModified = new Date().toISOString();
-      this.cache.set(existingAtDestination.id, existingAtDestination);
-      destinationMedication = existingAtDestination;
-    } else {
-      // Create new medication entry at destination
-      const newId = randomUUID();
-      destinationMedication = {
-        ...sourceMedication,
-        id: newId,
-        quantity,
-        location: destinationLocation,
-        dateAdded: new Date().toISOString(),
-        lastModified: new Date().toISOString()
-      };
-      this.cache.set(newId, destinationMedication);
-    }
-
-    // Sync changes to Google Sheets
-    await this.syncToSheets(Array.from(this.cache.values()));
-
-    return {
-      success: true,
-      sourceMedication,
-      destinationMedication,
-      message: existingAtDestination 
-        ? `Successfully moved ${quantity} units. Added to existing stock at ${destinationLocation}.`
-        : `Successfully moved ${quantity} units. Created new stock entry at ${destinationLocation}.`
-    };
-  }
-
-  async searchMedications(query: string): Promise<Medication[]> {
-    await this.syncFromSheets();
-    const q = query.toLowerCase();
-    const filtered = Array.from(this.cache.values()).filter(
-      med => med.genericName.toLowerCase().includes(q) || med.medicalName.toLowerCase().includes(q)
-    );
-    return this.sortByExpiration(filtered);
-  }
-
-  async filterMedicationsByType(type: string): Promise<Medication[]> {
-    await this.syncFromSheets();
-    if (type === "all") return this.getMedications();
-    const filtered = Array.from(this.cache.values()).filter(med => med.type === type);
-    return this.sortByExpiration(filtered);
-  }
-
-  async getLowStockMedications(threshold: number = 5): Promise<Medication[]> {
-    await this.syncFromSheets();
-    const filtered = Array.from(this.cache.values()).filter(med => med.quantity > 0 && med.quantity <= threshold);
-    return this.sortByExpiration(filtered);
-  }
-
-  async getOutOfStockMedications(): Promise<Medication[]> {
-    await this.syncFromSheets();
-    const filtered = Array.from(this.cache.values()).filter(med => med.quantity === 0);
-    return this.sortByExpiration(filtered);
-  }
-
-  async getTransactions(): Promise<MedicationTransaction[]> {
-    return Array.from(this.transactionCache.values()).sort(
-      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    );
-  }
-
-  async createTransaction(insertTransaction: InsertTransaction): Promise<MedicationTransaction> {
-    const id = randomUUID();
-    const transaction: MedicationTransaction = {
-      ...insertTransaction,
-      id,
-      timestamp: new Date().toISOString(),
-      notes: insertTransaction.notes || null,
-    };
-    this.transactionCache.set(id, transaction);
-    return transaction;
-  }
-
-  async dispenseMedication(medicationId: string, quantity: number): Promise<{ medication: Medication; transaction: MedicationTransaction }> {
-    await this.syncFromSheets();
-    const med = this.cache.get(medicationId);
-    if (!med) throw new Error("Medication not found");
-    if (med.quantity < quantity) throw new Error("Insufficient stock");
-    const updated = await this.updateMedicationQuantity(medicationId, med.quantity - quantity);
-    if (!updated) throw new Error("Update failed");
-    const tx = await this.createTransaction({
-      medicationId,
-      medicationName: `${med.medicalName} (${med.genericName}) - ${med.administrativeForm}`,
-      type: "dispensed",
-      quantity,
-      dose: med.dose,
-      notes: "Dispensed to patient",
-    });
-    return { medication: updated, transaction: tx };
-  }
-
-  // Re-use server-side sort helper in this class
-  private sortByExpiration(meds: Medication[]): Medication[] {
-    return meds.sort((a, b) =>
-      new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime()
-    );
-  }
-}
-
-// Instantiate storage based on environment
-const GOOGLE_APPS_SCRIPT_URL = process.env.GOOGLE_APPS_SCRIPT_URL || "";
-
-function createStorage(): IStorage {
-  if (GOOGLE_APPS_SCRIPT_URL.trim()) {
-    return new GoogleSheetsStorage(GOOGLE_APPS_SCRIPT_URL);
-  } else {
-    return new MemStorage();
-  }
-}
-
-export const storage = createStorage();
+export const storage = new MemStorage();
