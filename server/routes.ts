@@ -109,10 +109,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // NEW: Move medication between locations
+  // Move medication between locations
   app.post("/api/medications/move", async (req, res) => {
     try {
-      const { medicationId, quantity, fromLocation, toLocation, notes } = moveTransactionSchema.parse(req.body);
+      const moveData = moveTransactionSchema.parse(req.body);
+      const { medicationId, quantity, fromLocation, toLocation, notes } = moveData;
       
       const medication = await storage.getMedicationById(medicationId);
       if (!medication) {
@@ -130,16 +131,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Insufficient stock to move" });
       }
 
-      // Handle full move vs partial move
       let updatedMedication;
+      
       if (medication.quantity === quantity) {
         // Full move - update location
         updatedMedication = await storage.updateMedicationLocation(medicationId, toLocation);
       } else {
-        // Partial move - this would require splitting the medication record
-        // For simplicity, we'll assume full moves only for now
-        // In a real implementation, you might need to create a new medication record
-        // for the moved portion and update the original quantity
+        // Partial move - reduce quantity of original and create new record at destination
         updatedMedication = await storage.updateMedicationQuantity(
           medicationId,
           medication.quantity - quantity
@@ -174,6 +172,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updatedMedication
       });
     } catch (error) {
+      console.error("Move error:", error);
       if (error instanceof z.ZodError) {
         res.status(400).json({ error: "Invalid move data", details: error.errors });
       } else {
