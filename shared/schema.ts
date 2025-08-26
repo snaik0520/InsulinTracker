@@ -35,12 +35,12 @@ export const insertTransactionSchema = createInsertSchema(medicationTransactions
   timestamp: true,
 });
 
-// Add move transaction schema
+// Move transaction schema with explicit validation
 export const moveTransactionSchema = z.object({
-  medicationId: z.string(),
-  quantity: z.number().min(1),
-  fromLocation: z.string(),
-  toLocation: z.string(),
+  medicationId: z.string().min(1, "Medication ID is required"),
+  quantity: z.number().min(1, "Quantity must be at least 1"),
+  fromLocation: z.string().min(1, "From location is required"),
+  toLocation: z.string().min(1, "To location is required"),
   notes: z.string().optional(),
 });
 
