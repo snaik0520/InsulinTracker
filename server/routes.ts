@@ -145,7 +145,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.createTransaction({
         medicationId: sourceMed.id,
         medicationName: `${sourceMed.medicalName} (${sourceMed.genericName}) - ${sourceMed.administrativeForm}`,
-        type: "moved",
+        type: "move",
         quantity,
         dose: sourceMed.dose,
         notes: `Moved ${quantity} units from "${sourceMed.location}" to "${destinationLocation}"`,
