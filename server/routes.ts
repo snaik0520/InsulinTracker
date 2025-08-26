@@ -1,7 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertMedicationSchema, insertTransactionSchema, moveTransactionSchema, TransactionType } from "@shared/schema";
+import { GoogleSheetsStorage } from "./googleSheetsStorage";
+import { insertMedicationSchema } from "@shared/schema";
 import { z } from "zod";
 
 const dispenseSchema = z.object({
@@ -9,209 +10,185 @@ const dispenseSchema = z.object({
   quantity: z.number().min(1),
 });
 
+const moveSchema = z.object({
+  medicationId: z.string(),
+  quantity: z.number().min(1),
+  destinationLocation: z.string().min(1),
+});
+
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Get all medications
   app.get("/api/medications", async (req, res) => {
     try {
-      const medications = await storage.getMedications();
-      res.json(medications);
-    } catch (error) {
+      const meds = await storage.getMedications();
+      res.json(meds);
+    } catch {
       res.status(500).json({ error: "Failed to fetch medications" });
     }
   });
 
-  // Search medications
   app.get("/api/medications/search", async (req, res) => {
     try {
-      const query = req.query.q as string;
-      if (!query) {
-        return res.status(400).json({ error: "Search query is required" });
-      }
-      
-      const medications = await storage.searchMedications(query);
-      res.json(medications);
-    } catch (error) {
+      const q = req.query.q as string;
+      if (!q) return res.status(400).json({ error: "Search query is required" });
+      const results = await storage.searchMedications(q);
+      res.json(results);
+    } catch {
       res.status(500).json({ error: "Failed to search medications" });
     }
   });
 
-  // Filter medications by type
   app.get("/api/medications/filter/:type", async (req, res) => {
     try {
-      const type = req.params.type;
-      const medications = await storage.filterMedicationsByType(type);
-      res.json(medications);
-    } catch (error) {
+      const { type } = req.params;
+      const filtered = await storage.filterMedicationsByType(type);
+      res.json(filtered);
+    } catch {
       res.status(500).json({ error: "Failed to filter medications" });
     }
   });
 
-  // Add new medication
   app.post("/api/medications", async (req, res) => {
     try {
-      const medicationData = insertMedicationSchema.parse(req.body);
-      const medication = await storage.createMedication(medicationData);
-      
-      // Log the addition transaction
+      const data = insertMedicationSchema.parse(req.body);
+      const result = await storage.createMedication(data);
+      const { medication, isNewMedication, addedQuantity } = result;
+
+      // Single transaction for both new and stock increases
       await storage.createTransaction({
         medicationId: medication.id,
-        medicationName: `${medication.genericName} (${medication.medicalName})`,
-        type: TransactionType.ADDITION,
-        quantity: medication.quantity,
-        notes: "New medication added to inventory"
+        medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
+        type: "addition", // always "Added"
+        quantity: addedQuantity,
+        dose: medication.dose,
+        notes: isNewMedication
+          ? "New medication added to inventory"
+          : "Medication quantity increased in existing stock",
       });
-      
+
       res.status(201).json(medication);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        res.status(400).json({ error: "Invalid medication data", details: error.errors });
-      } else {
-        res.status(500).json({ error: "Failed to create medication" });
-      }
+    } catch (e) {
+      res.status(e instanceof z.ZodError ? 400 : 500).json({
+        error: e instanceof z.ZodError ? "Invalid data" : "Failed to create medication",
+      });
     }
   });
 
-  // Dispense medication
+  app.put("/api/medications/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const data = insertMedicationSchema.parse(req.body);
+
+      const original = await storage.getMedicationById(id);
+      if (!original) return res.status(404).json({ error: "Medication not found" });
+
+      const updated = await storage.updateMedication(id, data);
+      if (!updated) return res.status(404).json({ error: "Medication not found" });
+
+      const originalQty = original.quantity || 0;
+      const newQty = updated.quantity || 0;
+      if (newQty > originalQty) {
+        const addedQty = newQty - originalQty;
+        await storage.createTransaction({
+          medicationId: id,
+          medicationName: `${updated.medicalName} (${updated.genericName}) - ${updated.administrativeForm}`,
+          type: "addition", // logs "Added" for stock increases
+          quantity: addedQty,
+          dose: updated.dose,
+          notes: "Medication quantity increased in existing stock",
+        });
+      }
+
+      res.json(updated);
+    } catch (e) {
+      res.status(e instanceof z.ZodError ? 400 : 500).json({
+        error: e instanceof z.ZodError ? "Invalid data" : "Failed to update medication",
+      });
+    }
+  });
+
   app.post("/api/medications/dispense", async (req, res) => {
     try {
       const { medicationId, quantity } = dispenseSchema.parse(req.body);
-      
-      const medication = await storage.getMedicationById(medicationId);
-      if (!medication) {
-        return res.status(404).json({ error: "Medication not found" });
-      }
+      const med = await storage.getMedicationById(medicationId);
+      if (!med) return res.status(404).json({ error: "Medication not found" });
+      if (med.quantity < quantity) return res.status(400).json({ error: "Insufficient stock" });
 
-      if (medication.quantity < quantity) {
-        return res.status(400).json({ error: "Insufficient stock" });
-      }
-
-      const updatedMedication = await storage.updateMedicationQuantity(
-        medicationId,
-        medication.quantity - quantity
-      );
-
-      // Log the dispensing transaction
+      const updated = await storage.updateMedicationQuantity(medicationId, med.quantity - quantity);
       await storage.createTransaction({
-        medicationId: medication.id,
-        medicationName: `${medication.genericName} (${medication.medicalName})`,
-        type: TransactionType.DISPENSED,
-        quantity: quantity,
-        notes: `Dispensed to patient`
+        medicationId: med.id,
+        medicationName: `${med.medicalName} (${med.genericName}) - ${med.administrativeForm}`,
+        type: "dispensed",
+        quantity,
+        dose: med.dose,
+        notes: "Dispensed to patient",
       });
 
-      res.json(updatedMedication);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        res.status(400).json({ error: "Invalid dispense data", details: error.errors });
-      } else {
-        res.status(500).json({ error: "Failed to dispense medication" });
-      }
+      res.json(updated);
+    } catch (e) {
+      res.status(e instanceof z.ZodError ? 400 : 500).json({
+        error: e instanceof z.ZodError ? "Invalid data" : "Failed to dispense medication",
+      });
     }
   });
 
-  // Move medication between locations
   app.post("/api/medications/move", async (req, res) => {
     try {
-      const moveData = moveTransactionSchema.parse(req.body);
-      const { medicationId, quantity, fromLocation, toLocation, notes } = moveData;
-      
-      const medication = await storage.getMedicationById(medicationId);
-      if (!medication) {
-        return res.status(404).json({ error: "Medication not found" });
+      const { medicationId, quantity, destinationLocation } = moveSchema.parse(req.body);
+      const result = await storage.moveMedication(medicationId, quantity, destinationLocation);
+
+      if (!result.success) {
+        return res.status(400).json({ error: result.error });
       }
 
-      // Verify the medication is currently at the fromLocation
-      if (medication.location !== fromLocation) {
-        return res.status(400).json({ 
-          error: `Medication is not at ${fromLocation}. Current location: ${medication.location}` 
-        });
-      }
-
-      if (medication.quantity < quantity) {
-        return res.status(400).json({ error: "Insufficient stock to move" });
-      }
-
-      let updatedMedication;
-      
-      if (medication.quantity === quantity) {
-        // Full move - update location
-        updatedMedication = await storage.updateMedicationLocation(medicationId, toLocation);
-      } else {
-        // Partial move - reduce quantity of original and create new record at destination
-        updatedMedication = await storage.updateMedicationQuantity(
-          medicationId,
-          medication.quantity - quantity
-        );
-        
-        // Create a new medication record for the moved portion
-        await storage.createMedication({
-          genericName: medication.genericName,
-          medicalName: medication.medicalName,
-          type: medication.type,
-          dose: medication.dose,
-          quantity: quantity,
-          expirationDate: medication.expirationDate,
-          location: toLocation
-        });
-      }
-
-      // Log the move transaction
+      // Create transaction for the move operation
+      const sourceMed = result.sourceMedication!;
       await storage.createTransaction({
-        medicationId: medication.id,
-        medicationName: `${medication.genericName} (${medication.medicalName})`,
-        type: TransactionType.MOVE,
-        quantity: quantity,
-        notes: notes || `Moved from ${fromLocation} to ${toLocation}`,
-        fromLocation: fromLocation,
-        toLocation: toLocation
+        medicationId: sourceMed.id,
+        medicationName: `${sourceMed.medicalName} (${sourceMed.genericName}) - ${sourceMed.administrativeForm}`,
+        type: "moved",
+        quantity,
+        dose: sourceMed.dose,
+        notes: `Moved ${quantity} units from "${sourceMed.location}" to "${destinationLocation}"`,
       });
 
       res.json({
-        success: true,
-        message: `Successfully moved ${quantity} units from ${fromLocation} to ${toLocation}`,
-        updatedMedication
+        sourceMedication: result.sourceMedication,
+        destinationMedication: result.destinationMedication,
+        message: result.message
       });
-    } catch (error) {
-      console.error("Move error:", error);
-      if (error instanceof z.ZodError) {
-        res.status(400).json({ error: "Invalid move data", details: error.errors });
-      } else {
-        res.status(500).json({ error: "Failed to move medication" });
-      }
+    } catch (e) {
+      res.status(e instanceof z.ZodError ? 400 : 500).json({
+        error: e instanceof z.ZodError ? "Invalid data" : "Failed to move medication",
+      });
     }
   });
 
-  // Get low stock medications
-  app.get("/api/medications/low-stock", async (req, res) => {
+  app.get("/api/medications/low-stock", async (_, res) => {
     try {
-      const threshold = req.query.threshold ? parseInt(req.query.threshold as string) : 5;
-      const lowStockMedications = await storage.getLowStockMedications(threshold);
-      res.json(lowStockMedications);
-    } catch (error) {
+      const meds = await storage.getLowStockMedications();
+      res.json(meds);
+    } catch {
       res.status(500).json({ error: "Failed to fetch low stock medications" });
     }
   });
 
-  // Get out of stock medications
-  app.get("/api/medications/out-of-stock", async (req, res) => {
+  app.get("/api/medications/out-of-stock", async (_, res) => {
     try {
-      const outOfStockMedications = await storage.getOutOfStockMedications();
-      res.json(outOfStockMedications);
-    } catch (error) {
+      const meds = await storage.getOutOfStockMedications();
+      res.json(meds);
+    } catch {
       res.status(500).json({ error: "Failed to fetch out of stock medications" });
     }
   });
 
-  // Get medication transactions
-  app.get("/api/transactions", async (req, res) => {
+  app.get("/api/transactions", async (_, res) => {
     try {
-      const transactions = await storage.getTransactions();
-      res.json(transactions);
-    } catch (error) {
+      const txs = await storage.getTransactions();
+      res.json(txs);
+    } catch {
       res.status(500).json({ error: "Failed to fetch transactions" });
     }
   });
 
-  const httpServer = createServer(app);
-  return httpServer;
+  return createServer(app);
 }
