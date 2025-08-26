@@ -73,7 +73,12 @@ export function TransactionHistory() {
 
   const getTransactionDescription = (transaction: MedicationTransaction) => {
     if (transaction.type === "move") {
-      return "Location changed";
+      // Extract destination location from notes
+    // Notes format: "Moved X units from "source" to "destination""
+    const notes = transaction.notes || "";
+    const toMatch = notes.match(/to "([^"]+)"/);
+    const destination = toMatch ? toMatch[1] : "unknown location";
+    return `Moved to ${destination}`;
     } else if (transaction.type === "addition") {
       // Determine unit based on "pen" presence
       const isPen = transaction.medicationName.toLowerCase().includes("pen");
