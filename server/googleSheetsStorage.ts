@@ -325,6 +325,6 @@ export class GoogleSheetsStorage implements IStorage {
 }
 
 const GOOGLE_APPS_SCRIPT_URL = process.env.GOOGLE_APPS_SCRIPT_URL || '';
-export const storage: IStorage = GOOGLE_APPS_SCRIPT_URL.trim()
+export const storage: IStorage = GOOGLE_APPS_SCRIPT_URL
   ? new GoogleSheetsStorage(GOOGLE_APPS_SCRIPT_URL)
   : new MemStorage();
