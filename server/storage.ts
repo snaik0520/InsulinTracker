@@ -1,3 +1,4 @@
+// server/storage.ts
 import { type Medication, type InsertMedication, type MedicationTransaction, type InsertTransaction } from "@shared/schema";
 import { formatToISODateTime, formatToISODate } from "@shared/dateUtils";
 import { randomUUID } from "crypto";
@@ -78,14 +79,17 @@ export class MemStorage implements IStorage {
   async updateMedication(id: string, updatedData: Partial<Medication>): Promise<Medication | undefined> {
     const medication = this.medications.get(id);
     if (!medication) return undefined;
+
     if (updatedData.expirationDate) {
       updatedData.expirationDate = formatToISODate(updatedData.expirationDate);
     }
+
     for (const key of Object.keys(updatedData) as (keyof Medication)[]) {
       if (updatedData[key] !== undefined) {
         (medication as any)[key] = updatedData[key]!;
       }
     }
+
     this.medications.set(id, medication);
     return medication;
   }
@@ -93,6 +97,7 @@ export class MemStorage implements IStorage {
   async updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined> {
     const medication = this.medications.get(id);
     if (!medication) return undefined;
+
     const updated = { ...medication, quantity: newQuantity };
     this.medications.set(id, updated);
     return updated;
@@ -118,7 +123,6 @@ export class MemStorage implements IStorage {
       return { success: false, error: "Source and destination locations cannot be the same" };
     }
 
-    // Check if medication already exists at destination location
     const existingAtDestination = Array.from(this.medications.values()).find(
       med =>
         med.genericName === sourceMedication.genericName &&
@@ -130,18 +134,14 @@ export class MemStorage implements IStorage {
         med.type === sourceMedication.type
     );
 
-    // Update source medication quantity
     sourceMedication.quantity -= quantity;
     this.medications.set(medicationId, sourceMedication);
 
     let destinationMedication: Medication;
-
     if (existingAtDestination) {
-      // Add to existing stock at destination
       existingAtDestination.quantity += quantity;
       this.medications.set(existingAtDestination.id, existingAtDestination);
       destinationMedication = existingAtDestination;
-
       return {
         success: true,
         sourceMedication,
@@ -149,7 +149,6 @@ export class MemStorage implements IStorage {
         message: `Successfully moved ${quantity} units. Added to existing stock at ${destinationLocation}.`
       };
     } else {
-      // Create new medication entry at destination
       const newId = randomUUID();
       destinationMedication = {
         ...sourceMedication,
@@ -158,7 +157,6 @@ export class MemStorage implements IStorage {
         location: destinationLocation
       };
       this.medications.set(newId, destinationMedication);
-
       return {
         success: true,
         sourceMedication,
@@ -256,18 +254,51 @@ export class GoogleSheetsStorage implements IStorage {
         this.lastSync = now;
       }
     } catch {
-      // fallback to cache
+      // ignore
     }
   }
 
   private async syncToSheets(medications: Medication[]): Promise<void> {
     try {
-      const rows = medications.map(med => ({ ...med, expirationDate: med.expirationDate }));
       await fetch(this.webAppUrl, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ action: "update", data: JSON.stringify(rows) }),
-        signal: AbortSignal.timeout(15000),
+        body: new URLSearchParams({
+          action: "update",
+          data: JSON.stringify(medications.map(med => ({ ...med, expirationDate: med.expirationDate })))
+        }),
+        signal: AbortSignal.timeout(15000)
+      });
+    } catch {
+      // ignore
+    }
+  }
+
+  private async syncTransactionsFromSheets(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastSync < this.syncInterval) return;
+    try {
+      const res = await fetch(`${this.webAppUrl}?action=read_transactions`, { signal: AbortSignal.timeout(10000) });
+      const data = await res.json();
+      if (data.result === "success" && data.transactions) {
+        this.transactionCache.clear();
+        data.transactions.forEach((tx: MedicationTransaction) => this.transactionCache.set(tx.id, tx));
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  private async syncTransactionsToSheets(transactions: MedicationTransaction[]): Promise<void> {
+    try {
+      await fetch(this.webAppUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          action: "update_transactions",
+          data: JSON.stringify(transactions)
+        }),
+        signal: AbortSignal.timeout(15000)
       });
     } catch {
       // ignore
@@ -276,7 +307,7 @@ export class GoogleSheetsStorage implements IStorage {
 
   async getMedications(): Promise<Medication[]> {
     await this.syncFromSheets();
-    return this.sortByExpiration(Array.from(this.cache.values()));
+    return Array.from(this.cache.values());
   }
 
   async getMedicationById(id: string): Promise<Medication | undefined> {
@@ -311,7 +342,13 @@ export class GoogleSheetsStorage implements IStorage {
       isNewMedication = false;
     } else {
       const id = randomUUID();
-      result = { id, ...insertMedication, administrativeForm: insertMedication.administrativeForm, dateAdded: new Date().toISOString(), lastModified: new Date().toISOString() };
+      result = {
+        id,
+        ...insertMedication,
+        administrativeForm: insertMedication.administrativeForm,
+        dateAdded: new Date().toISOString(),
+        lastModified: new Date().toISOString()
+      };
       addedQuantity = insertMedication.quantity;
       this.cache.set(id, result);
       isNewMedication = true;
@@ -326,7 +363,9 @@ export class GoogleSheetsStorage implements IStorage {
     const med = this.cache.get(id);
     if (!med) return undefined;
     for (const key of Object.keys(updatedData) as (keyof Medication)[]) {
-      if (updatedData[key] !== undefined) med[key] = updatedData[key]!;
+      if (updatedData[key] !== undefined) {
+        (med as any)[key] = updatedData[key]!;
+      }
     }
     med.lastModified = new Date().toISOString();
     this.cache.set(id, med);
@@ -367,7 +406,6 @@ export class GoogleSheetsStorage implements IStorage {
       return { success: false, error: "Source and destination locations cannot be the same" };
     }
 
-    // Check if medication already exists at destination location
     const existingAtDestination = Array.from(this.cache.values()).find(
       med =>
         med.genericName === sourceMedication.genericName &&
@@ -379,21 +417,17 @@ export class GoogleSheetsStorage implements IStorage {
         med.type === sourceMedication.type
     );
 
-    // Update source medication quantity
     sourceMedication.quantity -= quantity;
     sourceMedication.lastModified = new Date().toISOString();
     this.cache.set(medicationId, sourceMedication);
 
     let destinationMedication: Medication;
-
     if (existingAtDestination) {
-      // Add to existing stock at destination
       existingAtDestination.quantity += quantity;
       existingAtDestination.lastModified = new Date().toISOString();
       this.cache.set(existingAtDestination.id, existingAtDestination);
       destinationMedication = existingAtDestination;
     } else {
-      // Create new medication entry at destination
       const newId = randomUUID();
       destinationMedication = {
         ...sourceMedication,
@@ -406,14 +440,12 @@ export class GoogleSheetsStorage implements IStorage {
       this.cache.set(newId, destinationMedication);
     }
 
-    // Sync changes to Google Sheets
     await this.syncToSheets(Array.from(this.cache.values()));
-
     return {
       success: true,
       sourceMedication,
       destinationMedication,
-      message: existingAtDestination 
+      message: existingAtDestination
         ? `Successfully moved ${quantity} units. Added to existing stock at ${destinationLocation}.`
         : `Successfully moved ${quantity} units. Created new stock entry at ${destinationLocation}.`
     };
@@ -425,43 +457,49 @@ export class GoogleSheetsStorage implements IStorage {
     const filtered = Array.from(this.cache.values()).filter(
       med => med.genericName.toLowerCase().includes(q) || med.medicalName.toLowerCase().includes(q)
     );
-    return this.sortByExpiration(filtered);
+    return filtered.sort((a, b) => new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime());
   }
 
   async filterMedicationsByType(type: string): Promise<Medication[]> {
     await this.syncFromSheets();
     if (type === "all") return this.getMedications();
-    const filtered = Array.from(this.cache.values()).filter(med => med.type === type);
-    return this.sortByExpiration(filtered);
+    return Array.from(this.cache.values())
+      .filter(med => med.type === type)
+      .sort((a, b) => new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime());
   }
 
   async getLowStockMedications(threshold: number = 5): Promise<Medication[]> {
     await this.syncFromSheets();
-    const filtered = Array.from(this.cache.values()).filter(med => med.quantity > 0 && med.quantity <= threshold);
-    return this.sortByExpiration(filtered);
+    return Array.from(this.cache.values())
+      .filter(med => med.quantity > 0 && med.quantity <= threshold)
+      .sort((a, b) => new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime());
   }
 
   async getOutOfStockMedications(): Promise<Medication[]> {
     await this.syncFromSheets();
-    const filtered = Array.from(this.cache.values()).filter(med => med.quantity === 0);
-    return this.sortByExpiration(filtered);
+    return Array.from(this.cache.values())
+      .filter(med => med.quantity === 0)
+      .sort((a, b) => new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime());
   }
 
   async getTransactions(): Promise<MedicationTransaction[]> {
+    await this.syncTransactionsFromSheets();
     return Array.from(this.transactionCache.values()).sort(
       (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     );
   }
 
   async createTransaction(insertTransaction: InsertTransaction): Promise<MedicationTransaction> {
+    await this.syncTransactionsFromSheets();
     const id = randomUUID();
     const transaction: MedicationTransaction = {
       ...insertTransaction,
       id,
-      timestamp: new Date().toISOString(),
+      timestamp: formatToISODateTime(),
       notes: insertTransaction.notes || null,
     };
     this.transactionCache.set(id, transaction);
+    await this.syncTransactionsToSheets(Array.from(this.transactionCache.values()));
     return transaction;
   }
 
@@ -482,16 +520,8 @@ export class GoogleSheetsStorage implements IStorage {
     });
     return { medication: updated, transaction: tx };
   }
-
-  // Re-use server-side sort helper in this class
-  private sortByExpiration(meds: Medication[]): Medication[] {
-    return meds.sort((a, b) =>
-      new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime()
-    );
-  }
 }
 
-// Instantiate storage based on environment
 const GOOGLE_APPS_SCRIPT_URL = process.env.GOOGLE_APPS_SCRIPT_URL || "";
 
 function createStorage(): IStorage {
