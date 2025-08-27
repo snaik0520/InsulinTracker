@@ -1,3 +1,4 @@
+// server/googleSheetsStorage.ts
 import { type Medication, type InsertMedication, type MedicationTransaction, type InsertTransaction } from "@shared/schema";
 import { formatToISODateTime, formatToISODate } from "@shared/dateUtils";
 import { randomUUID } from "crypto";
@@ -7,7 +8,6 @@ export interface IStorage {
   getMedicationById(id: string): Promise<Medication | undefined>;
   createMedication(medication: InsertMedication): Promise<Medication>;
   updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined>;
-  // NEW: Added missing updateMedication method to interface
   updateMedication(id: string, updatedData: Partial<Medication>): Promise<Medication | undefined>;
   searchMedications(query: string): Promise<Medication[]>;
   filterMedicationsByType(type: string): Promise<Medication[]>;
@@ -17,6 +17,7 @@ export interface IStorage {
 }
 
 export class MemStorage implements IStorage {
+  // ... existing MemStorage unchanged ...
   private medications: Map<string, Medication>;
   private transactions: Map<string, MedicationTransaction>;
 
@@ -34,14 +35,12 @@ export class MemStorage implements IStorage {
   }
 
   async createMedication(insertMedication: InsertMedication): Promise<Medication> {
-    // Ensure expiration date is in ISO format
     const medicationWithFormattedDate = {
       ...insertMedication,
       expirationDate: formatToISODate(insertMedication.expirationDate)
     };
 
-    // Check if medication with same name, dose, and expiration date already exists
-    const existingMedication = Array.from(this.medications.values()).find(med => 
+    const existingMedication = Array.from(this.medications.values()).find(med =>
       med.genericName === medicationWithFormattedDate.genericName &&
       med.medicalName === medicationWithFormattedDate.medicalName &&
       med.dose === medicationWithFormattedDate.dose &&
@@ -50,12 +49,10 @@ export class MemStorage implements IStorage {
     );
 
     if (existingMedication) {
-      // Update existing medication quantity instead of creating new one
       existingMedication.quantity += medicationWithFormattedDate.quantity;
       this.medications.set(existingMedication.id, existingMedication);
       return existingMedication;
     } else {
-      // Create new medication
       const id = randomUUID();
       const medication: Medication = { ...medicationWithFormattedDate, id };
       this.medications.set(id, medication);
@@ -63,35 +60,24 @@ export class MemStorage implements IStorage {
     }
   }
 
-  // NEW: Added updateMedication method for MemStorage
   async updateMedication(id: string, updatedData: Partial<Medication>): Promise<Medication | undefined> {
     const medication = this.medications.get(id);
-    if (!medication) {
-      return undefined;
-    }
-
-    // Ensure expiration date is formatted if provided
+    if (!medication) return undefined;
     if (updatedData.expirationDate) {
       updatedData.expirationDate = formatToISODate(updatedData.expirationDate);
     }
-
-    // Update fields that exist in updatedData
     for (const key of Object.keys(updatedData) as (keyof Medication)[]) {
       if (updatedData[key] !== undefined) {
         (medication as any)[key] = updatedData[key]!;
       }
     }
-
     this.medications.set(id, medication);
     return medication;
   }
 
   async updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined> {
     const medication = this.medications.get(id);
-    if (!medication) {
-      return undefined;
-    }
-
+    if (!medication) return undefined;
     const updatedMedication = { ...medication, quantity: newQuantity };
     this.medications.set(id, updatedMedication);
     return updatedMedication;
@@ -99,30 +85,24 @@ export class MemStorage implements IStorage {
 
   async searchMedications(query: string): Promise<Medication[]> {
     const lowerQuery = query.toLowerCase();
-    return Array.from(this.medications.values()).filter(medication =>
-      medication.genericName.toLowerCase().includes(lowerQuery) ||
-      medication.medicalName.toLowerCase().includes(lowerQuery)
+    return Array.from(this.medications.values()).filter(med =>
+      med.genericName.toLowerCase().includes(lowerQuery) ||
+      med.medicalName.toLowerCase().includes(lowerQuery)
     );
   }
 
   async filterMedicationsByType(type: string): Promise<Medication[]> {
-    if (type === "all") {
-      return this.getMedications();
-    }
-    return Array.from(this.medications.values()).filter(medication =>
-      medication.type === type
-    );
+    if (type === "all") return this.getMedications();
+    return Array.from(this.medications.values()).filter(med => med.type === type);
   }
 
   async getLowStockMedications(threshold: number = 5): Promise<Medication[]> {
-    return Array.from(this.medications.values()).filter(medication =>
-      medication.quantity > 0 && medication.quantity <= threshold
+    return Array.from(this.medications.values()).filter(med =>
+      med.quantity > 0 && med.quantity <= threshold
     );
   }
 
   async getOutOfStockMedications(): Promise<Medication[]> {
-    // FIXED: Return empty array instead of filtering for quantity === 0
-    // This prevents dummy/empty medications from appearing in the UI
     return [];
   }
 
@@ -134,10 +114,10 @@ export class MemStorage implements IStorage {
 
   async createTransaction(insertTransaction: InsertTransaction): Promise<MedicationTransaction> {
     const id = randomUUID();
-    const transaction: MedicationTransaction = { 
-      ...insertTransaction, 
-      id, 
-      timestamp: formatToISODateTime(), // Use ISO datetime format
+    const transaction: MedicationTransaction = {
+      ...insertTransaction,
+      id,
+      timestamp: formatToISODateTime(),
       notes: insertTransaction.notes || null
     };
     this.transactions.set(id, transaction);
@@ -150,7 +130,7 @@ export class GoogleSheetsStorage implements IStorage {
   private cache: Map<string, Medication> = new Map();
   private transactionCache: Map<string, MedicationTransaction> = new Map();
   private lastSync: number = 0;
-  private syncInterval: number = 30000; // 30 seconds
+  private syncInterval: number = 30000;
 
   constructor(webAppUrl: string) {
     this.webAppUrl = webAppUrl;
@@ -158,62 +138,84 @@ export class GoogleSheetsStorage implements IStorage {
 
   private async syncFromSheets(): Promise<void> {
     const now = Date.now();
-    if (now - this.lastSync < this.syncInterval) {
-      return; // Skip sync if too recent
-    }
-
+    if (now - this.lastSync < this.syncInterval) return;
     try {
       const response = await fetch(this.webAppUrl + '?action=read', {
         method: 'GET',
-        signal: AbortSignal.timeout(10000) // 10 second timeout
+        signal: AbortSignal.timeout(10000)
       });
-
       const data = await response.json();
-
       if (data.result === 'success' && data.medications) {
         this.cache.clear();
         data.medications.forEach((med: Medication) => {
-          // Ensure expiration dates are in ISO format when syncing from sheets
           if (med.expirationDate) {
             med.expirationDate = formatToISODate(med.expirationDate);
           }
           this.cache.set(med.id, med);
         });
         this.lastSync = now;
-      } else {
-        console.warn('Failed to sync from Google Sheets:', data.error);
       }
     } catch (error) {
-      console.error('Error syncing from Google Sheets:', error);
-      // Continue with cached data if sync fails
+      console.error('Error syncing medications from Google Sheets:', error);
     }
   }
 
   private async syncToSheets(medications: Medication[]): Promise<void> {
     try {
-      // Ensure all medications have ISO formatted dates before syncing
       const formattedMedications = medications.map(med => ({
         ...med,
         expirationDate: formatToISODate(med.expirationDate)
       }));
-
-      const response = await fetch(this.webAppUrl, {
+      await fetch(this.webAppUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
           action: 'update',
           data: JSON.stringify(formattedMedications)
         }),
-        signal: AbortSignal.timeout(15000) // 15 second timeout
+        signal: AbortSignal.timeout(15000)
       });
-
-      const result = await response.text();
-      console.log('Synced to Google Sheets:', result);
     } catch (error) {
-      console.error('Error syncing to Google Sheets:', error);
-      throw error; // Re-throw to handle at higher level
+      console.error('Error syncing medications to Google Sheets:', error);
+      throw error;
+    }
+  }
+
+  // NEW: transaction sync methods
+  private async syncTransactionsFromSheets(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastSync < this.syncInterval) return;
+    try {
+      const response = await fetch(this.webAppUrl + '?action=read_transactions', {
+        method: 'GET',
+        signal: AbortSignal.timeout(10000)
+      });
+      const data = await response.json();
+      if (data.result === 'success' && data.transactions) {
+        this.transactionCache.clear();
+        data.transactions.forEach((tx: MedicationTransaction) => {
+          this.transactionCache.set(tx.id, tx);
+        });
+      }
+    } catch (error) {
+      console.error('Error syncing transactions from Google Sheets:', error);
+    }
+  }
+
+  private async syncTransactionsToSheets(transactions: MedicationTransaction[]): Promise<void> {
+    try {
+      await fetch(this.webAppUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          action: 'update_transactions',
+          data: JSON.stringify(transactions)
+        }),
+        signal: AbortSignal.timeout(15000)
+      });
+    } catch (error) {
+      console.error('Error syncing transactions to Google Sheets:', error);
+      throw error;
     }
   }
 
@@ -229,165 +231,100 @@ export class GoogleSheetsStorage implements IStorage {
 
   async createMedication(insertMedication: InsertMedication): Promise<Medication> {
     await this.syncFromSheets();
-
-    // Ensure expiration date is in ISO format
-    const medicationWithFormattedDate = {
-      ...insertMedication,
-      expirationDate: formatToISODate(insertMedication.expirationDate)
-    };
-
-    // Check if medication with same properties already exists
-    const existingMedication = Array.from(this.cache.values()).find(med => 
-      med.genericName === medicationWithFormattedDate.genericName &&
-      med.medicalName === medicationWithFormattedDate.medicalName &&
-      med.dose === medicationWithFormattedDate.dose &&
-      med.expirationDate === medicationWithFormattedDate.expirationDate &&
-      med.location === medicationWithFormattedDate.location
+    const medData = { ...insertMedication, expirationDate: formatToISODate(insertMedication.expirationDate) };
+    const existing = Array.from(this.cache.values()).find(med =>
+      med.genericName === medData.genericName &&
+      med.medicalName === medData.medicalName &&
+      med.dose === medData.dose &&
+      med.expirationDate === medData.expirationDate &&
+      med.location === medData.location
     );
-
-    let resultMedication: Medication;
-
-    if (existingMedication) {
-      // Update existing medication quantity
-      existingMedication.quantity += medicationWithFormattedDate.quantity;
-      this.cache.set(existingMedication.id, existingMedication);
-      resultMedication = existingMedication;
+    let result: Medication;
+    if (existing) {
+      existing.quantity += medData.quantity;
+      this.cache.set(existing.id, existing);
+      result = existing;
     } else {
-      // Create new medication
       const id = randomUUID();
-      const medication: Medication = { ...medicationWithFormattedDate, id };
-      this.cache.set(id, medication);
-      resultMedication = medication;
+      result = { ...medData, id };
+      this.cache.set(id, result);
     }
-
-    // Sync to Google Sheets
-    try {
-      await this.syncToSheets(Array.from(this.cache.values()));
-    } catch (error) {
-      console.error('Failed to sync new medication to sheets:', error);
-      // Continue anyway - data is cached locally
-    }
-
-    return resultMedication;
+    await this.syncToSheets(Array.from(this.cache.values()));
+    return result;
   }
 
-  // NEW: Added missing updateMedication method for GoogleSheetsStorage
   async updateMedication(id: string, updatedData: Partial<Medication>): Promise<Medication | undefined> {
     await this.syncFromSheets();
     const med = this.cache.get(id);
     if (!med) return undefined;
-
-    // Ensure expiration date is formatted if provided
     if (updatedData.expirationDate) {
       updatedData.expirationDate = formatToISODate(updatedData.expirationDate);
     }
-
-    // Update fields that exist in updatedData
     for (const key of Object.keys(updatedData) as (keyof Medication)[]) {
       if (updatedData[key] !== undefined) {
         (med as any)[key] = updatedData[key]!;
       }
     }
-
     this.cache.set(id, med);
-
-    // Sync to Google Sheets
-    try {
-      await this.syncToSheets(Array.from(this.cache.values()));
-    } catch (error) {
-      console.error('Failed to sync medication update to sheets:', error);
-      // Continue anyway - data is cached locally
-    }
-
+    await this.syncToSheets(Array.from(this.cache.values()));
     return med;
   }
 
   async updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined> {
     await this.syncFromSheets();
-
-    const medication = this.cache.get(id);
-    if (!medication) {
-      return undefined;
-    }
-
-    const updatedMedication = { ...medication, quantity: newQuantity };
-    this.cache.set(id, updatedMedication);
-
-    // Sync to Google Sheets
-    try {
-      await this.syncToSheets(Array.from(this.cache.values()));
-    } catch (error) {
-      console.error('Failed to sync quantity update to sheets:', error);
-      // Continue anyway - data is cached locally
-    }
-
-    return updatedMedication;
+    const med = this.cache.get(id);
+    if (!med) return undefined;
+    med.quantity = newQuantity;
+    this.cache.set(id, med);
+    await this.syncToSheets(Array.from(this.cache.values()));
+    return med;
   }
 
   async searchMedications(query: string): Promise<Medication[]> {
     await this.syncFromSheets();
-
-    const lowerQuery = query.toLowerCase();
-    return Array.from(this.cache.values()).filter(medication =>
-      medication.genericName.toLowerCase().includes(lowerQuery) ||
-      medication.medicalName.toLowerCase().includes(lowerQuery)
+    const q = query.toLowerCase();
+    return Array.from(this.cache.values()).filter(med =>
+      med.genericName.toLowerCase().includes(q) ||
+      med.medicalName.toLowerCase().includes(q)
     );
   }
 
   async filterMedicationsByType(type: string): Promise<Medication[]> {
     await this.syncFromSheets();
-
-    if (type === "all") {
-      return this.getMedications();
-    }
-    return Array.from(this.cache.values()).filter(medication =>
-      medication.type === type
-    );
+    if (type === 'all') return this.getMedications();
+    return Array.from(this.cache.values()).filter(med => med.type === type);
   }
 
   async getLowStockMedications(threshold: number = 5): Promise<Medication[]> {
     await this.syncFromSheets();
-
-    return Array.from(this.cache.values()).filter(medication =>
-      medication.quantity > 0 && medication.quantity <= threshold
+    return Array.from(this.cache.values()).filter(med =>
+      med.quantity > 0 && med.quantity <= threshold
     );
   }
 
   async getTransactions(): Promise<MedicationTransaction[]> {
-    // For now, transactions are stored locally
-    // You could extend this to sync with another sheet tab if needed
+    await this.syncTransactionsFromSheets();
     return Array.from(this.transactionCache.values()).sort(
       (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     );
   }
 
   async createTransaction(insertTransaction: InsertTransaction): Promise<MedicationTransaction> {
+    await this.syncTransactionsFromSheets();
     const id = randomUUID();
-    const transaction: MedicationTransaction = { 
-      ...insertTransaction, 
-      id, 
-      timestamp: formatToISODateTime(), // Use ISO datetime format
+    const tx: MedicationTransaction = {
+      ...insertTransaction,
+      id,
+      timestamp: formatToISODateTime(),
       notes: insertTransaction.notes || null
     };
-    this.transactionCache.set(id, transaction);
-    return transaction;
+    this.transactionCache.set(id, tx);
+    await this.syncTransactionsToSheets(Array.from(this.transactionCache.values()));
+    return tx;
   }
 }
 
-// Configuration
 const GOOGLE_APPS_SCRIPT_URL = process.env.GOOGLE_APPS_SCRIPT_URL || '';
-
-// Create storage instance based on environment
-function createStorage(): IStorage {
-  // Use Google Sheets if URL is provided
-  if (GOOGLE_APPS_SCRIPT_URL && GOOGLE_APPS_SCRIPT_URL.trim() !== '') {
-    console.log('Using Google Sheets storage with URL:', GOOGLE_APPS_SCRIPT_URL);
-    return new GoogleSheetsStorage(GOOGLE_APPS_SCRIPT_URL);
-  } else {
-    console.log('Using in-memory storage (no Google Sheets URL provided)');
-    console.log('To use Google Sheets storage, set GOOGLE_APPS_SCRIPT_URL environment variable');
-    return new MemStorage();
-  }
-}
-
-export const storage = createStorage();
+export const storage: IStorage = GOOGLE_APPS_SCRIPT_URL.trim()
+  ? new GoogleSheetsStorage(GOOGLE_APPS_SCRIPT_URL)
+  : new MemStorage();
