@@ -120,7 +120,11 @@ export function OutOfStockTracker() {
                           variant="ghost"
                           size="sm"
                           className="text-red-600 hover:text-red-800 hover:bg-red-50"
-                          onClick={() => clearMedication(med.id)}
+                          onClick={() => {
+   if (window.confirm("Are you sure you want to remove this medication from the list?")) {
+     clearMedication(med.id);
+   }
+ }}
                           title="Clear from list"
                         >
                           <XCircle className="h-4 w-4" />
