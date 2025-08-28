@@ -25,6 +25,7 @@ export interface IStorage {
     message?: string;
   }>;
   dispenseMedication?(medicationId: string, quantity: number): Promise<{ medication: Medication; transaction: MedicationTransaction }>;
+  deleteMedication(id: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -226,6 +227,11 @@ export class MemStorage implements IStorage {
     });
     return { medication: updated, transaction: tx };
   }
+
+  async deleteMedication(id: string): Promise<boolean> {
+  const deleted = this.medications.delete(id);
+  return deleted;
+}
 }
 
 export class GoogleSheetsStorage implements IStorage {
@@ -520,6 +526,15 @@ export class GoogleSheetsStorage implements IStorage {
     });
     return { medication: updated, transaction: tx };
   }
+
+  async deleteMedication(id: string): Promise<boolean> {
+  await this.syncFromSheets();
+  const deleted = this.cache.delete(id);
+  if (deleted) {
+    await this.syncToSheets(Array.from(this.cache.values()));
+  }
+  return deleted;
+}
 }
 
 const GOOGLE_APPS_SCRIPT_URL = process.env.GOOGLE_APPS_SCRIPT_URL || "";
