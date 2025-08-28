@@ -152,7 +152,7 @@ app.delete("/api/medications/:id", async (req, res) => {
     await storage.createTransaction({
       medicationId: id,
       medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
-      type: "dispensed", // or create a new "removed" type if preferred
+      type: "removed", // or create a new "removed" type if preferred
       quantity: medication.quantity,
       dose: medication.dose,
       notes: "Medication removed from inventory (cleared from out-of-stock tracker)",
