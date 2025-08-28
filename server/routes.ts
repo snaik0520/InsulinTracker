@@ -131,6 +131,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Add this route in server/routes.ts
+app.delete("/api/medications/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Get the medication before deleting (for transaction record)
+    const medication = await storage.getMedicationById(id);
+    if (!medication) {
+      return res.status(404).json({ error: "Medication not found" });
+    }
+    
+    // Delete the medication
+    const deleted = await storage.deleteMedication(id);
+    if (!deleted) {
+      return res.status(404).json({ error: "Medication not found" });
+    }
+    
+    // Create a transaction record for the deletion
+    await storage.createTransaction({
+      medicationId: id,
+      medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
+      type: "dispensed", // or create a new "removed" type if preferred
+      quantity: medication.quantity,
+      dose: medication.dose,
+      notes: "Medication removed from inventory (cleared from out-of-stock tracker)",
+    });
+    
+    res.json({ success: true, message: "Medication deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ 
+      error: "Failed to delete medication",
+      details: error.toString()
+    });
+  }
+});
+
   app.post("/api/medications/move", async (req, res) => {
     try {
       const { medicationId, quantity, destinationLocation } = moveSchema.parse(req.body);
