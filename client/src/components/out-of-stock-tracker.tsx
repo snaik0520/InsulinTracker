@@ -15,19 +15,42 @@ export function OutOfStockTracker() {
     refetchInterval: 5000,
   });
 
-  const clearMedication = (id: string) => {
-    setClearedMedications(prev => new Set(prev).add(id));
-  };
+  // Replace the existing clearMedication function with this:
+const clearMedication = async (id: string) => {
+  try {
+    const response = await fetch(`/api/medications/${id}`, {
+      method: 'DELETE',
+    });
+    
+    if (response.ok) {
+      // Optionally show success message
+      console.log('Medication cleared successfully');
+      // The medication will disappear from the list on the next refetch (every 5 seconds)
+      // Or you can invalidate the query immediately:
+      // queryClient.invalidateQueries(["/api/medications"]);
+    } else {
+      console.error('Failed to clear medication');
+      // Handle error - maybe show a toast notification
+    }
+  } catch (error) {
+    console.error('Error clearing medication:', error);
+    // Handle network error
+  }
+};
 
-  // Only include truly out-of-stock items with valid expiration and name, excluding cleared ones
-  const outOfStockMedications = medications.filter(
-    med =>
-      (med.quantity ?? 0) === 0 &&
-      med.expirationDate &&
-      med.expirationDate !== "Invalid Date" &&
-      med.medicalName?.trim() !== "" &&
-      !clearedMedications.has(med.id)
-  );
+// Remove the local state management since we're now using the API:
+// Remove this line: const [clearedMedications, setClearedMedications] = useState<Set<string>>(new Set());
+
+// Update the filter to remove the clearedMedications check:
+const outOfStockMedications = medications.filter(
+  med =>
+    (med.quantity ?? 0) === 0 &&
+    med.expirationDate &&
+    med.expirationDate !== "Invalid Date" &&
+    med.medicalName?.trim() !== ""
+    // Remove: && !clearedMedications.has(med.id)
+);
+
 
   const count = outOfStockMedications.length;
 
