@@ -9,109 +9,126 @@ import { AlertCircle, ChevronDown, ChevronUp, Package, XCircle } from "lucide-re
 
 export function OutOfStockTracker() {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [clearedMedications, setClearedMedications] = useState<Set<string>>(new Set());
 
-  const { data: medications = [], isLoading } = useQuery<Medication[]>({
+  const { data: medications = [], isLoading } = useQuery({
     queryKey: ["/api/medications"],
-    refetchInterval: 5000,
+    refetchInterval: 5000, // Refetch every 5 seconds to keep data fresh
   });
 
-  // Only include truly out-of-stock items with valid expiration and name
-  const outOfStockMedications = medications.filter(
-    (med) =>
-      (med.quantity ?? 0) === 0 &&
-      med.expirationDate &&
-      med.expirationDate !== "Invalid Date" &&
-      med.medicalName?.trim() !== ""
-  );
-
-  const count = outOfStockMedications.length;
+  const clearMedication = (medicationId: string) => {
+    setClearedMedications(prev => new Set([...prev, medicationId]));
+  };
 
   if (isLoading) {
     return (
-      <Card className="mt-4">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-center py-2">
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-500"></div>
-            <span className="ml-2 text-sm text-gray-600">Checking stock status…</span>
+      <Card className="w-full">
+        <CardContent className="pt-6">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Package className="h-4 w-4" />
+            Checking stock levels...
           </div>
         </CardContent>
       </Card>
     );
   }
 
+  // Only include truly out-of-stock items with valid expiration and name, excluding cleared ones
+  const outOfStockMedications = medications.filter(
+    (med) =>
+      (med.quantity ?? 0) === 0 &&
+      med.expirationDate &&
+      med.expirationDate !== "Invalid Date" &&
+      med.medicalName?.trim() !== "" &&
+      !clearedMedications.has(med.id)
+  );
+
+  const outOfStockCount = outOfStockMedications.length;
+
   return (
-    <Card className="mt-4 border-l-4 border-l-red-500">
-      <CardContent className="p-4">
+    <Card className="w-full">
+      <CardContent className="pt-6">
         <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              {count === 0 ? (
-                <>
-                  <div className="flex items-center justify-center w-8 h-8 bg-green-100 rounded-full">
-                    <Package className="h-4 w-4 text-green-600" />
-                  </div>
+            {outOfStockCount === 0 ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <Package className="h-5 w-5 text-green-600" />
                   <div>
-                    <p className="text-sm font-medium text-green-800">No Medications Out of Stock</p>
-                    <p className="text-xs text-green-600">All medications have inventory</p>
+                    <div className="font-medium text-green-900">
+                      All Stock Levels Good
+                    </div>
+                    <div className="text-sm text-green-700">
+                      No medications out of stock
+                    </div>
                   </div>
-                </>
-              ) : (
-                <>
-                  <div className="flex items-center justify-center w-8 h-8 bg-red-100 rounded-full animate-pulse">
-                    <XCircle className="h-4 w-4 text-red-600" />
-                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="h-5 w-5 text-red-600" />
                   <div>
-                    <p className="text-sm font-medium text-red-800">
-                      <Badge variant="destructive" className="mr-2 bg-red-600">{count}</Badge>
-                      Medication{count > 1 ? "s" : ""} Out of Stock
-                    </p>
-                    <p className="text-xs text-red-600">
-                      {count === 1 ? "One medication is" : "Multiple medications are"} completely out of stock
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="destructive" className="bg-red-100 text-red-800">
+                        {outOfStockCount}
+                      </Badge>
+                      <span className="font-medium text-red-900">
+                        Medication{outOfStockCount > 1 ? 's' : ''} Out of Stock
+                      </span>
+                    </div>
+                    <div className="text-sm text-red-700">
+                      {outOfStockCount === 1 ? 'One medication is' : 'Multiple medications are'} completely out of stock
+                    </div>
                   </div>
-                </>
-              )}
-            </div>
+                </div>
+              </>
+            )}
 
-            {count > 0 && (
+            {outOfStockCount > 0 && (
               <CollapsibleTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-red-600 hover:text-red-800 hover:bg-red-50"
-                  data-testid="button-toggle-out-of-stock-tracker"
-                >
-                  <span className="text-xs mr-1">{isExpanded ? "Hide Details" : "View Details"}</span>
+                <Button variant="ghost" size="sm">
                   {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </Button>
               </CollapsibleTrigger>
             )}
           </div>
 
-          {count > 0 && (
+          {outOfStockCount > 0 && (
             <CollapsibleContent className="mt-4">
-              <div className="border-t border-red-200 pt-4">
-                <h4 className="text-sm font-medium text-red-800 mb-3 flex items-center">
-                  <AlertCircle className="h-4 w-4 mr-2" />
-                  Medications Completely Out of Stock:
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium text-red-900">
+                  Medications Requiring Attention:
                 </h4>
-                <div className="grid gap-3">
-                  {outOfStockMedications.map((med) => (
-                    <div
-                      key={med.id}
-                      className="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-100 hover:bg-red-100 transition-colors"
-                      data-testid={`tracker-out-of-stock-item-${med.id}`}
-                    >
+                
+                <div className="space-y-2">
+                  {outOfStockMedications.map((medication) => (
+                    <div key={medication.id} className="flex items-center justify-between p-3 bg-red-50 border border-red-200 rounded-lg">
                       <div className="flex-1">
-                        <div className="font-medium">{med.medicalName}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {med.genericName} • {med.dose} • {med.location}
+                        <div className="font-medium text-red-900">
+                          {medication.medicalName}
                         </div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          Expiration: {new Date(med.expirationDate).toLocaleDateString()}
+                        <div className="text-sm text-red-700">
+                          {medication.genericName} • {medication.dose} • {medication.location}
+                        </div>
+                        <div className="text-xs text-red-600 mt-1">
+                          Expiration: {new Date(medication.expirationDate).toLocaleDateString()}
                         </div>
                       </div>
-                      <Badge variant="destructive" className="text-xs bg-red-600">0 left</Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="destructive" className="bg-red-100 text-red-800">
+                          0 left
+                        </Badge>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => clearMedication(medication.id)}
+                          className="h-8 w-8 p-0 text-red-400 hover:text-red-600 hover:bg-red-100"
+                          title="Clear from list"
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
