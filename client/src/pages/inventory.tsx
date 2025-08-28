@@ -121,6 +121,13 @@ export default function Inventory() {
       filtered = filtered.filter((med) => med.type === selectedType);
     }
 
+    // Sort by expiration date ascending (oldest first)
+    filtered.sort((a, b) => {
+      const da = new Date(a.expirationDate).getTime();
+      const db = new Date(b.expirationDate).getTime();
+      return da - db;
+    });
+    
     return filtered;
   }, [medications, searchQuery, selectedType]);
 
