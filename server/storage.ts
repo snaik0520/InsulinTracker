@@ -182,15 +182,53 @@ export class MemStorage implements IStorage {
   }
 
   async getLowStockMedications(threshold: number = 5): Promise<Medication[]> {
-    const filtered = Array.from(this.medications.values()).filter(
-      med => med.quantity > 0 && med.quantity <= threshold
+    // 1. Group by identity key (ignore expiration)
+    const grouped = new Map<string, Medication>();
+
+    for (const med of this.medications.values()) {
+      const key = [
+        med.genericName,
+        med.medicalName,
+        med.dose,
+        med.location
+      ].join("|");
+
+      if (!grouped.has(key)) {
+        // Clone without expirationDate or choose one arbitrarily
+        grouped.set(key, { ...med, expirationDate: med.expirationDate, quantity: 0 });
+      }
+
+      // Sum quantities across batches
+      grouped.get(key)!.quantity += med.quantity;
+    }
+
+    // 2. Filter summed quantities for low‐stock
+    return Array.from(grouped.values()).filter(m =>
+      m.quantity > 0 && m.quantity <= threshold
     );
-    return this.sortByExpiration(filtered);
   }
 
   async getOutOfStockMedications(): Promise<Medication[]> {
-    const filtered = Array.from(this.medications.values()).filter(med => med.quantity === 0);
-    return this.sortByExpiration(filtered);
+    // Aggregate across expiration dates
+    const grouped = new Map<string, Medication>();
+
+    for (const med of this.medications.values()) {
+      const key = [
+        med.genericName,
+        med.medicalName,
+        med.dose,
+        med.location
+      ].join("|");
+
+      if (!grouped.has(key)) {
+        grouped.set(key, { ...med, expirationDate: med.expirationDate, quantity: 0 });
+      }
+
+      grouped.get(key)!.quantity += med.quantity;
+    }
+
+    // Return only fully depleted groups
+    return Array.from(grouped.values()).filter(m => m.quantity === 0);
   }
 
   async getTransactions(): Promise<MedicationTransaction[]> {
