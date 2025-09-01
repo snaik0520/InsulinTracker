@@ -95,34 +95,57 @@ export function LowStockTicker() {
                   Medications Requiring Attention:
                 </h4>
                 <div className="grid gap-3">
-                  {lowStockMedications.map((medication) => (
-                    <div
-                      key={medication.id}
-                      className="flex items-center justify-between p-3 bg-orange-50 rounded-lg border border-orange-100 hover:bg-orange-100 transition-colors"
-                      data-testid={`ticker-low-stock-item-${medication.id}`}
-                    >
-                      <div className="flex-1">
-                        <div className="font-medium">
-  {medication.medicalName}
-</div>
-<div className="text-sm text-muted-foreground">
-  {medication.genericName} • {medication.dose} • All Locations
-</div>
+                  {(() => {
+  // Group medications by medicalName and dose
+  const grouped = new Map<string, {
+    medication: typeof lowStockMedications[0];
+    totalQuantity: number;
+    genericNames: Set<string>;
+  }>();
 
-                        <div className="text-xs text-gray-500 mt-1">
-                          Total across all locations and expiration dates
-                        </div>
-                      </div>
-                      <div className="text-right ml-4">
-                        <Badge 
-                          variant="destructive" 
-                          className="text-xs"
-                        >
-                          {medication.quantity} left
-                        </Badge>
-                      </div>
-                    </div>
-                  ))}
+  lowStockMedications.forEach((medication) => {
+    const key = `${medication.medicalName}|${medication.dose}`;
+    
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        medication,
+        totalQuantity: 0,
+        genericNames: new Set()
+      });
+    }
+    
+    const group = grouped.get(key)!;
+    group.totalQuantity += medication.quantity;
+    if (medication.genericName) {
+      group.genericNames.add(medication.genericName);
+    }
+  });
+
+  return Array.from(grouped.values()).map((group) => (
+    <div
+      key={`${group.medication.medicalName}-${group.medication.dose}`}
+      className="flex items-center justify-between p-3 bg-white rounded-lg border border-orange-200"
+    >
+      <div className="flex-1">
+        <div className="font-medium text-gray-900">
+          {group.medication.medicalName}
+        </div>
+        <div className="text-sm text-gray-600 mt-1">
+          {Array.from(group.genericNames).join(', ')} • {group.medication.dose} • All Locations
+        </div>
+        <div className="text-xs text-gray-500 mt-1">
+          Total across all locations and expiration dates
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <Badge variant="secondary" className="bg-orange-100 text-orange-700">
+          {group.totalQuantity} left
+        </Badge>
+      </div>
+    </div>
+  ));
+})()}
+
                 </div>
               </div>
             </CollapsibleContent>
