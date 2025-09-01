@@ -106,11 +106,11 @@ export function LowStockTicker() {
   {medication.medicalName}
 </div>
 <div className="text-sm text-muted-foreground">
-  {medication.genericName} • {medication.dose} • {medication.location}
+  {medication.genericName} • {medication.dose} • All Locations
 </div>
 
                         <div className="text-xs text-gray-500 mt-1">
-                          Expiration: {new Date(medication.expirationDate).toLocaleDateString()}
+                          Total across all locations and expiration dates
                         </div>
                       </div>
                       <div className="text-right ml-4">
