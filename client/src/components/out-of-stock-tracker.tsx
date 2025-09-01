@@ -52,7 +52,16 @@ const outOfStockMedications = medications.filter(
 );
 
 
-  const count = outOfStockMedications.length;
+  // Calculate the actual number of grouped medications that will be displayed
+const count = (() => {
+  const grouped = new Map<string, boolean>();
+  outOfStockMedications.forEach((medication) => {
+    const key = `${medication.medicalName}|${medication.dose}`;
+    grouped.set(key, true);
+  });
+  return grouped.size;
+})();
+
 
   if (isLoading) {
     return (
