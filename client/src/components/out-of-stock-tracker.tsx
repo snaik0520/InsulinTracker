@@ -122,39 +122,71 @@ const outOfStockMedications = medications.filter(
                   Medications Completely Out of Stock:
                 </h4>
                 <div className="space-y-3">
-                  {outOfStockMedications.map(med => (
-                    <div
-                      key={med.id}
-                      className="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-100 hover:bg-red-100 transition-colors"
-                      data-testid={`tracker-out-of-stock-item-${med.id}`}
-                    >
-                      <div className="flex-1">
-                        <div className="font-medium">{med.medicalName}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {med.genericName} • {med.dose} • All Locations
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1">
-                          Total across all locations and expiration dates
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Badge variant="destructive" className="text-xs bg-red-600">0 left</Badge>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-red-600 hover:text-red-800 hover:bg-red-50"
-                          onClick={() => {
-   if (window.confirm("Are you sure you want to remove this medication from the list?")) {
-     clearMedication(med.id);
-   }
- }}
-                          title="Clear from list"
-                        >
-                          <XCircle className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+                  {(() => {
+  // Group medications by medicalName and dose
+  const grouped = new Map<string, {
+    medication: typeof outOfStockMedications[0];
+    totalQuantity: number;
+    genericNames: Set<string>;
+    ids: string[];
+  }>();
+
+  outOfStockMedications.forEach((med) => {
+    const key = `${med.medicalName}|${med.dose}`;
+    
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        medication: med,
+        totalQuantity: 0,
+        genericNames: new Set(),
+        ids: []
+      });
+    }
+    
+    const group = grouped.get(key)!;
+    group.totalQuantity += med.quantity;
+    group.ids.push(med.id);
+    if (med.genericName) {
+      group.genericNames.add(med.genericName);
+    }
+  });
+
+  return Array.from(grouped.values()).map((group) => (
+    <div 
+      key={`${group.medication.medicalName}-${group.medication.dose}`} 
+      className="flex items-center justify-between p-3 bg-white rounded-lg border border-red-200"
+    >
+      <div className="flex-1">
+        <div className="font-medium text-gray-900">
+          {group.medication.medicalName}
+        </div>
+        <div className="text-sm text-gray-600 mt-1">
+          {Array.from(group.genericNames).join(', ')} • {group.medication.dose} • All Locations
+        </div>
+        <div className="text-xs text-gray-500 mt-1">
+          Total across all locations and expiration dates
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <Badge variant="secondary" className="bg-red-100 text-red-700">
+          0 left
+        </Badge>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={() => {
+            // Clear all entries for this medication group
+            group.ids.forEach(id => clearMedication(id));
+          }}
+          className="text-red-600 border-red-200 hover:bg-red-50"
+        >
+          Clear
+        </Button>
+      </div>
+    </div>
+  ));
+})()}
+
                 </div>
               </div>
             </CollapsibleContent>
