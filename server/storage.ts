@@ -182,54 +182,55 @@ export class MemStorage implements IStorage {
   }
 
   async getLowStockMedications(threshold: number = 5): Promise<Medication[]> {
-    // 1. Group by identity key (ignore expiration)
-    const grouped = new Map<string, Medication>();
+  // 1. Group by medication identity (ignore expiration AND location)
+  const grouped = new Map<string, Medication>();
 
-    for (const med of this.medications.values()) {
-      const key = [
-        med.genericName,
-        med.medicalName,
-        med.dose,
-        med.location
-      ].join("|");
+  for (const med of this.medications.values()) {
+    const key = [
+      med.genericName,
+      med.medicalName,
+      med.dose
+    ].join("|");
 
-      if (!grouped.has(key)) {
-        // Clone without expirationDate or choose one arbitrarily
-        grouped.set(key, { ...med, expirationDate: med.expirationDate, quantity: 0 });
-      }
-
-      // Sum quantities across batches
-      grouped.get(key)!.quantity += med.quantity;
+    if (!grouped.has(key)) {
+      // Use the first medication found as the representative entry
+      grouped.set(key, { ...med, quantity: 0 });
     }
 
-    // 2. Filter summed quantities for low‐stock
-    return Array.from(grouped.values()).filter(m =>
-      m.quantity > 0 && m.quantity <= threshold
-    );
+    // Sum quantities across all locations and expiration dates
+    grouped.get(key)!.quantity += med.quantity;
   }
+
+  // 2. Filter summed quantities for low‐stock
+  return Array.from(grouped.values()).filter(m =>
+    m.quantity > 0 && m.quantity <= threshold
+  );
+}
+
 
   async getOutOfStockMedications(): Promise<Medication[]> {
-    // Aggregate across expiration dates
-    const grouped = new Map<string, Medication>();
+  // Aggregate across expiration dates AND locations
+  const grouped = new Map<string, Medication>();
 
-    for (const med of this.medications.values()) {
-      const key = [
-        med.genericName,
-        med.medicalName,
-        med.dose,
-        med.location
-      ].join("|");
+  for (const med of this.medications.values()) {
+    const key = [
+      med.genericName,
+      med.medicalName,
+      med.dose
+    ].join("|");
 
-      if (!grouped.has(key)) {
-        grouped.set(key, { ...med, expirationDate: med.expirationDate, quantity: 0 });
-      }
-
-      grouped.get(key)!.quantity += med.quantity;
+    if (!grouped.has(key)) {
+      // Use the first medication found as the representative entry
+      grouped.set(key, { ...med, quantity: 0 });
     }
 
-    // Return only fully depleted groups
-    return Array.from(grouped.values()).filter(m => m.quantity === 0);
+    grouped.get(key)!.quantity += med.quantity;
   }
+
+  // Return only fully depleted groups
+  return Array.from(grouped.values()).filter(m => m.quantity === 0);
+}
+
 
   async getTransactions(): Promise<MedicationTransaction[]> {
     return Array.from(this.transactions.values()).sort(
