@@ -131,10 +131,10 @@ const outOfStockMedications = medications.filter(
                       <div className="flex-1">
                         <div className="font-medium">{med.medicalName}</div>
                         <div className="text-sm text-muted-foreground">
-                          {med.genericName} • {med.dose} • {med.location}
+                          {med.genericName} • {med.dose} • All Locations
                         </div>
                         <div className="text-xs text-gray-500 mt-1">
-                          Expiration: {new Date(med.expirationDate).toLocaleDateString()}
+                          Total across all locations and expiration dates
                         </div>
                       </div>
                       <div className="flex items-center space-x-2">
