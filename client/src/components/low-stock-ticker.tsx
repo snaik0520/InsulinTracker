@@ -28,7 +28,15 @@ export function LowStockTicker() {
     );
   }
 
-  const lowStockCount = lowStockMedications.length;
+  // Calculate the actual number of grouped medications that will be displayed
+const lowStockCount = (() => {
+  const grouped = new Map<string, boolean>();
+  lowStockMedications.forEach((medication) => {
+    const key = `${medication.medicalName}|${medication.dose}`;
+    grouped.set(key, true);
+  });
+  return grouped.size;
+})();
 
   return (
     <Card className="mt-6 border-l-4 border-l-orange-500">
