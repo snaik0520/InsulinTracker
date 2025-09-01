@@ -33,9 +33,11 @@ const lowStockCount = (() => {
   const grouped = new Map<string, boolean>();
   lowStockMedications.forEach((medication) => {
     const key = `${medication.medicalName}|${medication.dose}`;
-    grouped.set(key, true);
+    grouped.set(key, (grouped.get(key) || 0) + medication.quantity);
   });
-  return grouped.size;
+  
+  // Count only groups with 5 or less total quantity
+  return Array.from(grouped.values()).filter(total => total > 0 && total <= 5).length;
 })();
 
   return (
