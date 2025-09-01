@@ -131,7 +131,12 @@ const lowStockCount = (() => {
     }
   });
 
-  return Array.from(grouped.values()).map((group) => (
+  // Filter grouped medications to only show those with 5 or less total quantity
+  const filteredGroups = Array.from(grouped.values()).filter(group => 
+    group.totalQuantity > 0 && group.totalQuantity <= 5
+  );
+
+  return filteredGroups.map((group) => (
     <div
       key={`${group.medication.medicalName}-${group.medication.dose}`}
       className="flex items-center justify-between p-3 bg-white rounded-lg border border-orange-200"
@@ -155,6 +160,7 @@ const lowStockCount = (() => {
     </div>
   ));
 })()}
+
 
                 </div>
               </div>
