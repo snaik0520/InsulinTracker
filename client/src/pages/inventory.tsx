@@ -356,7 +356,7 @@ export default function Inventory() {
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
-                            <div className="min-w-[175px] max-w-[275px] break-words whitespace-normal">
+                            <div className="min-w-[115px] max-w-[200px] break-words whitespace-normal">
                               {medication.location ?? "—"}
                             </div>
                           </td>
