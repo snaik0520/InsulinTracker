@@ -355,8 +355,8 @@ export default function Inventory() {
                               {medication.expirationDate ? formatToISODate(medication.expirationDate) : "—"}
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
-                            <div className="min-w-[80px] max-w-[130px] break-words whitespace-normal">
+                          <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-450">
+                            <div className="min-w-[80px] max-w-[120px] break-words whitespace-normal">
                               {medication.location ?? "—"}
                             </div>
                           </td>
