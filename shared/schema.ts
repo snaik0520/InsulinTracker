@@ -23,6 +23,7 @@ export const medicationTransactions = pgTable("medication_transactions", {
   type: text("type").notNull(), // "addition", "dispensed", or "moved"
   quantity: integer("quantity").notNull(),
   dose: text("dose").notNull(), // Added dose field
+  expirationDate: date("expiration_date"), // ADD THIS LINE
   timestamp: timestamp("timestamp").notNull().default(sql`now()`),
   notes: text("notes"),
 });
