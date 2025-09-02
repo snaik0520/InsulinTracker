@@ -357,10 +357,10 @@ export default function Inventory() {
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
-                            <div className="max-w-96 break-words whitespace-normal leading-tight text-sm">
-                              <div className="break-words max-w-[120px]">{medication.location ?? "—"}</div>
-                            </div>
-                          </td>
+                            <div className="break-words max-w-[120px]">
+    {medication.location ?? "—"}
+  </div>
+</td>
                           <td className="px-6 py-4 whitespace-nowrap text-center">
                             <Button
                               onClick={() => handleDispense(medication)}
