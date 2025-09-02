@@ -275,121 +275,113 @@ export default function Inventory() {
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Medication</th>
-                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Administrative form</th>
-                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Insulin type</th>
-                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Dose</th>
-                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Quantity</th>
-                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Expiration</th>
-                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Location</th>
-                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredMedications.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
-                        {searchQuery || selectedType !== "all"
-                          ? "No medications found matching your criteria."
-                          : "No medications in inventory. Add your first medication to get started."}
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredMedications.map((medication) => {
-                      const days = calculateDaysUntilExpiration(medication.expirationDate);
-                      const expClass = getExpirationClassName(days);
-                      const Icon = typeIcons[medication.type as keyof typeof typeIcons];
-                      const adminValue =
-                        (medication.administrativeForm as string | undefined) ||
-                        (medication.formType as string | undefined) ||
-                        "";
-                      const adminDisplay =
-                        adminValue.toLowerCase() === "pen"
-                          ? "Pen"
-                          : adminValue.toLowerCase() === "injection"
-                          ? "Injection"
-                          : "—";
-                      const rowTint = getRowClassName(medication.type);
+  <table className="w-full">
+    <thead>
+      <tr className="border-b">
+        <th className="text-left py-2 px-4">Medication</th>
+        <th className="text-left py-2 px-4">Administrative form</th>
+        <th className="text-left py-2 px-4">Insulin type</th>
+        <th className="text-left py-2 px-4">Dose</th>
+        <th className="text-left py-2 px-4">Quantity</th>
+        <th className="text-left py-2 px-4">Expiration</th>
+        <th className="text-left py-2 px-4">Location</th>
+        <th className="text-left py-2 px-4">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {filteredMedications.length === 0 ? (
+        <tr>
+          <td colSpan={8} className="text-center py-8 text-gray-500">
+            {searchQuery || selectedType !== "all"
+              ? "No medications found matching your criteria."
+              : "No medications in inventory. Add your first medication to get started."}
+          </td>
+        </tr>
+      ) : (
+        filteredMedications.map((medication) => {
+          const days = calculateDaysUntilExpiration(medication.expirationDate);
+          const expClass = getExpirationClassName(days);
+          const Icon = typeIcons[medication.type as keyof typeof typeIcons];
+          const adminValue =
+            (medication.administrativeForm as string | undefined) ||
+            (medication.formType as string | undefined) ||
+            "";
+          const adminDisplay =
+            adminValue.toLowerCase() === "pen"
+              ? "Pen"
+              : adminValue.toLowerCase() === "injection"
+              ? "Injection"
+              : "—";
+          const rowTint = getRowClassName(medication.type);
 
-                      return (
-                        <tr key={medication.id} className={`${rowTint} hover:bg-gray-50`}>
-                          <td className="px-6 py-4 whitespace-nowrap text-center">
-                            <div>
-                              <div className="text-sm font-medium text-gray-900">
-                                {medication.medicalName ?? medication.genericName ?? "—"}
-                              </div>
-                              <div className="text-sm text-gray-500">
-                                {medication.genericName ? `(${medication.genericName})` : ""}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
-                            {adminDisplay}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-center">
-                            <div className="flex justify-center">
-                              <Badge className={(badgeColors as any)[medication.type]}>
-                                <Icon className="h-3 w-3 mr-1" />
-                                {(typeLabels as any)[medication.type]}
-                              </Badge>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
-                            {medication.dose}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-center">
-                            <span
-                              className={`text-sm font-medium ${
-                                medication.quantity! <= 5 ? "text-red-600" : "text-gray-900"
-                              }`}
-                            >
-                              {medication.quantity}
-                            </span>
-                            {medication.quantity! <= 5 && <div className="text-xs text-red-600">Low stock</div>}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-center">
-                            <span className={`${expClass} text-sm`}>
-                              {medication.expirationDate ? formatToISODate(medication.expirationDate) : "—"}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
-                            <div className="max-w-96 break-words whitespace-normal leading-tight text-sm">
-                              {medication.location ?? "—"}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-center">
-                            <Button
-                              onClick={() => handleDispense(medication)}
-                              size="sm"
-                              className="bg-orange-500 hover:bg-orange-300 text-white mr-2"
-                              data-testid={`button-dispense-${medication.id}`}
-                            >
-                              <HandHeart className="h-4 w-4 mr-1" />
-                              Dispense
-                            </Button>
-
-                            
-                            <Button
-                              onClick={() => handleMove(medication)}
-                              size="sm"
-                              className="bg-blue-500 hover:bg-blue-300 text-white"
-                              data-testid={`button-move-${medication.id}`}
-                            >
-                              <MoveIcon className="h-4 w-4 mr-1" />
-                              Move
-                            </Button>
-                            
-                          </td>
-                        </tr>
-                      );
-                    })
+          return (
+            <tr key={medication.id} className={`border-b hover:bg-gray-50 ${rowTint}`}>
+              <td className="py-3 px-4">
+                <div className="break-words">
+                  <div className="font-medium">
+                    {medication.medicalName ?? medication.genericName ?? "—"}
+                  </div>
+                  {medication.genericName && (
+                    <div className="text-sm text-gray-600">
+                      ({medication.genericName})
+                    </div>
                   )}
-                </tbody>
-              </table>
-            </div>
+                </div>
+              </td>
+              <td className="py-3 px-4">{adminDisplay}</td>
+              <td className="py-3 px-4">
+                <div className="flex items-center gap-2">
+                  <Icon className="w-4 h-4" />
+                  <Badge className={(badgeColors as any)[medication.type]}>
+                    {(typeLabels as any)[medication.type]}
+                  </Badge>
+                </div>
+              </td>
+              <td className="py-3 px-4">{medication.dose}</td>
+              <td className="py-3 px-4">
+                <div className="flex items-center gap-2">
+                  {medication.quantity}
+                  {medication.quantity! <= 5 && (
+                    <Badge variant="destructive" className="text-xs">
+                      Low stock
+                    </Badge>
+                  )}
+                </div>
+              </td>
+              <td className={`py-3 px-4 ${expClass}`}>
+                {medication.expirationDate ? formatToISODate(medication.expirationDate) : "—"}
+              </td>
+              <td className="py-3 px-4">
+                <div className="break-words max-w-[120px]">
+                  {medication.location ?? "—"}
+                </div>
+              </td>
+              <td className="py-3 px-4">
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleDispense(medication)}
+                  >
+                    <Syringe className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleMove(medication)}
+                  >
+                    <MoveIcon className="w-4 h-4" />
+                  </Button>
+                </div>
+              </td>
+            </tr>
+          );
+        })
+      )}
+    </tbody>
+  </table>
+</div>
+
           </CardContent>
         </Card>
 
