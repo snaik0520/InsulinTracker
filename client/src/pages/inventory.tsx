@@ -166,7 +166,7 @@ export default function Inventory() {
   return (
     <div className="bg-gray-50 min-h-screen">
       <header className="bg-gradient-to-r from-rose-50 via-white to-emerald-50 shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-15xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
               <Syringe className="h-6 w-6 text-rose-600 mr-3" />
@@ -185,8 +185,8 @@ export default function Inventory() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Card className="mb-8 w-full max-w-13xl mx-auto">
+      <main className="max-w-15xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <Card className="mb-8 w-full max-w-15xl mx-auto">
           <CardContent className="p-6">
             <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between space-y-4 lg:space-y-0 lg:space-x-4">
               <div className="flex-1 max-w-lg">
@@ -268,7 +268,7 @@ export default function Inventory() {
           </CardContent>
         </Card>
 
-        <Card className="w-full max-w-13xl mx-auto">
+        <Card className="w-full max-w-15xl mx-auto">
           <CardHeader>
             <CardTitle className="text-lg font-medium text-gray-900">Current insulin inventory</CardTitle>
             <p className="text-sm text-gray-600">Manage and track all insulin medications in your clinic</p>
@@ -356,7 +356,7 @@ export default function Inventory() {
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
-                            <div className="max-w-96 break-words whitespace-normal leading-tight text-sm">
+                            <div className="min-w-[80px] max-w-[130px] break-words whitespace-normal">
                               {medication.location ?? "—"}
                             </div>
                           </td>
@@ -393,11 +393,11 @@ export default function Inventory() {
           </CardContent>
         </Card>
 
-        <div id="low-stock-ticker" className="mt-8 w-full max-w-13xl mx-auto">
+        <div id="low-stock-ticker" className="mt-8 w-full max-w-15xl mx-auto">
           <LowStockTicker />
         </div>
 
-        <div className="w-full max-w-13xl mx-auto">
+        <div className="w-full max-w-15xl mx-auto">
   <OutOfStockTracker />
 </div>
       </main>
