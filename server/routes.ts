@@ -55,15 +55,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Single transaction for both new and stock increases
       await storage.createTransaction({
-        medicationId: medication.id,
-        medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
-        type: "addition", // always "Added"
-        quantity: addedQuantity,
-        dose: medication.dose,
-        notes: isNewMedication
-          ? "New medication added to inventory"
-          : "Medication quantity increased in existing stock",
-      });
+  medicationId: medication.id,
+  medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
+  type: "addition",
+  quantity: addedQuantity,
+  dose: medication.dose,
+  expirationDate: medication.expirationDate, // ADD THIS LINE
+  notes: isNewMedication
+    ? "New medication added to inventory"
+    : "Medication quantity increased in existing stock",
+});
 
       res.status(201).json(medication);
     } catch (e) {
@@ -89,13 +90,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (newQty > originalQty) {
         const addedQty = newQty - originalQty;
         await storage.createTransaction({
-          medicationId: id,
-          medicationName: `${updated.medicalName} (${updated.genericName}) - ${updated.administrativeForm}`,
-          type: "addition", // logs "Added" for stock increases
-          quantity: addedQty,
-          dose: updated.dose,
-          notes: "Medication quantity increased in existing stock",
-        });
+  medicationId: id,
+  medicationName: `${updated.medicalName} (${updated.genericName}) - ${updated.administrativeForm}`,
+  type: "addition",
+  quantity: addedQty,
+  dose: updated.dose,
+  expirationDate: updated.expirationDate, // ADD THIS LINE
+  notes: "Medication quantity increased in existing stock",
+});
+
       }
 
       res.json(updated);
@@ -115,13 +118,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const updated = await storage.updateMedicationQuantity(medicationId, med.quantity - quantity);
       await storage.createTransaction({
-        medicationId: med.id,
-        medicationName: `${med.medicalName} (${med.genericName}) - ${med.administrativeForm}`,
-        type: "dispensed",
-        quantity,
-        dose: med.dose,
-        notes: "Dispensed to patient",
-      });
+  medicationId: med.id,
+  medicationName: `${med.medicalName} (${med.genericName}) - ${med.administrativeForm}`,
+  type: "dispensed",
+  quantity,
+  dose: med.dose,
+  expirationDate: med.expirationDate, // ADD THIS LINE
+  notes: "Dispensed to patient",
+});
+
 
       res.json(updated);
     } catch (e) {
@@ -150,13 +155,15 @@ app.delete("/api/medications/:id", async (req, res) => {
     
     // Create a transaction record for the deletion
     await storage.createTransaction({
-      medicationId: id,
-      medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
-      type: "removed", // or create a new "removed" type if preferred
-      quantity: medication.quantity,
-      dose: medication.dose,
-      notes: "Medication removed from inventory (cleared from out-of-stock tracker)",
-    });
+  medicationId: id,
+  medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
+  type: "removed",
+  quantity: medication.quantity,
+  dose: medication.dose,
+  expirationDate: medication.expirationDate, // ADD THIS LINE
+  notes: "Medication removed from inventory",
+});
+
     
     res.json({ success: true, message: "Medication deleted successfully" });
   } catch (error) {
@@ -179,13 +186,15 @@ app.delete("/api/medications/:id", async (req, res) => {
       // Create transaction for the move operation
       const sourceMed = result.sourceMedication!;
       await storage.createTransaction({
-        medicationId: sourceMed.id,
-        medicationName: `${sourceMed.medicalName} (${sourceMed.genericName}) - ${sourceMed.administrativeForm}`,
-        type: "move",
-        quantity,
-        dose: sourceMed.dose,
-        notes: `Moved ${quantity} units from "${sourceMed.location}" to "${destinationLocation}"`,
-      });
+  medicationId: sourceMed.id,
+  medicationName: `${sourceMed.medicalName} (${sourceMed.genericName}) - ${sourceMed.administrativeForm}`,
+  type: "move",
+  quantity,
+  dose: sourceMed.dose,
+  expirationDate: sourceMed.expirationDate, // ADD THIS LINE
+  notes: `Moved ${quantity} units from "${sourceMed.location}" to "${destinationLocation}"`,
+});
+
 
       res.json({
         sourceMedication: result.sourceMedication,
