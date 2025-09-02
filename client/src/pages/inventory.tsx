@@ -185,7 +185,7 @@ export default function Inventory() {
         </div>
       </header>
 
-      <main className="max-w-15xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-10xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Card className="mb-8 w-full max-w-19xl mx-auto">
           <CardContent className="p-6">
             <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between space-y-4 lg:space-y-0 lg:space-x-4">
