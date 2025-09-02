@@ -275,7 +275,7 @@ export default function Inventory() {
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 table-fixed">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Medication</th>
@@ -284,7 +284,7 @@ export default function Inventory() {
                     <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Dose</th>
                     <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Quantity</th>
                     <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Expiration</th>
-                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600 w-[500px]">Location</th>
+                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600 w-[200px]">Location</th>
                     <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Actions</th>
                   </tr>
                 </thead>
