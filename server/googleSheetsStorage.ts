@@ -97,10 +97,33 @@ export class MemStorage implements IStorage {
   }
 
   async getLowStockMedications(threshold: number = 5): Promise<Medication[]> {
-    return Array.from(this.medications.values()).filter(med =>
-      med.quantity > 0 && med.quantity <= threshold
-    );
+  await this.syncFromSheets();
+  
+  // Group by medication identity (ignore expiration AND location)
+  const grouped = new Map<string, Medication>();
+
+  for (const med of this.cache.values()) {
+    const key = [
+      med.genericName,
+      med.medicalName,
+      med.dose
+    ].join("|");
+
+    if (!grouped.has(key)) {
+      // Use the first medication found as the representative entry
+      grouped.set(key, { ...med, quantity: 0 });
+    }
+
+    // Sum quantities across all locations and expiration dates
+    grouped.get(key)!.quantity += med.quantity;
   }
+
+  // Filter summed quantities for low‐stock
+  return Array.from(grouped.values()).filter(m =>
+    m.quantity > 0 && m.quantity <= threshold
+  );
+}
+
 
   async getOutOfStockMedications(): Promise<Medication[]> {
     return [];
