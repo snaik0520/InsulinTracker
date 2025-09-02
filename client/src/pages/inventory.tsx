@@ -186,7 +186,7 @@ export default function Inventory() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Card className="mb-8 w-full max-w-19x1 mx-auto">
+        <Card className="mb-8 w-full max-w-19xl mx-auto">
           <CardContent className="p-6">
             <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between space-y-4 lg:space-y-0 lg:space-x-4">
               <div className="flex-1 max-w-lg">
@@ -268,7 +268,7 @@ export default function Inventory() {
           </CardContent>
         </Card>
 
-        <Card className="w-full max-w-19x1 mx-auto">
+        <Card className="w-full max-w-19xl mx-auto">
           <CardHeader>
             <CardTitle className="text-lg font-medium text-gray-900">Current insulin inventory</CardTitle>
             <p className="text-sm text-gray-600">Manage and track all insulin medications in your clinic</p>
@@ -393,11 +393,11 @@ export default function Inventory() {
           </CardContent>
         </Card>
 
-        <div id="low-stock-ticker" className="mt-8 w-full max-w-19x1 mx-auto">
+        <div id="low-stock-ticker" className="mt-8 w-full max-w-19xl mx-auto">
           <LowStockTicker />
         </div>
 
-        <div className="w-full max-w-19x1 mx-auto">
+        <div className="w-full max-w-19xl mx-auto">
   <OutOfStockTracker />
 </div>
       </main>
