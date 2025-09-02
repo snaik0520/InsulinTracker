@@ -1,4 +1,3 @@
-
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
@@ -285,7 +284,7 @@ export default function Inventory() {
                     <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Dose</th>
                     <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Quantity</th>
                     <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Expiration</th>
-                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Location</th>
+                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600 w-[200px]">Location</th>
                     <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Actions</th>
                   </tr>
                 </thead>
@@ -356,11 +355,11 @@ export default function Inventory() {
                               {medication.expirationDate ? formatToISODate(medication.expirationDate) : "—"}
                             </span>
                           </td>
-                          <td className="px-6 py-4 text-center">
-  <div className="max-w-[120px] break-words whitespace-normal">
-    {medication.location ?? "—"}
-  </div>
-</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
+                            <div className="max-w-96 break-words whitespace-normal leading-tight text-sm">
+                              {medication.location ?? "—"}
+                            </div>
+                          </td>
                           <td className="px-6 py-4 whitespace-nowrap text-center">
                             <Button
                               onClick={() => handleDispense(medication)}
