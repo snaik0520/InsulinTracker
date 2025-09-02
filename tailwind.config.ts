@@ -15,6 +15,10 @@ export default {
         '14xl': '136rem',    // 1408px
         '15xl': '144rem',    // 1536px
         '16xl': '152rem',
+        '17xl': '160rem',  // 1664px
+        '18xl': '168rem',    // 1408px
+        '19xl': '176rem',    // 1536px
+        '20xl': '184rem',
       },
       borderRadius: {
         lg: "var(--radius)",
