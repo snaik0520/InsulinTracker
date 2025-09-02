@@ -275,7 +275,7 @@ export default function Inventory() {
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 table-fixed">
+              <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Medication</th>
@@ -284,7 +284,7 @@ export default function Inventory() {
                     <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Dose</th>
                     <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Quantity</th>
                     <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Expiration</th>
-                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600 w-[500px]">Location</th>
+                    <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Location</th>
                     <th className="px-6 py-3 text-center text-sm font-medium text-gray-600">Actions</th>
                   </tr>
                 </thead>
@@ -355,8 +355,8 @@ export default function Inventory() {
                               {medication.expirationDate ? formatToISODate(medication.expirationDate) : "—"}
                             </span>
                           </td>
-                          <td className="px-6 py-4 align-middle text-sm text-gray-500">
-                            <div className="w-[55px] max-w-full break-words whitespace-normal leading-tight text-sm text-left">
+                          <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
+                            <div className="min-w-[200px] max-w-[400px] break-words whitespace-normal">
                               {medication.location ?? "—"}
                             </div>
                           </td>
