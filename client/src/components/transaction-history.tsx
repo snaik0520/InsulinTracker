@@ -17,12 +17,10 @@ import { History, Plus, Minus, Clock, MoveIcon, X } from "lucide-react";
 export function TransactionHistory() {
   const [isOpen, setIsOpen] = useState(false);
   const { data: transactions = [], isLoading } = useQuery({
-  queryKey: ["/api/transactions"],
-  enabled: isOpen,
-  staleTime: Infinity,        // Never becomes stale
-  cacheTime: Infinity,        // Never garbage collected
-  refetchOnMount: false,      // Don't refetch on mount
-  refetchOnWindowFocus: false // Don't refetch on focus
+    queryKey: ["/api/transactions"],
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+    staleTime: 0,  
 });
 
 
