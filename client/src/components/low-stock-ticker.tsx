@@ -28,17 +28,25 @@ export function LowStockTicker() {
     );
   }
 
-  // Calculate the actual number of grouped medications that will be displayed
+// Group by medicalName + administrativeForm + insulinType + dose (ignore location & expiration)
 const lowStockCount = (() => {
-  const grouped = new Map<string, boolean>();
-  lowStockMedications.forEach((medication) => {
-    const key = `${medication.medicalName}|${medication.dose}`;
-    grouped.set(key, (grouped.get(key) || 0) + medication.quantity);
+  type GroupVal = { totalQuantity: number; };
+  const grouped = new Map<string, GroupVal>();
+
+  lowStockMedications.forEach((med) => {
+    const adminForm = (med.administrativeForm ?? "").toLowerCase();
+    const insulinType = (med.insulinType ?? "").toLowerCase();
+    const key = `${med.medicalName}|${adminForm}|${insulinType}|${med.dose}`;
+
+    const cur = grouped.get(key) ?? { totalQuantity: 0 };
+    cur.totalQuantity += (med.quantity ?? 0);
+    grouped.set(key, cur);
   });
-  
-  // Count only groups with 5 or less total quantity
-  return Array.from(grouped.values()).filter(total => total > 0 && total <= 5).length;
+
+  // Count groups whose total across all entries is >0 and <=5
+  return Array.from(grouped.values()).filter(g => g.totalQuantity > 0 && g.totalQuantity <= 5).length;
 })();
+
 
   return (
     <Card className="mt-6 border-l-4 border-l-orange-500">
@@ -106,12 +114,58 @@ const lowStockCount = (() => {
                 </h4>
                 <div className="grid gap-3">
                   {(() => {
-  // Group medications by medicalName and dose
+  // Group by medicalName + administrativeForm + insulinType + dose
   const grouped = new Map<string, {
-    medication: typeof lowStockMedications[0];
+    medication: typeof lowStockMedications[0] | null;
     totalQuantity: number;
     genericNames: Set<string>;
   }>();
+
+  lowStockMedications.forEach((med) => {
+    const adminForm = (med.administrativeForm ?? "").toLowerCase();
+    const insulinType = (med.insulinType ?? "").toLowerCase();
+    const key = `${med.medicalName}|${adminForm}|${insulinType}|${med.dose}`;
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        medication: med,
+        totalQuantity: 0,
+        genericNames: new Set()
+      });
+    }
+
+    const group = grouped.get(key)!;
+    group.totalQuantity += (med.quantity ?? 0);
+    if (med.genericName) group.genericNames.add(med.genericName);
+  });
+
+  const filteredGroups = Array.from(grouped.values()).filter(g => g.totalQuantity > 0 && g.totalQuantity <= 5);
+
+  return filteredGroups.map((group) => (
+    <div
+      key={`${group.medication?.medicalName}-${group.medication?.administrativeForm}-${group.medication?.insulinType}-${group.medication?.dose}`}
+      className="flex items-center justify-between p-3 bg-white rounded-lg border border-orange-200"
+    >
+      <div className="flex-1">
+        <div className="font-medium text-gray-900">
+          {group.medication?.medicalName}
+        </div>
+        <div className="text-sm text-gray-600 mt-1">
+          {Array.from(group.genericNames).join(', ')} • {group.medication?.dose} • {group.medication?.administrativeForm ?? 'Unknown form'}
+        </div>
+        <div className="text-xs text-gray-500 mt-1">
+          Total across inventory (locations & expiration dates ignored)
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <Badge variant="secondary" className="bg-orange-100 text-orange-700">
+          {group.totalQuantity} left
+        </Badge>
+      </div>
+    </div>
+  ));
+})()}
+
 
   lowStockMedications.forEach((medication) => {
     const key = `${medication.medicalName}|${medication.dose}`;
