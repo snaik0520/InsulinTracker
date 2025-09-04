@@ -11,7 +11,7 @@ export function LowStockTicker() {
   const [isExpanded, setIsExpanded] = useState(false);
 
   const { data: lowStockMedications = [], isLoading } = useQuery<Medication[]>({
-    queryKey: ["/api/medications/low-stock"],
+    queryKey: ["/api/medications"],
     refetchInterval: 5000, // Refetch every 5 seconds to keep data fresh
   });
 
