@@ -78,39 +78,45 @@ export function TransactionHistory() {
   };
 
   const getTransactionDescription = (transaction: MedicationTransaction) => {
-    if (transaction.type === "move") {
-      // Extract destination location from notes
-    // Notes format: "Moved X units from "source" to "destination""
+  if (transaction.type === "move") {
+    // Extract destination location from notes
     const notes = transaction.notes || "";
     const toMatch = notes.match(/to "([^"]+)"/);
     const destination = toMatch ? toMatch[1] : "unknown location";
     return `Moved to ${destination}`;
-    } else if (transaction.type === "addition") {
-      // Determine unit based on "pen" presence
-      const isPen = transaction.medicationName.toLowerCase().includes("pen");
-      const unit = isPen
-        ? transaction.quantity === 1
-          ? "pen"
-          : "pens"
-        : transaction.quantity === 1
-        ? "injection"
-        : "injections";
-      return `${transaction.quantity} ${unit} (${transaction.dose}) added to inventory`;
-  } else if (transaction.type === "removed") {  // Add this condition
-    return "Medication removed from inventory";
+  } else if (transaction.type === "addition") {
+    // Determine unit based on administrative form or fallback to pen detection
+    const adminForm = (transaction as any).administrativeForm?.toLowerCase();
+    let unit: string;
+    
+    if (adminForm === "other") {
+      unit = transaction.quantity === 1 ? "unit" : "units";
+    } else if (adminForm === "pen" || transaction.medicationName.toLowerCase().includes("pen")) {
+      unit = transaction.quantity === 1 ? "pen" : "pens";
     } else {
-      // dispensed
-      const isPen = transaction.medicationName.toLowerCase().includes("pen");
-      const unit = isPen
-        ? transaction.quantity === 1
-          ? "pen"
-          : "pens"
-        : transaction.quantity === 1
-        ? "injection"
-        : "injections";
-      return `${transaction.quantity} ${unit} (${transaction.dose}) dispensed to patient`;
+      unit = transaction.quantity === 1 ? "injection" : "injections";
     }
-  };
+    
+    return `${transaction.quantity} ${unit} (${transaction.dose}) added to inventory`;
+  } else if (transaction.type === "removed") {
+    return "Medication removed from inventory";
+  } else {
+    // dispensed
+    const adminForm = (transaction as any).administrativeForm?.toLowerCase();
+    let unit: string;
+    
+    if (adminForm === "other") {
+      unit = transaction.quantity === 1 ? "unit" : "units";
+    } else if (adminForm === "pen" || transaction.medicationName.toLowerCase().includes("pen")) {
+      unit = transaction.quantity === 1 ? "pen" : "pens";
+    } else {
+      unit = transaction.quantity === 1 ? "injection" : "injections";
+    }
+    
+    return `${transaction.quantity} ${unit} (${transaction.dose}) dispensed to patient`;
+  }
+};
+
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
