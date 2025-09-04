@@ -180,8 +180,13 @@ export function TransactionHistory() {
                           {generic} {medical && `(${medical})`}
                         </h4>
                         <p className="text-sm text-gray-600">
-                          {getTransactionDescription(transaction)}
-                        </p>
+  {getTransactionDescription(transaction)}
+</p>
+{transaction.notes && (
+  <p className="text-xs text-gray-500 mt-1 italic">
+    Notes: {transaction.notes}
+  </p>
+)}
                       </div>
                     </div>
 
