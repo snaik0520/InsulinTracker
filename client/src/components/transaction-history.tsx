@@ -91,7 +91,7 @@ export function TransactionHistory() {
     const adminForm = (transaction as any).administrativeForm?.toLowerCase();
     let unit: string;
     
-    if (adminForm === "other") {
+    if (adminForm === "other" || transaction.medicationName.toLowerCase().includes("other")) {
       unit = transaction.quantity === 1 ? "unit" : "units";
     } else if (adminForm === "pen" || transaction.medicationName.toLowerCase().includes("pen")) {
       unit = transaction.quantity === 1 ? "pen" : "pens";
@@ -107,7 +107,7 @@ export function TransactionHistory() {
     const adminForm = (transaction as any).administrativeForm?.toLowerCase();
     let unit: string;
     
-    if (adminForm === "other") {
+    if (adminForm === "other" || transaction.medicationName.toLowerCase().includes("other")) {
       unit = transaction.quantity === 1 ? "unit" : "units";
     } else if (adminForm === "pen" || transaction.medicationName.toLowerCase().includes("pen")) {
       unit = transaction.quantity === 1 ? "pen" : "pens";
