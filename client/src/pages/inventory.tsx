@@ -308,10 +308,12 @@ export default function Inventory() {
                         "";
                       const adminDisplay =
                         adminValue.toLowerCase() === "pen"
-                          ? "Pen"
-                          : adminValue.toLowerCase() === "injection"
-                          ? "Injection"
-                          : "—";
+    ? "Pen"
+    : adminValue.toLowerCase() === "injection"
+    ? "Injection"
+    : adminValue.toLowerCase() === "other"
+    ? "Other"
+    : "—";
                       const rowTint = getRowClassName(medication.type);
 
                       return (
