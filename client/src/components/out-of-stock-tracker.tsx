@@ -41,26 +41,54 @@ const clearMedication = async (id: string) => {
 // Remove the local state management since we're now using the API:
 // Remove this line: const [clearedMedications, setClearedMedications] = useState<Set<string>>(new Set());
 
-// Update the filter to remove the clearedMedications check:
-const outOfStockMedications = medications.filter(
-  med =>
-    (med.quantity ?? 0) === 0 &&
-    med.expirationDate &&
-    med.expirationDate !== "Invalid Date" &&
-    med.medicalName?.trim() !== ""
-    // Remove: && !clearedMedications.has(med.id)
-);
 
+ // Group all medications by medicalName + administrativeForm + insulinType + dose,
+// sum quantities across all entries (ignore location & expiration).
+const groupedTotalsByKey = (() => {
+  type GroupShape = {
+    exampleMedication: typeof medications[0] | null;
+    totalQuantity: number;
+    genericNames: Set<string>;
+    ids: string[]; // all ids that belong to this group (across locations/expirations)
+  };
 
-  // Calculate the actual number of grouped medications that will be displayed
-const count = (() => {
-  const grouped = new Map<string, boolean>();
-  outOfStockMedications.forEach((medication) => {
-    const key = `${medication.medicalName}|${medication.dose}`;
-    grouped.set(key, true);
+  const map = new Map<string, GroupShape>();
+
+  medications.forEach((med) => {
+    const name = med.medicalName?.trim() ?? "";
+    if (!name) return; // skip unnamed items
+
+    const admin = (med.administrativeForm ?? "").toLowerCase();
+    const insulin = (med.insulinType ?? "").toLowerCase();
+    const dose = med.dose ?? "";
+
+    // KEY intentionally excludes location and expirationDate
+    const key = `${name}|${admin}|${insulin}|${dose}`;
+
+    if (!map.has(key)) {
+      map.set(key, {
+        exampleMedication: med,
+        totalQuantity: 0,
+        genericNames: new Set<string>(),
+        ids: [],
+      });
+    }
+
+    const group = map.get(key)!;
+    group.totalQuantity += (med.quantity ?? 0);
+    group.ids.push(med.id);
+    if (med.genericName) group.genericNames.add(med.genericName);
   });
-  return grouped.size;
+
+  return map;
 })();
+
+// Build an array of groups that are truly out of stock (totalQuantity === 0)
+const outOfStockGroups = Array.from(groupedTotalsByKey.values()).filter(g => g.totalQuantity === 0);
+
+// The number shown in the ticker should be number of distinct groups
+const count = outOfStockGroups.length;
+
 
 
   if (isLoading) {
@@ -132,69 +160,43 @@ const count = (() => {
                 </h4>
                 <div className="space-y-3">
                   {(() => {
-  // Group medications by medicalName and dose
-  const grouped = new Map<string, {
-    medication: typeof outOfStockMedications[0];
-    totalQuantity: number;
-    genericNames: Set<string>;
-    ids: string[];
-  }>();
 
-  outOfStockMedications.forEach((med) => {
-    const key = `${med.medicalName}|${med.dose}`;
-    
-    if (!grouped.has(key)) {
-      grouped.set(key, {
-        medication: med,
-        totalQuantity: 0,
-        genericNames: new Set(),
-        ids: []
-      });
-    }
-    
-    const group = grouped.get(key)!;
-    group.totalQuantity += med.quantity;
-    group.ids.push(med.id);
-    if (med.genericName) {
-      group.genericNames.add(med.genericName);
-    }
-  });
 
-  return Array.from(grouped.values()).map((group) => (
-    <div 
-      key={`${group.medication.medicalName}-${group.medication.dose}`} 
-      className="flex items-center justify-between p-3 bg-white rounded-lg border border-red-200"
-    >
-      <div className="flex-1">
-        <div className="font-medium text-gray-900">
-          {group.medication.medicalName}
-        </div>
-        <div className="text-sm text-gray-600 mt-1">
-          {Array.from(group.genericNames).join(', ')} • {group.medication.dose} • All Locations
-        </div>
-        <div className="text-xs text-gray-500 mt-1">
-          Total across all locations and expiration dates
-        </div>
+  {outOfStockGroups.map((group) => (
+  <div
+    key={`${group.exampleMedication?.medicalName}-${group.exampleMedication?.administrativeForm}-${group.exampleMedication?.insulinType}-${group.exampleMedication?.dose}`}
+    className="flex items-center justify-between p-3 bg-white rounded-lg border border-red-200"
+  >
+    <div className="flex-1">
+      <div className="font-medium text-gray-900">
+        {group.exampleMedication?.medicalName}
       </div>
-      <div className="flex items-center gap-2">
-        <Badge variant="secondary" className="bg-red-100 text-red-700">
-          0 left
-        </Badge>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onClick={() => {
-            // Clear all entries for this medication group
-            group.ids.forEach(id => clearMedication(id));
-          }}
-          className="text-red-600 border-red-200 hover:bg-red-50"
-        >
-          Clear
-        </Button>
+      <div className="text-sm text-gray-600 mt-1">
+        {Array.from(group.genericNames).join(", ")} • {group.exampleMedication?.dose} • All Locations • { (group.exampleMedication?.administrativeForm ?? "").toUpperCase() }
+      </div>
+      <div className="text-xs text-gray-500 mt-1">
+        Total across all locations and expiration dates
       </div>
     </div>
-  ));
-})()}
+    <div className="flex items-center gap-2">
+      <Badge variant="secondary" className="bg-red-100 text-red-700">
+        0 left
+      </Badge>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => {
+          // Clear every inventory row that belongs to this grouped medication
+          group.ids.forEach((id) => clearMedication(id));
+        }}
+        className="text-red-600 border-red-200 hover:bg-red-50"
+      >
+        Clear
+      </Button>
+    </div>
+  </div>
+))}
+
 
                 </div>
               </div>
