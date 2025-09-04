@@ -106,12 +106,14 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
         "";
       const normalized =
         typeof adminFrom === "string"
-          ? adminFrom.toLowerCase() === "pen"
-            ? "pen"
-            : adminFrom.toLowerCase() === "injection"
-            ? "injection"
-            : ""
-          : "";
+    ? adminFrom.toLowerCase() === "pen"
+      ? "pen"
+      : adminFrom.toLowerCase() === "injection"
+      ? "injection"
+      : adminFrom.toLowerCase() === "other"
+      ? "other"
+      : ""
+    : "";
       form.setValue("administrativeForm", normalized);
 
       let maxLocation = "";
@@ -165,7 +167,7 @@ export function AddMedicationModal({ open, onOpenChange, onSave }: AddMedication
     }
 
     const admin = (form.getValues() as any).administrativeForm;
-    if (!admin || (admin !== "pen" && admin !== "injection")) {
+    if (!admin || (admin !== "pen" && admin !== "injection" && admin !== "other")) {
       form.setError("administrativeForm" as any, { type: "manual", message: "Administrative Form is required" });
       return;
     }
@@ -388,6 +390,7 @@ addMedicationMutation.mutate(payload);
                     <SelectContent>
                       <SelectItem value="pen">Pen</SelectItem>
                       <SelectItem value="injection">Injection</SelectItem>
+  <SelectItem value="other">Other</SelectItem>
                     </SelectContent>
                   </Select>
                   {formErrors.administrativeForm && (
