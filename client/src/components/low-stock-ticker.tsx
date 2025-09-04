@@ -28,7 +28,7 @@ export function LowStockTicker() {
     );
   }
 
-// Group by medicalName + administrativeForm + insulinType + dose (ignore location & expiration)
+  // Calculate the actual number of grouped medications that will be displayed
 const lowStockCount = (() => {
   type GroupVal = { totalQuantity: number; };
   const grouped = new Map<string, GroupVal>();
@@ -46,7 +46,6 @@ const lowStockCount = (() => {
   // Count groups whose total across all entries is >0 and <=5
   return Array.from(grouped.values()).filter(g => g.totalQuantity > 0 && g.totalQuantity <= 5).length;
 })();
-
 
   return (
     <Card className="mt-6 border-l-4 border-l-orange-500">
@@ -114,7 +113,7 @@ const lowStockCount = (() => {
                 </h4>
                 <div className="grid gap-3">
                   {(() => {
-  // Group by medicalName + administrativeForm + insulinType + dose
+  // Group medications by medicalName and dose
   const grouped = new Map<string, {
     medication: typeof lowStockMedications[0] | null;
     totalQuantity: number;
@@ -155,55 +154,6 @@ const lowStockCount = (() => {
         </div>
         <div className="text-xs text-gray-500 mt-1">
           Total across inventory (locations & expiration dates ignored)
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
-        <Badge variant="secondary" className="bg-orange-100 text-orange-700">
-          {group.totalQuantity} left
-        </Badge>
-      </div>
-    </div>
-  ));
-})()}
-
-
-  lowStockMedications.forEach((medication) => {
-    const key = `${medication.medicalName}|${medication.dose}`;
-    
-    if (!grouped.has(key)) {
-      grouped.set(key, {
-        medication,
-        totalQuantity: 0,
-        genericNames: new Set()
-      });
-    }
-    
-    const group = grouped.get(key)!;
-    group.totalQuantity += medication.quantity;
-    if (medication.genericName) {
-      group.genericNames.add(medication.genericName);
-    }
-  });
-
-  // Filter grouped medications to only show those with 5 or less total quantity
-  const filteredGroups = Array.from(grouped.values()).filter(group => 
-    group.totalQuantity > 0 && group.totalQuantity <= 5
-  );
-
-  return filteredGroups.map((group) => (
-    <div
-      key={`${group.medication.medicalName}-${group.medication.dose}`}
-      className="flex items-center justify-between p-3 bg-white rounded-lg border border-orange-200"
-    >
-      <div className="flex-1">
-        <div className="font-medium text-gray-900">
-          {group.medication.medicalName}
-        </div>
-        <div className="text-sm text-gray-600 mt-1">
-          {Array.from(group.genericNames).join(', ')} • {group.medication.dose} • All Locations
-        </div>
-        <div className="text-xs text-gray-500 mt-1">
-          Total across all locations and expiration dates
         </div>
       </div>
       <div className="flex items-center gap-2">
