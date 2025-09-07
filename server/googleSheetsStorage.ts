@@ -206,24 +206,40 @@ export class GoogleSheetsStorage implements IStorage {
 
   // NEW: transaction sync methods
   private async syncTransactionsFromSheets(): Promise<void> {
-    const now = Date.now();
-    if (now - this.lastSync < this.syncInterval) return;
-    try {
-      const response = await fetch(this.webAppUrl + '?action=read_transactions', {
-        method: 'GET',
-        signal: AbortSignal.timeout(10000)
+  const now = Date.now();
+  if (now - this.lastSync < this.syncInterval) return;
+  
+  try {
+    const response = await fetch(this.webAppUrl + '?action=read_transactions', {
+      method: 'GET',
+      signal: AbortSignal.timeout(10000)
+    });
+    const data = await response.json();
+    
+    if (data.result === 'success' && data.transactions) {
+      // Instead of clearing cache, merge with existing data
+      // This prevents data loss if there are sync issues
+      const existingIds = new Set(Array.from(this.transactionCache.keys()));
+      let newCount = 0;
+      let updatedCount = 0;
+      
+      data.transactions.forEach((tx: MedicationTransaction) => {
+        if (existingIds.has(tx.id)) {
+          updatedCount++;
+        } else {
+          newCount++;
+        }
+        this.transactionCache.set(tx.id, tx);
       });
-      const data = await response.json();
-      if (data.result === 'success' && data.transactions) {
-        this.transactionCache.clear();
-        data.transactions.forEach((tx: MedicationTransaction) => {
-          this.transactionCache.set(tx.id, tx);
-        });
-      }
-    } catch (error) {
-      console.error('Error syncing transactions from Google Sheets:', error);
+      
+      console.log(`Transaction sync: ${newCount} new, ${updatedCount} updated, ${this.transactionCache.size} total`);
     }
+  } catch (error) {
+    console.error('Error syncing transactions from Google Sheets:', error);
+    // Don't clear cache on error - preserve existing data
   }
+}
+
 
   private async syncTransactionsToSheets(transactions: MedicationTransaction[]): Promise<void> {
     try {
@@ -381,19 +397,31 @@ export class GoogleSheetsStorage implements IStorage {
   }
 
   async createTransaction(insertTransaction: InsertTransaction): Promise<MedicationTransaction> {
-    await this.syncTransactionsFromSheets();
-    const id = randomUUID();
-    const tx: MedicationTransaction = {
-      ...insertTransaction,
-      id,
-      timestamp: formatToISODateTime(),
-      notes: insertTransaction.notes || null
-    };
-    this.transactionCache.set(id, tx);
-    await this.syncTransactionsToSheets(Array.from(this.transactionCache.values()));
-    return tx;
+  // Don't sync from sheets first - this can cause delays and conflicts
+  // await this.syncTransactionsFromSheets();
+  
+  const id = randomUUID();
+  const tx: MedicationTransaction = {
+    ...insertTransaction,
+    id,
+    timestamp: formatToISODateTime(),
+    notes: insertTransaction.notes || null
+  };
+  
+  // Add to local cache immediately
+  this.transactionCache.set(id, tx);
+  
+  // Try to sync to sheets in background
+  try {
+    await this.syncTransactionsToSheets([tx]); // Send only the new transaction
+  } catch (error) {
+    console.error('Error syncing new transaction to Google Sheets:', error);
+    // Don't fail the operation if sheets sync fails - data is preserved locally
   }
+  
+  return tx;
 }
+
 
 const GOOGLE_APPS_SCRIPT_URL = process.env.GOOGLE_APPS_SCRIPT_URL || '';
 export const storage: IStorage = GOOGLE_APPS_SCRIPT_URL.trim()
