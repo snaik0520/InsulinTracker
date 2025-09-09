@@ -20,27 +20,30 @@ export interface IStorage {
 private async syncTransactionsFromSheets(): Promise<void> {
   const now = Date.now();
   if (now - this.lastSync < this.syncInterval) return;
-  
+
   try {
     const response = await fetch(`${this.webAppUrl}?action=read_transactions`, {
       method: 'GET',
       signal: AbortSignal.timeout(10000)
     });
-    
     const data = await response.json();
-    
     if (data.result === 'success' && data.transactions) {
       this.transactionCache.clear();
       data.transactions.forEach((tx: MedicationTransaction) => {
-        // Ensure notes field is preserved
-        tx.notes = tx.notes || null;
+        // Preserve notes exactly as saved
+        tx.notes = (tx.notes === null ? '' : tx.notes);
+
+        // Normalize expiryDate to 'YYYY-MM-DD'
+        if (typeof tx.expirationDate === 'string' && tx.expirationDate.includes('T')) {
+          tx.expirationDate = tx.expirationDate.split('T')[0];
+        }
+
         this.transactionCache.set(tx.id, tx);
       });
       this.lastSync = now;
     }
   } catch (error) {
     console.error('Error syncing transactions from Google Sheets:', error);
-    // Don't throw error to prevent blocking other operations
   }
 }
 
@@ -54,21 +57,23 @@ private async syncTransactionsToSheets(transactions: MedicationTransaction[]): P
         action: 'update_transactions',
         data: JSON.stringify(transactions.map(tx => ({
           ...tx,
-          // Ensure notes are explicitly included and not null
-          notes: tx.notes || ''
+          // Ensure notes is a string (never null)
+          notes: tx.notes || '',
+          // Ensure expiryDate is plain date
+          expirationDate: typeof tx.expirationDate === 'string'
+            ? tx.expirationDate.split('T')[0]
+            : tx.expirationDate
         })))
       }),
       signal: AbortSignal.timeout(15000)
     });
-    
     const result = await response.json();
-    
     if (result.result !== 'success') {
-      throw new Error(`Google Sheets transaction sync failed: ${result.error || 'Unknown error'}`);
+      throw new Error(`Transaction sync failed: ${result.error || 'unknown'}`);
     }
   } catch (error) {
     console.error('Error syncing transactions to Google Sheets:', error);
-    throw error; // Re-throw to handle in calling method
+    throw error;
   }
 }
 
