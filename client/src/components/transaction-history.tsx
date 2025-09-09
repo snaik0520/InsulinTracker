@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { type MedicationTransaction } from "@shared/schema";
 import { formatToISODateTime } from "@shared/dateUtils";
-import { History, Plus, Minus, Clock, MoveIcon, X } from "lucide-react";
+import { History, Plus, Minus, Clock, MoveIcon } from "lucide-react";
 
 export function TransactionHistory() {
   const [isOpen, setIsOpen] = useState(false);
@@ -40,8 +40,6 @@ export function TransactionHistory() {
         return Minus;
       case "move":
         return MoveIcon;
-    case "removed":  // Add this line
-      return X;  // Or use a different icon like Trash2, X, etc.
       default:
         return Clock;
     }
@@ -55,8 +53,6 @@ export function TransactionHistory() {
         return "bg-red-100 text-red-800 border-red-200";
       case "move":
         return "bg-purple-100 text-purple-800 border-purple-200";
-      case "removed":
-  return "bg-[#ffdddd] text-red-800 border-[#ffdddd]";
       default:
         return "bg-gray-100 text-gray-800 border-gray-200";
     }
@@ -70,8 +66,6 @@ export function TransactionHistory() {
         return "Dispensed";
       case "move":
         return "Moved";
-    case "removed":  // Add this line
-      return "Removed";
       default:
         return "Updated";
     }
@@ -96,8 +90,6 @@ export function TransactionHistory() {
         ? "injection"
         : "injections";
       return `${transaction.quantity} ${unit} (${transaction.dose}) added to inventory`;
-  } else if (transaction.type === "removed") {  // Add this condition
-    return "Medication removed from inventory";
     } else {
       // dispensed
       const isPen = transaction.medicationName.toLowerCase().includes("pen");
