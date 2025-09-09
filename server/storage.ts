@@ -95,17 +95,6 @@ export class MemStorage implements IStorage {
     return medication;
   }
 
-  async updateMedicationLocation(id, newLocation) {
-  const medication = this.medications.get(id);
-  if (!medication) {
-    return undefined;
-  }
-  
-  const updatedMedication = { ...medication, location: newLocation };
-  this.medications.set(id, updatedMedication);
-  return updatedMedication;
-}
-  
   async updateMedicationQuantity(id: string, newQuantity: number): Promise<Medication | undefined> {
     const medication = this.medications.get(id);
     if (!medication) return undefined;
