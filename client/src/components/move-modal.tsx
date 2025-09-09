@@ -107,11 +107,16 @@ export function MoveModal({ open, onOpenChange, medication }: MoveModalProps) {
       });
       return;
     }
+
+    const originalLocation = medication.location;
+    const moveNote = `Moved ${qtyNumber} units from "${originalLocation}" to "${finalDestination}"`;
     moveMutation.mutate({
-      medicationId: medication.id,
-      quantity: qtyNumber,
-      destinationLocation: finalDestination,
-    });
+  medicationId: medication.id,
+  quantity: qtyNumber,
+  destinationLocation: finalDestination,
+  originalLocation: originalLocation,  // ADD THIS
+  moveNote: moveNote,                   // ADD THIS
+});
   };
 
   const incrementQuantity = () => {
