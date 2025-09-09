@@ -16,6 +16,91 @@ export interface IStorage {
   createTransaction(transaction: InsertTransaction): Promise<MedicationTransaction>;
 }
 
+// Add this method to GoogleSheetsStorage class
+private async syncTransactionsFromSheets(): Promise<void> {
+  const now = Date.now();
+  if (now - this.lastSync < this.syncInterval) return;
+  
+  try {
+    const response = await fetch(`${this.webAppUrl}?action=read_transactions`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(10000)
+    });
+    
+    const data = await response.json();
+    
+    if (data.result === 'success' && data.transactions) {
+      this.transactionCache.clear();
+      data.transactions.forEach((tx: MedicationTransaction) => {
+        // Ensure notes field is preserved
+        tx.notes = tx.notes || null;
+        this.transactionCache.set(tx.id, tx);
+      });
+      this.lastSync = now;
+    }
+  } catch (error) {
+    console.error('Error syncing transactions from Google Sheets:', error);
+    // Don't throw error to prevent blocking other operations
+  }
+}
+
+// Add this method to GoogleSheetsStorage class
+private async syncTransactionsToSheets(transactions: MedicationTransaction[]): Promise<void> {
+  try {
+    const response = await fetch(this.webAppUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        action: 'update_transactions',
+        data: JSON.stringify(transactions.map(tx => ({
+          ...tx,
+          // Ensure notes are explicitly included and not null
+          notes: tx.notes || ''
+        })))
+      }),
+      signal: AbortSignal.timeout(15000)
+    });
+    
+    const result = await response.json();
+    
+    if (result.result !== 'success') {
+      throw new Error(`Google Sheets transaction sync failed: ${result.error || 'Unknown error'}`);
+    }
+  } catch (error) {
+    console.error('Error syncing transactions to Google Sheets:', error);
+    throw error; // Re-throw to handle in calling method
+  }
+}
+
+// Also add this method to read fresh data from sheets
+private async syncFromSheets(): Promise<void> {
+  const now = Date.now();
+  if (now - this.lastSync < this.syncInterval) return;
+  
+  try {
+    const response = await fetch(`${this.webAppUrl}?action=read`, {
+      signal: AbortSignal.timeout(10000)
+    });
+    
+    const data = await response.json();
+    
+    if (data.result === 'success' && data.medications) {
+      this.cache.clear();
+      data.medications.forEach((med: Medication) => {
+        if (med.expirationDate) {
+          med.expirationDate = formatToISODate(med.expirationDate);
+        }
+        this.cache.set(med.id, med);
+      });
+      this.lastSync = now;
+    }
+  } catch (error) {
+    console.error('Error syncing from Google Sheets:', error);
+    // Don't throw error to prevent blocking other operations
+  }
+}
+
+
 export class MemStorage implements IStorage {
   // ... existing MemStorage unchanged ...
   private medications: Map<string, Medication>;
@@ -195,7 +280,7 @@ export class GoogleSheetsStorage implements IStorage {
   return tx;
 }
 
-
+  
   // ALWAYS sync to sheets after write operations
   private async syncToSheets(medications: Medication[]): Promise<void> {
     try {
