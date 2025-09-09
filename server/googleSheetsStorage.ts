@@ -1,3 +1,4 @@
+
 // server/googleSheetsStorage.ts
 import { type Medication, type InsertMedication, type MedicationTransaction, type InsertTransaction } from "@shared/schema";
 import { formatToISODateTime, formatToISODate } from "@shared/dateUtils";
@@ -15,96 +16,6 @@ export interface IStorage {
   getTransactions(): Promise<MedicationTransaction[]>;
   createTransaction(transaction: InsertTransaction): Promise<MedicationTransaction>;
 }
-
-// Add this method to GoogleSheetsStorage class
-private async syncTransactionsFromSheets(): Promise<void> {
-  const now = Date.now();
-  if (now - this.lastSync < this.syncInterval) return;
-
-  try {
-    const response = await fetch(`${this.webAppUrl}?action=read_transactions`, {
-      method: 'GET',
-      signal: AbortSignal.timeout(10000)
-    });
-    const data = await response.json();
-    if (data.result === 'success' && data.transactions) {
-      this.transactionCache.clear();
-      data.transactions.forEach((tx: MedicationTransaction) => {
-        // Preserve notes exactly as saved
-        tx.notes = (tx.notes === null ? '' : tx.notes);
-
-        // Normalize expiryDate to 'YYYY-MM-DD'
-        if (typeof tx.expirationDate === 'string' && tx.expirationDate.includes('T')) {
-          tx.expirationDate = tx.expirationDate.split('T')[0];
-        }
-
-        this.transactionCache.set(tx.id, tx);
-      });
-      this.lastSync = now;
-    }
-  } catch (error) {
-    console.error('Error syncing transactions from Google Sheets:', error);
-  }
-}
-
-// Add this method to GoogleSheetsStorage class
-private async syncTransactionsToSheets(transactions: MedicationTransaction[]): Promise<void> {
-  try {
-    const response = await fetch(this.webAppUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        action: 'update_transactions',
-        data: JSON.stringify(transactions.map(tx => ({
-          ...tx,
-          // Ensure notes is a string (never null)
-          notes: tx.notes || '',
-          // Ensure expiryDate is plain date
-          expirationDate: typeof tx.expirationDate === 'string'
-            ? tx.expirationDate.split('T')[0]
-            : tx.expirationDate
-        })))
-      }),
-      signal: AbortSignal.timeout(15000)
-    });
-    const result = await response.json();
-    if (result.result !== 'success') {
-      throw new Error(`Transaction sync failed: ${result.error || 'unknown'}`);
-    }
-  } catch (error) {
-    console.error('Error syncing transactions to Google Sheets:', error);
-    throw error;
-  }
-}
-
-// Also add this method to read fresh data from sheets
-private async syncFromSheets(): Promise<void> {
-  const now = Date.now();
-  if (now - this.lastSync < this.syncInterval) return;
-  
-  try {
-    const response = await fetch(`${this.webAppUrl}?action=read`, {
-      signal: AbortSignal.timeout(10000)
-    });
-    
-    const data = await response.json();
-    
-    if (data.result === 'success' && data.medications) {
-      this.cache.clear();
-      data.medications.forEach((med: Medication) => {
-        if (med.expirationDate) {
-          med.expirationDate = formatToISODate(med.expirationDate);
-        }
-        this.cache.set(med.id, med);
-      });
-      this.lastSync = now;
-    }
-  } catch (error) {
-    console.error('Error syncing from Google Sheets:', error);
-    // Don't throw error to prevent blocking other operations
-  }
-}
-
 
 export class MemStorage implements IStorage {
   // ... existing MemStorage unchanged ...
@@ -187,146 +98,137 @@ export class MemStorage implements IStorage {
   }
 
   async getLowStockMedications(threshold: number = 5): Promise<Medication[]> {
-  await this.syncFromSheets();
-  
-  // Group by medication identity (ignore expiration AND location)
-  const grouped = new Map<string, Medication>();
-
-  for (const med of this.cache.values()) {
-    const key = [
-      med.genericName,
-      med.medicalName,
-      med.dose
-    ].join("|");
-
-    if (!grouped.has(key)) {
-      // Use the first medication found as the representative entry
-      grouped.set(key, { ...med, quantity: 0 });
-    }
-
-    // Sum quantities across all locations and expiration dates
-    grouped.get(key)!.quantity += med.quantity;
+    return Array.from(this.medications.values()).filter(med =>
+      med.quantity > 0 && med.quantity <= threshold
+    );
   }
-
-  // Filter summed quantities for low‐stock
-  return Array.from(grouped.values()).filter(m =>
-    m.quantity > 0 && m.quantity <= threshold
-  );
-}
-
 
   async getOutOfStockMedications(): Promise<Medication[]> {
     return [];
   }
 
   async getTransactions(): Promise<MedicationTransaction[]> {
-  // ▶️ Always fetch the latest sheet data before returning
-  await this.syncTransactionsFromSheets();
-  return Array.from(this.transactionCache.values())
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-}
-
-
-
-  async createTransaction(insertTransaction: InsertTransaction): Promise<MedicationTransaction> {
-  const id = randomUUID();
-  const tx: MedicationTransaction = {
-    ...insertTransaction,
-    id,
-    timestamp: formatToISODateTime(),
-    notes: insertTransaction.notes || null
-  };
-
-  // ▶️ Sync this new transaction immediately
-  try {
-    await this.syncTransactionsToSheets([tx]);
-  } catch (error) {
-    console.error('Error saving transaction to Google Sheets:', error);
-    throw new Error('Failed to save transaction');
+    return Array.from(this.transactions.values()).sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
   }
 
-  // ▶️ Update local cache only after successful sheet write
-  this.transactionCache.set(id, tx);
-  return tx;
+  async createTransaction(insertTransaction: InsertTransaction): Promise<MedicationTransaction> {
+    const id = randomUUID();
+    const transaction: MedicationTransaction = {
+      ...insertTransaction,
+      id,
+      timestamp: formatToISODateTime(),
+      notes: insertTransaction.notes || null
+    };
+    this.transactions.set(id, transaction);
+    return transaction;
+  }
 }
-
 
 export class GoogleSheetsStorage implements IStorage {
   private webAppUrl: string;
-  private cache = new Map<string, Medication>();
-  private transactionCache = new Map<string, MedicationTransaction>();
-  private lastSync = 0;
-  private syncInterval = 5000; // Reduced to 5 seconds for more frequent syncing
+  private cache: Map<string, Medication> = new Map();
+  private transactionCache: Map<string, MedicationTransaction> = new Map();
+  private lastSync: number = 0;
+  private syncInterval: number = 30000;
 
   constructor(webAppUrl: string) {
     this.webAppUrl = webAppUrl;
   }
 
-  // ALWAYS sync from sheets before read operations
-  async createTransaction(insertTransaction: InsertTransaction): Promise<MedicationTransaction> {
-  const id = randomUUID();
-  const tx: MedicationTransaction = {
-    ...insertTransaction,
-    id,
-    timestamp: formatToISODateTime(),
-    notes: insertTransaction.notes || null
-  };
-
-  // IMMEDIATELY write to Google Sheets
-  try {
-    await this.syncTransactionsToSheets([tx]);
-  } catch (error) {
-    console.error('Error saving transaction to Google Sheets:', error);
-    throw new Error('Failed to save transaction to Google Sheets');
+  private async syncFromSheets(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastSync < this.syncInterval) return;
+    try {
+      const response = await fetch(this.webAppUrl + '?action=read', {
+        method: 'GET',
+        signal: AbortSignal.timeout(10000)
+      });
+      const data = await response.json();
+      if (data.result === 'success' && data.medications) {
+        this.cache.clear();
+        data.medications.forEach((med: Medication) => {
+          if (med.expirationDate) {
+            med.expirationDate = formatToISODate(med.expirationDate);
+          }
+          this.cache.set(med.id, med);
+        });
+        this.lastSync = now;
+      }
+    } catch (error) {
+      console.error('Error syncing medications from Google Sheets:', error);
+    }
   }
 
-  // Then update local cache
-  this.transactionCache.set(id, tx);
-  return tx;
-}
-
-  
-  // ALWAYS sync to sheets after write operations
   private async syncToSheets(medications: Medication[]): Promise<void> {
     try {
+      const formattedMedications = medications.map(med => ({
+        ...med,
+        expirationDate: formatToISODate(med.expirationDate)
+      }));
       await fetch(this.webAppUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
-          action: "update",
-          data: JSON.stringify(medications.map(med => ({ 
-            ...med, 
-            expirationDate: med.expirationDate 
-          })))
+          action: 'update',
+          data: JSON.stringify(formattedMedications)
         }),
         signal: AbortSignal.timeout(15000)
       });
     } catch (error) {
-      console.error('Error syncing to Google Sheets:', error);
-      throw new Error('Failed to save to Google Sheets');
+      console.error('Error syncing medications to Google Sheets:', error);
+      throw error;
     }
   }
 
-  // Update all your existing methods to call syncFromSheets() before reads
-  // and syncToSheets() after writes
-  
+  // NEW: transaction sync methods
+  private async syncTransactionsFromSheets(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastSync < this.syncInterval) return;
+    try {
+      const response = await fetch(this.webAppUrl + '?action=read_transactions', {
+        method: 'GET',
+        signal: AbortSignal.timeout(10000)
+      });
+      const data = await response.json();
+      if (data.result === 'success' && data.transactions) {
+        this.transactionCache.clear();
+        data.transactions.forEach((tx: MedicationTransaction) => {
+          this.transactionCache.set(tx.id, tx);
+        });
+      }
+    } catch (error) {
+      console.error('Error syncing transactions from Google Sheets:', error);
+    }
+  }
+
+  private async syncTransactionsToSheets(transactions: MedicationTransaction[]): Promise<void> {
+    try {
+      await fetch(this.webAppUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          action: 'update_transactions',
+          data: JSON.stringify(transactions)
+        }),
+        signal: AbortSignal.timeout(15000)
+      });
+    } catch (error) {
+      console.error('Error syncing transactions to Google Sheets:', error);
+      throw error;
+    }
+  }
+
   async getMedications(): Promise<Medication[]> {
-    await this.syncFromSheets(); // Always read fresh data
-    return Array.from(this.cache.values()).sort((a, b) => 
-      new Date(a.expirationDate).getTime() - new Date(b.expirationDate).getTime()
-    );
+    await this.syncFromSheets();
+    return Array.from(this.cache.values());
   }
 
   async getMedicationById(id: string): Promise<Medication | undefined> {
-    await this.syncFromSheets(); // Always read fresh data
+    await this.syncFromSheets();
     return this.cache.get(id);
   }
-
-  // Keep all your other existing methods, just ensure they follow the pattern:
-  // 1. Call syncFromSheets() before reading data
-  // 2. Call syncToSheets() after modifying data
-}
-
 
   async createMedication(insertMedication: InsertMedication): Promise<Medication> {
     await this.syncFromSheets();
@@ -395,91 +297,33 @@ export class GoogleSheetsStorage implements IStorage {
   }
 
   async getLowStockMedications(threshold: number = 5): Promise<Medication[]> {
-  await this.syncFromSheets();
-  
-  // Group by medication identity (ignore expiration AND location)
-  const grouped = new Map<string, Medication>();
-
-  for (const med of this.cache.values()) {
-    const key = [
-      med.genericName,
-      med.medicalName,
-      med.dose
-    ].join("|");
-
-    if (!grouped.has(key)) {
-      // Use the first medication found as the representative entry
-      grouped.set(key, { ...med, quantity: 0 });
-    }
-
-    // Sum quantities across all locations and expiration dates
-    grouped.get(key)!.quantity += med.quantity;
+    await this.syncFromSheets();
+    return Array.from(this.cache.values()).filter(med =>
+      med.quantity > 0 && med.quantity <= threshold
+    );
   }
-
-  // Filter summed quantities for low‐stock
-  return Array.from(grouped.values()).filter(m =>
-    m.quantity > 0 && m.quantity <= threshold
-  );
-}
-
-  async getOutOfStockMedications(): Promise<Medication[]> {
-  await this.syncFromSheets();
-  
-  // Group by medication identity (ignore expiration AND location)
-  const grouped = new Map<string, Medication>();
-
-  for (const med of this.cache.values()) {
-    const key = [
-      med.genericName,
-      med.medicalName,
-      med.dose
-    ].join("|");
-
-    if (!grouped.has(key)) {
-      // Use the first medication found as the representative entry
-      grouped.set(key, { ...med, quantity: 0 });
-    }
-
-    // Sum quantities across all locations and expiration dates
-    grouped.get(key)!.quantity += med.quantity;
-  }
-
-  // Return only fully depleted groups
-  return Array.from(grouped.values()).filter(m => m.quantity === 0);
-}
-
 
   async getTransactions(): Promise<MedicationTransaction[]> {
-  // ▶️ Always fetch the latest sheet data before returning
-  await this.syncTransactionsFromSheets();
-  return Array.from(this.transactionCache.values())
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-}
-
-
-  async createTransaction(insertTransaction: InsertTransaction): Promise<MedicationTransaction> {
-  const id = randomUUID();
-  const tx: MedicationTransaction = {
-    ...insertTransaction,
-    id,
-    timestamp: formatToISODateTime(),
-    notes: insertTransaction.notes || null
-  };
-
-  // ▶️ Sync this new transaction immediately
-  try {
-    await this.syncTransactionsToSheets([tx]);
-  } catch (error) {
-    console.error('Error saving transaction to Google Sheets:', error);
-    throw new Error('Failed to save transaction');
+    await this.syncTransactionsFromSheets();
+    return Array.from(this.transactionCache.values()).sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
   }
 
-  // ▶️ Update local cache only after successful sheet write
-  this.transactionCache.set(id, tx);
-  return tx;
+  async createTransaction(insertTransaction: InsertTransaction): Promise<MedicationTransaction> {
+    await this.syncTransactionsFromSheets();
+    const id = randomUUID();
+    const tx: MedicationTransaction = {
+      ...insertTransaction,
+      id,
+      timestamp: formatToISODateTime(),
+      notes: insertTransaction.notes || null
+    };
+    this.transactionCache.set(id, tx);
+    await this.syncTransactionsToSheets(Array.from(this.transactionCache.values()));
+    return tx;
+  }
 }
-
-
 
 const GOOGLE_APPS_SCRIPT_URL = process.env.GOOGLE_APPS_SCRIPT_URL || '';
 export const storage: IStorage = GOOGLE_APPS_SCRIPT_URL.trim()
