@@ -5,10 +5,15 @@ import { GoogleSheetsStorage } from "./googleSheetsStorage";
 import { insertMedicationSchema } from "@shared/schema";
 import { z } from "zod";
 
+const dispenseSchema = z.object({
+  medicationId: z.string(),
+  quantity: z.number().min(1),
+});
+
 const moveSchema = z.object({
   medicationId: z.string(),
-  newLocation: z.string(),
-  quantity: z.number().min(1)
+  quantity: z.number().min(1),
+  destinationLocation: z.string().min(1),
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -41,53 +46,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to filter medications" });
     }
   });
-
-  app.post("/api/medications/move", async (req, res) => {
-  try {
-    const { medicationId, newLocation, quantity } = moveSchema.parse(req.body);
-    
-    const medication = await storage.getMedicationById(medicationId);
-    if (!medication) {
-      return res.status(404).json({ error: "Medication not found" });
-    }
-    
-    if (medication.quantity < quantity) {
-      return res.status(400).json({ error: "Insufficient stock to move" });
-    }
-    
-    // Capture the original location before updating
-    const originalLocation = medication.location;
-    
-    // Create the descriptive note - THIS IS THE KEY FIX
-    const moveNote = `Moved ${quantity} units from "${originalLocation}" to "${newLocation}"`;
-    
-    if (quantity === medication.quantity) {
-      // Moving entire stock
-      const updatedMedication = await storage.updateMedicationLocation(medicationId, newLocation);
-      
-      // Create move transaction with descriptive note
-      await storage.createTransaction({
-        medicationId: medication.id,
-        medicationName: `${medication.genericName} (${medication.medicalName})`,
-        type: "move",
-        quantity,
-        notes: moveNote  // Pre-built note with both locations
-      });
-      
-      res.json(updatedMedication);
-    } else {
-      // Partial move logic here...
-      // (Similar implementation with moveNote included)
-    }
-    
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      res.status(400).json({ error: "Invalid move data", details: error.errors });
-    } else {
-      res.status(500).json({ error: "Failed to move medication" });
-    }
-  }
-});
 
   app.post("/api/medications", async (req, res) => {
     try {
