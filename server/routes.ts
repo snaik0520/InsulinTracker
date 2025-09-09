@@ -42,7 +42,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app2.post("/api/medications/move", async (req, res) => {
+  app.post("/api/medications/move", async (req, res) => {
   try {
     const { medicationId, newLocation, quantity } = moveSchema.parse(req.body);
     
