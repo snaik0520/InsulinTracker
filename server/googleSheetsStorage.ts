@@ -130,23 +130,36 @@ export class MemStorage implements IStorage {
   }
 
   async getTransactions(): Promise<MedicationTransaction[]> {
-    return Array.from(this.transactions.values()).sort(
-      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    );
-  }
+  // ▶️ Always fetch the latest sheet data before returning
+  await this.syncTransactionsFromSheets();
+  return Array.from(this.transactionCache.values())
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+}
+
+
 
   async createTransaction(insertTransaction: InsertTransaction): Promise<MedicationTransaction> {
-    const id = randomUUID();
-    const transaction: MedicationTransaction = {
-      ...insertTransaction,
-      id,
-      timestamp: formatToISODateTime(),
-      notes: insertTransaction.notes || null
-    };
-    this.transactions.set(id, transaction);
-    return transaction;
+  const id = randomUUID();
+  const tx: MedicationTransaction = {
+    ...insertTransaction,
+    id,
+    timestamp: formatToISODateTime(),
+    notes: insertTransaction.notes || null
+  };
+
+  // ▶️ Sync this new transaction immediately
+  try {
+    await this.syncTransactionsToSheets([tx]);
+  } catch (error) {
+    console.error('Error saving transaction to Google Sheets:', error);
+    throw new Error('Failed to save transaction');
   }
+
+  // ▶️ Update local cache only after successful sheet write
+  this.transactionCache.set(id, tx);
+  return tx;
 }
+
 
 export class GoogleSheetsStorage implements IStorage {
   private webAppUrl: string;
@@ -160,25 +173,28 @@ export class GoogleSheetsStorage implements IStorage {
   }
 
   // ALWAYS sync from sheets before read operations
-  private async syncFromSheets(): Promise<void> {
-    try {
-      const res = await fetch(`${this.webAppUrl}?action=read`, { 
-        signal: AbortSignal.timeout(10000) 
-      });
-      const data = await res.json();
-      if (data.result === "success" && data.medications) {
-        this.cache.clear();
-        data.medications.forEach((med: Medication) => {
-          if (med.expirationDate) med.expirationDate = formatToISODate(med.expirationDate);
-          this.cache.set(med.id, med);
-        });
-        this.lastSync = Date.now();
-      }
-    } catch (error) {
-      console.error('Error syncing from Google Sheets:', error);
-      throw new Error('Failed to sync with Google Sheets');
-    }
+  async createTransaction(insertTransaction: InsertTransaction): Promise<MedicationTransaction> {
+  const id = randomUUID();
+  const tx: MedicationTransaction = {
+    ...insertTransaction,
+    id,
+    timestamp: formatToISODateTime(),
+    notes: insertTransaction.notes || null
+  };
+
+  // IMMEDIATELY write to Google Sheets
+  try {
+    await this.syncTransactionsToSheets([tx]);
+  } catch (error) {
+    console.error('Error saving transaction to Google Sheets:', error);
+    throw new Error('Failed to save transaction to Google Sheets');
   }
+
+  // Then update local cache
+  this.transactionCache.set(id, tx);
+  return tx;
+}
+
 
   // ALWAYS sync to sheets after write operations
   private async syncToSheets(medications: Medication[]): Promise<void> {
@@ -344,16 +360,14 @@ export class GoogleSheetsStorage implements IStorage {
 
 
   async getTransactions(): Promise<MedicationTransaction[]> {
-    await this.syncTransactionsFromSheets();
-    return Array.from(this.transactionCache.values()).sort(
-      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    );
-  }
+  // ▶️ Always fetch the latest sheet data before returning
+  await this.syncTransactionsFromSheets();
+  return Array.from(this.transactionCache.values())
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+}
+
 
   async createTransaction(insertTransaction: InsertTransaction): Promise<MedicationTransaction> {
-  // Don't sync from sheets first - this can cause delays and conflicts
-  // await this.syncTransactionsFromSheets();
-  
   const id = randomUUID();
   const tx: MedicationTransaction = {
     ...insertTransaction,
@@ -361,20 +375,20 @@ export class GoogleSheetsStorage implements IStorage {
     timestamp: formatToISODateTime(),
     notes: insertTransaction.notes || null
   };
-  
-  // Add to local cache immediately
-  this.transactionCache.set(id, tx);
-  
-  // Try to sync to sheets in background
+
+  // ▶️ Sync this new transaction immediately
   try {
-    await this.syncTransactionsToSheets([tx]); // Send only the new transaction
+    await this.syncTransactionsToSheets([tx]);
   } catch (error) {
-    console.error('Error syncing new transaction to Google Sheets:', error);
-    // Don't fail the operation if sheets sync fails - data is preserved locally
+    console.error('Error saving transaction to Google Sheets:', error);
+    throw new Error('Failed to save transaction');
   }
-  
+
+  // ▶️ Update local cache only after successful sheet write
+  this.transactionCache.set(id, tx);
   return tx;
 }
+
 
 
 const GOOGLE_APPS_SCRIPT_URL = process.env.GOOGLE_APPS_SCRIPT_URL || '';
