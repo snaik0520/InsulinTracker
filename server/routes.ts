@@ -11,12 +11,6 @@ const moveSchema = z.object({
   quantity: z.number().min(1)
 });
 
-const moveSchema = z.object({
-  medicationId: z.string(),
-  quantity: z.number().min(1),
-  destinationLocation: z.string().min(1),
-});
-
 export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/medications", async (req, res) => {
     try {
