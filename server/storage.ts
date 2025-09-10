@@ -349,6 +349,29 @@ export class GoogleSheetsStorage implements IStorage {
     }
   }
 
+  // NEW: Add individual transaction to Google Sheets
+  private async addTransactionToSheets(transaction: MedicationTransaction): Promise<void> {
+    try {
+      const response = await fetch(this.webAppUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          action: "add_transaction",
+          data: JSON.stringify(transaction)
+        }),
+        signal: AbortSignal.timeout(15000)
+      });
+      
+      const result = await response.json();
+      if (result.result !== 'success') {
+        throw new Error(result.error || 'Failed to add transaction to Google Sheets');
+      }
+    } catch (error) {
+      console.error('Error adding transaction to Google Sheets:', error);
+      throw error;
+    }
+  }
+
   async getMedications(): Promise<Medication[]> {
     await this.syncFromSheets();
     return Array.from(this.cache.values());
@@ -543,7 +566,15 @@ export class GoogleSheetsStorage implements IStorage {
       notes: insertTransaction.notes || null,
     };
     this.transactionCache.set(id, transaction);
-    await this.syncTransactionsToSheets(Array.from(this.transactionCache.values()));
+    
+    // Add individual transaction to Google Sheets instead of syncing all
+    try {
+      await this.addTransactionToSheets(transaction);
+    } catch (error) {
+      console.error('Failed to add transaction to Google Sheets, but keeping in cache:', error);
+      // Don't throw error - keep transaction in cache even if Google Sheets fails
+    }
+    
     return transaction;
   }
 
