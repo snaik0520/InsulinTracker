@@ -1,3 +1,4 @@
+
 // server/googleSheetsStorage.ts
 import { type Medication, type InsertMedication, type MedicationTransaction, type InsertTransaction } from "@shared/schema";
 import { formatToISODateTime, formatToISODate } from "@shared/dateUtils";
@@ -222,6 +223,12 @@ export class GoogleSheetsStorage implements IStorage {
   // NEW: Add individual transaction to Google Sheets
   private async addTransactionToSheets(transaction: MedicationTransaction): Promise<void> {
     try {
+      console.log('Sending transaction to Google Sheets:', {
+        url: this.webAppUrl,
+        action: 'add_transaction',
+        transactionId: transaction.id
+      });
+
       const response = await fetch(this.webAppUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -231,13 +238,23 @@ export class GoogleSheetsStorage implements IStorage {
         }),
         signal: AbortSignal.timeout(15000)
       });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
       
       const result = await response.json();
+      console.log('Google Sheets response:', result);
+      
       if (result.result !== 'success') {
         throw new Error(result.error || 'Failed to add transaction to Google Sheets');
       }
     } catch (error) {
-      console.error('Error adding transaction to Google Sheets:', error);
+      console.error('Error adding transaction to Google Sheets:', {
+        error: error.message,
+        transactionId: transaction.id,
+        url: this.webAppUrl
+      });
       throw error;
     }
   }
@@ -344,11 +361,36 @@ export class GoogleSheetsStorage implements IStorage {
     this.transactionCache.set(id, tx);
     
     // Add individual transaction to Google Sheets instead of syncing all
-    try {
-      await this.addTransactionToSheets(tx);
-    } catch (error) {
-      console.error('Failed to add transaction to Google Sheets, but keeping in cache:', error);
-      // Don't throw error - keep transaction in cache even if Google Sheets fails
+    if (this.webAppUrl && this.webAppUrl.trim()) {
+      // Retry mechanism for Google Sheets sync
+      let retryCount = 0;
+      const maxRetries = 3;
+      
+      while (retryCount < maxRetries) {
+        try {
+          console.log(`Syncing transaction to Google Sheets (attempt ${retryCount + 1}):`, { 
+            id: tx.id, 
+            type: tx.type, 
+            medicationName: tx.medicationName 
+          });
+          await this.addTransactionToSheets(tx);
+          console.log('Successfully synced transaction to Google Sheets');
+          break; // Success, exit retry loop
+        } catch (error) {
+          retryCount++;
+          console.error(`Failed to add transaction to Google Sheets (attempt ${retryCount}):`, error);
+          
+          if (retryCount >= maxRetries) {
+            console.error('Max retries reached, keeping transaction in cache only');
+            // Don't throw error - keep transaction in cache even if Google Sheets fails
+          } else {
+            // Wait before retry (exponential backoff)
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+          }
+        }
+      }
+    } else {
+      console.warn('Google Apps Script URL not configured, transaction only stored in cache');
     }
     
     return tx;
