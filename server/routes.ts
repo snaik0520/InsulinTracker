@@ -49,26 +49,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/medications", async (req, res) => {
     try {
+      console.log('Creating medication:', req.body);
       const data = insertMedicationSchema.parse(req.body);
       const result = await storage.createMedication(data);
       const { medication, isNewMedication, addedQuantity } = result;
 
+      console.log('Medication created successfully:', { id: medication.id, isNewMedication, addedQuantity });
+
       // Single transaction for both new and stock increases
-      await storage.createTransaction({
-        medicationId: medication.id,
-        medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
-        type: "addition", // always "Added"
-        quantity: addedQuantity,
-        dose: medication.dose,
-        notes: isNewMedication
-          ? "New medication added to inventory"
-          : "Medication quantity increased in existing stock",
-      });
+      try {
+        await storage.createTransaction({
+          medicationId: medication.id,
+          medicationName: `${medication.medicalName} (${medication.genericName}) - ${medication.administrativeForm}`,
+          type: "addition", // always "Added"
+          quantity: addedQuantity,
+          dose: medication.dose,
+          notes: isNewMedication
+            ? "New medication added to inventory"
+            : "Medication quantity increased in existing stock",
+        });
+        console.log('Transaction created successfully for medication:', medication.id);
+      } catch (txError) {
+        console.error('Failed to create transaction for medication:', medication.id, txError);
+        // Don't fail the entire operation if transaction creation fails
+      }
 
       res.status(201).json(medication);
     } catch (e) {
+      console.error('Error creating medication:', e);
       res.status(e instanceof z.ZodError ? 400 : 500).json({
         error: e instanceof z.ZodError ? "Invalid data" : "Failed to create medication",
+        details: e instanceof Error ? e.message : String(e)
       });
     }
   });
@@ -108,25 +119,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/medications/dispense", async (req, res) => {
     try {
+      console.log('Dispensing medication:', req.body);
       const { medicationId, quantity } = dispenseSchema.parse(req.body);
       const med = await storage.getMedicationById(medicationId);
       if (!med) return res.status(404).json({ error: "Medication not found" });
       if (med.quantity < quantity) return res.status(400).json({ error: "Insufficient stock" });
 
+      console.log('Updating medication quantity:', { medicationId, currentQuantity: med.quantity, dispenseQuantity: quantity });
       const updated = await storage.updateMedicationQuantity(medicationId, med.quantity - quantity);
-      await storage.createTransaction({
-        medicationId: med.id,
-        medicationName: `${med.medicalName} (${med.genericName}) - ${med.administrativeForm}`,
-        type: "dispensed",
-        quantity,
-        dose: med.dose,
-        notes: "Dispensed to patient",
-      });
+      
+      if (!updated) {
+        throw new Error("Failed to update medication quantity");
+      }
+
+      console.log('Creating dispense transaction for medication:', medicationId);
+      try {
+        await storage.createTransaction({
+          medicationId: med.id,
+          medicationName: `${med.medicalName} (${med.genericName}) - ${med.administrativeForm}`,
+          type: "dispensed",
+          quantity,
+          dose: med.dose,
+          notes: "Dispensed to patient",
+        });
+        console.log('Dispense transaction created successfully');
+      } catch (txError) {
+        console.error('Failed to create dispense transaction:', txError);
+        // Don't fail the entire operation if transaction creation fails
+      }
 
       res.json(updated);
     } catch (e) {
+      console.error('Error dispensing medication:', e);
       res.status(e instanceof z.ZodError ? 400 : 500).json({
         error: e instanceof z.ZodError ? "Invalid data" : "Failed to dispense medication",
+        details: e instanceof Error ? e.message : String(e)
       });
     }
   });
@@ -169,23 +196,33 @@ app.delete("/api/medications/:id", async (req, res) => {
 
   app.post("/api/medications/move", async (req, res) => {
     try {
+      console.log('Moving medication:', req.body);
       const { medicationId, quantity, destinationLocation } = moveSchema.parse(req.body);
       const result = await storage.moveMedication(medicationId, quantity, destinationLocation);
 
       if (!result.success) {
+        console.error('Move operation failed:', result.error);
         return res.status(400).json({ error: result.error });
       }
 
+      console.log('Move operation successful:', result.message);
+
       // Create transaction for the move operation
       const sourceMed = result.sourceMedication!;
-      await storage.createTransaction({
-        medicationId: sourceMed.id,
-        medicationName: `${sourceMed.medicalName} (${sourceMed.genericName}) - ${sourceMed.administrativeForm}`,
-        type: "move",
-        quantity,
-        dose: sourceMed.dose,
-        notes: `Moved ${quantity} units from "${sourceMed.location}" to "${destinationLocation}"`,
-      });
+      try {
+        await storage.createTransaction({
+          medicationId: sourceMed.id,
+          medicationName: `${sourceMed.medicalName} (${sourceMed.genericName}) - ${sourceMed.administrativeForm}`,
+          type: "move",
+          quantity,
+          dose: sourceMed.dose,
+          notes: `Moved ${quantity} units from "${sourceMed.location}" to "${destinationLocation}"`,
+        });
+        console.log('Move transaction created successfully');
+      } catch (txError) {
+        console.error('Failed to create move transaction:', txError);
+        // Don't fail the entire operation if transaction creation fails
+      }
 
       res.json({
         sourceMedication: result.sourceMedication,
@@ -193,8 +230,10 @@ app.delete("/api/medications/:id", async (req, res) => {
         message: result.message
       });
     } catch (e) {
+      console.error('Error moving medication:', e);
       res.status(e instanceof z.ZodError ? 400 : 500).json({
         error: e instanceof z.ZodError ? "Invalid data" : "Failed to move medication",
+        details: e instanceof Error ? e.message : String(e)
       });
     }
   });
