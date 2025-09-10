@@ -568,11 +568,17 @@ export class GoogleSheetsStorage implements IStorage {
     this.transactionCache.set(id, transaction);
     
     // Add individual transaction to Google Sheets instead of syncing all
-    try {
-      await this.addTransactionToSheets(transaction);
-    } catch (error) {
-      console.error('Failed to add transaction to Google Sheets, but keeping in cache:', error);
-      // Don't throw error - keep transaction in cache even if Google Sheets fails
+    if (this.webAppUrl && this.webAppUrl.trim()) {
+      try {
+        console.log('Syncing transaction to Google Sheets:', { id: transaction.id, type: transaction.type, medicationName: transaction.medicationName });
+        await this.addTransactionToSheets(transaction);
+        console.log('Successfully synced transaction to Google Sheets');
+      } catch (error) {
+        console.error('Failed to add transaction to Google Sheets, but keeping in cache:', error);
+        // Don't throw error - keep transaction in cache even if Google Sheets fails
+      }
+    } else {
+      console.warn('Google Apps Script URL not configured, transaction only stored in cache');
     }
     
     return transaction;
